@@ -3,6 +3,7 @@ appnope==0.1.4
 argon2-cffi==23.1.0
 argon2-cffi-bindings==21.2.0
 arrow==1.3.0
+arviz==0.17.1
 asttokens==2.4.1
 async-lru==2.0.4
 attrs==24.2.0
@@ -24,6 +25,8 @@ fastjsonschema==2.20.0
 fonttools==4.53.1
 fqdn==1.5.1
 h11==0.14.0
+h5netcdf==1.3.0
+h5py==3.11.0
 httpcore==1.0.5
 httpx==0.27.2
 idna==3.10
@@ -66,7 +69,7 @@ nbformat==5.10.4
 nest-asyncio==1.6.0
 notebook==7.2.2
 notebook_shim==0.2.4
-numpy==2.0.2
+numpy==1.26.4
 numpyro==0.15.3
 opt-einsum==3.3.0
 overrides==7.7.0
@@ -95,7 +98,7 @@ requests==2.32.3
 rfc3339-validator==0.1.4
 rfc3986-validator==0.1.1
 rpds-py==0.20.0
-scipy==1.13.1
+scipy==1.12.0
 seaborn==0.13.2
 Send2Trash==1.8.3
 six==1.16.0
@@ -118,4 +121,6 @@ webcolors==24.8.0
 webencodings==0.5.1
 websocket-client==1.8.0
 widgetsnbextension==4.0.13
+xarray==2024.7.0
+xarray-einstats==0.7.0
 zipp==3.20.2

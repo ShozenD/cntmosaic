@@ -3,7 +3,6 @@ from jax import random
 from optax import linear_onecycle_schedule
 
 from numpyro.infer import MCMC, NUTS, SVI, Predictive
-from numpyro.infer.autoguide import AutoNormal
 from numpyro.infer.elbo import Trace_ELBO
 from numpyro.infer.initialization import init_to_median, init_to_uniform
 from numpyro.optim import Adam
@@ -13,6 +12,7 @@ def fit_mcmc(
     model: callable,
     num_warmup: int = 500,
     num_samples: int = 500,
+    num_chains: int = 4,
     target_accept_prob: float = 0.8,
     init_strategy: callable = init_to_median,
     **model_kwargs,
@@ -25,7 +25,7 @@ def fit_mcmc(
     kernel,
     num_warmup=num_warmup,
     num_samples=num_samples,
-    num_chains=4,
+    num_chains=num_chains,
     progress_bar=True,
   )
   mcmc.run(rng_key, **model_kwargs)
@@ -52,7 +52,6 @@ def posterior_predictive_mcmc(
     samples = mcmc.get_samples()
     predictive = Predictive(model, samples, parallel=True)
     return predictive(random.PRNGKey(seed), **model_kwargs)
-
 
 def posterior_predictive_svi(
     seed: int,

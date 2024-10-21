@@ -4,9 +4,11 @@ from numpy.typing import NDArray
 
 import jax
 import jax.numpy as jnp
+from jax import random
 
 import numpyro
 from numpyro import distributions as dist
+from numpyro.handlers import seed, scope, trace
 from numpyro.contrib.hsgp.laplacian import eigenfunctions
 from numpyro.contrib.hsgp.spectral_densities import diag_spectral_density_matern
 
@@ -51,7 +53,7 @@ class BRC:
         self.log_n = jnp.log(self.data['n'].values)
         self.log_p = jnp.log(self.data['p'].values)
 
-    def sample_latent_field(self, x, alpha, rho):
+    def sample_latent_field(self, x, alpha, rho, symmetric=False):
         phi = eigenfunctions(x=x, ell=self.L, m=self.M)
         spd = jnp.sqrt(
             diag_spectral_density_matern(
@@ -61,8 +63,20 @@ class BRC:
         with numpyro.plate('hsgp_basis_coef', phi.shape[-1]):
             beta = numpyro.sample('beta', dist.Normal(0, 1))
 
-        return phi @ (spd * beta)
+        f = phi @ (spd * beta)
+        if symmetric:
+            return f[self.sym_tri_idx]
+        else:
+            return f
     
+    def print_model_shape(self):
+        tr = trace(seed(self.model, random.PRNGKey(0))).get_trace()
+        print(numpyro.util.format_shapes(tr))
+
+    def model(self):
+        # Empty model for subclassing
+        pass
+
     def tree_flatten(self):
         children = ()
         aux_data = (
@@ -89,7 +103,7 @@ class BRCBasic(BRC):
         alpha = numpyro.sample('gp_scale', dist.InverseGamma(5, 5))
         rho = numpyro.sample('gp_lenscale', dist.InverseGamma(5, 5).expand([2]))
 
-        f = self.sample_latent_field(self.X, alpha, rho)[self.sym_tri_idx]
+        f = self.sample_latent_field(self.X, alpha, rho, symmetric=True)
         log_rate = numpyro.deterministic('log_rate', beta0 + f)
         log_cint = numpyro.deterministic('log_cint', log_rate + self.log_p)
         log_lam = log_cint + self.log_n
@@ -111,6 +125,11 @@ class BRCStratified(BRC):
         self.pratio = pratio
         super().__init__(data, M, C)
 
+        # Numpyro plates
+        self.plate_a = numpyro.plate('age_part', self.A, dim=-2)
+        self.plate_b = numpyro.plate('age_cnt', self.A, dim=-1)
+        self.plates_X = {c: numpyro.plate(c, self.K_dim[c], dim=-3) for c in self.X_cols}
+
         if smooth_type is None:
             self.smooth_type = {col: 'plate' for col in self.X_cols}
         else:
@@ -121,46 +140,50 @@ class BRCStratified(BRC):
         self.log_n = jnp.log(self.data['n'].values)
         self.log_p = jnp.log(self.data['p'].values)
 
-        self.aid = self.A*self.data['age_part'].values + self.data['age_cnt'].values
+        self.a_id = self.data['age_part'].values
+        self.b_id = self.data['age_cnt'].values
+        self.ab_id = self.A * self.a_id + self.b_id
         self.X_cols = self.data.columns[self.data.columns.str.startswith('X_')]
         self.K_ids = {col: self.data[col].astype(int).values for col in self.X_cols}
-        self.D = {col: pd.get_dummies(self.data[col], dtype=float).values for col in self.X_cols}
-        self.K = {col: self.data[col].nunique() for col in self.X_cols}
-        self.log_pratio = {k: np.log(v.T) for k, v in self.pratio.items()}
+        self.K_dim = {col: self.data[col].nunique() for col in self.X_cols}
+        self.log_pratio = {k: np.log(v) for k, v in self.pratio.items()}
     
-    def sample_omega(self, key, type): # TODO: implementations for different regularised priors
-        if type == 'random':
-            with numpyro.plate(f'plate_omega_{key}', self.K[key]):
-                x = numpyro.sample(f'omega_{key}', dist.Normal(0, 1).expand([self.A, self.A]).to_event(2))
-
-        elif type == 'plate':
-            a = numpyro.sample(f'omega_a_{key}', dist.Normal(0, 1).expand([self.K[key]]))
-            b = numpyro.sample(f'omega_b_{key}', dist.Normal(0, 1))
-            c = numpyro.sample(f'omega_c_{key}', dist.Normal(0, 1))
+    def sample_omega(self, key): # TODO: implementations for different regularised priors
+        if self.smooth_type[key] == 'random':
+            with self.plates_X[key], self.plate_a, self.plate_b:
+                omega = numpyro.sample('omega', dist.Normal(0, 1)) # omega.dim = (Kx, A, A)
+        
+        elif self.smooth_type[key] == 'plate':
+            with self.plates_X[key]:
+                a = numpyro.sample('omega_a', dist.Normal(0, 1)) # a: (Kx, 1, 1)
+            b = numpyro.sample('omega_b', dist.Normal(0, 1)) # b: (1,)
 
             x = jnp.arange(self.A)
             X, Y = jnp.ix_(x, x)
-
-            x = a[:, None, None] + b * X + c * Y
+            omega = numpyro.deterministic('omega', a + b*(X + Y)) # omega.dim = (Kx, A, A)
             
-        return x
+        return omega
   
-    def sample_log_delta(self, key, type):
-        omega = self.sample_omega(key, type)
-        x = jax.nn.log_softmax(omega, axis=0) - self.log_pratio[key][:,:,None]
-        dims = (self.K[key], self.A**2)
-        return numpyro.deterministic(f'log_delta_{key}', x.reshape(dims))
+    def sample_log_delta(self, key):
+        omega = self.sample_omega(key)
+        log_delta = numpyro.deterministic(
+            'log_delta',
+            jax.nn.log_softmax(omega, axis=0) - self.log_pratio[key][:,:,None]
+        )
+        return log_delta
 
     def model(self):
         beta0 = numpyro.sample('baseline', dist.Normal(0., 10.))
         alpha = numpyro.sample('gp_scale', dist.HalfNormal(1.))
         rho = numpyro.sample('gp_lenscale', dist.InverseGamma(5., 5.))
 
-        f = numpyro.deterministic('f', self.sample_latent_field(self.X, alpha, rho)[self.sym_tri_idx])
-        log_rate = (beta0 + f)[self.aid]
+        f = numpyro.deterministic('f', self.sample_latent_field(self.X, alpha, rho, symmetric=True))
+        log_rate = (beta0 + f)[self.ab_id]
 
         for col in self.X_cols:
-            log_rate += self.sample_log_delta(col, 'plate')[self.K_ids[col], self.aid]
+            with scope(prefix=col):
+                log_rate_x = self.sample_log_delta(col)
+                log_rate += log_rate_x[self.K_ids[col], self.a_id, self.b_id]
 
         log_cint = numpyro.deterministic('log_cint', log_rate + self.log_p)
         log_mu = log_cint + self.log_n

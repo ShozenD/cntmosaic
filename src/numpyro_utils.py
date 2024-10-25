@@ -1,5 +1,8 @@
+import os
+
 import jax
 from jax import random
+import jax.numpy as jnp
 from optax import linear_onecycle_schedule
 
 from numpyro.infer import MCMC, NUTS, SVI, Predictive
@@ -7,7 +10,7 @@ from numpyro.infer.elbo import Trace_ELBO
 from numpyro.infer.initialization import init_to_median, init_to_uniform
 from numpyro.optim import Adam
 
-def fit_mcmc(
+def run_inference_mcmc(
     seed: int,
     model: callable,
     num_warmup: int = 500,
@@ -19,19 +22,25 @@ def fit_mcmc(
 ):
   rng_key = random.PRNGKey(seed)
   kernel = NUTS(
-    model, target_accept_prob=target_accept_prob, init_strategy=init_strategy
+    model,
+    target_accept_prob=target_accept_prob,
+    init_strategy=init_strategy
   )
   mcmc = MCMC(
     kernel,
     num_warmup=num_warmup,
     num_samples=num_samples,
     num_chains=num_chains,
-    progress_bar=True,
+    progress_bar=False if 'NUMPYRO_SPHINXBUILD' in os.environ else True,
   )
   mcmc.run(rng_key, **model_kwargs)
+
+  extra_fields = mcmc.get_extra_fields()
+  print(f'Number of divergences: {jnp.sum(extra_fields['diverging'])}')
+
   return mcmc
 
-def fit_svi(
+def run_inference_svi(
     seed: int,
     model: callable,
     guide: callable,

@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from numpy.typing import NDArray
+from statsmodels.gam.smooth_basis import BSplines
 
 import jax
 import jax.numpy as jnp
@@ -131,9 +132,13 @@ class BRCStratified(BRC):
         self.plates_X = {c: numpyro.plate(c, self.K_dim[c], dim=-3) for c in self.X_cols}
 
         if smooth_type is None:
-            self.smooth_type = {col: 'plate' for col in self.X_cols}
+            self.smooth_type = {col: 'random' for col in self.X_cols}
         else:
             self.smooth_type = smooth_type
+            if 'bspline' in self.smooth_type.values():
+                self._make_bspline_bases()
+            if 'regularised_bspline' in self.smooth_type.values():
+                self._make_bspline_bases()
         
     def _preprocess_input(self):
         self.y = self.data['y'].values
@@ -147,8 +152,14 @@ class BRCStratified(BRC):
         self.K_ids = {col: self.data[col].astype(int).values for col in self.X_cols}
         self.K_dim = {col: self.data[col].nunique() for col in self.X_cols}
         self.log_pratio = {k: np.log(v) for k, v in self.pratio.items()}
+
+    def _make_bspline_bases(self):
+        x = jnp.arange(self.A)
+        self.bspline = BSplines(x, df=30, degree=3, include_intercept=False) # TODO: avoid hardcoding df
+        self.bspline_basis = self.bspline.basis
+        self.PHI = jnp.kron(self.bspline_basis, self.bspline_basis)
     
-    def sample_omega(self, key): # TODO: implementations for different regularised priors
+    def sample_omega(self, key):
         if self.smooth_type[key] == 'random':
             with self.plates_X[key], self.plate_a, self.plate_b:
                 omega = numpyro.sample('omega', dist.Normal(0, 1)) # omega.dim = (Kx, A, A)
@@ -161,6 +172,26 @@ class BRCStratified(BRC):
             x = jnp.arange(self.A)
             X, Y = jnp.ix_(x, x)
             omega = numpyro.deterministic('omega', a + b*(X + Y)) # omega.dim = (Kx, A, A)
+        
+        elif self.smooth_type[key] == 'bspline':
+            with self.plates_X[key]:
+                alpha = numpyro.sample('spline_intercept', dist.Normal(0, 1)) # alpha: (Kx, 1, 1)
+            with numpyro.plate('bspline', self.PHI.shape[1]):
+                beta = numpyro.sample('spline_coef', dist.Normal(0, 1)) # beta: (900,)
+            
+            g = (self.PHI @ beta).reshape(self.A, self.A) # g: (A, A)
+            omega = numpyro.deterministic('omega', alpha + g) # omega.dim = (Kx, A, A)
+        
+        elif self.smooth_type[key] == 'regularised_bspline':
+            global_shrink = numpyro.sample('omega_global_shrink', dist.HalfCauchy(1))
+            with self.plates_X[key]:
+                alpha = numpyro.sample('spline_intercept', dist.Normal(0, 1))
+            with numpyro.plate('bspline', self.PHI.shape[1]):
+                loc_shrink = numpyro.sample('omega_loc_shrink', dist.HalfCauchy(1))
+                beta = numpyro.sample('spline_coef', dist.Normal(0, global_shrink * loc_shrink))
+            
+            g = (self.PHI @ beta).reshape(self.A, self.A)
+            omega = numpyro.deterministic('omega', alpha + g)
             
         return omega
   

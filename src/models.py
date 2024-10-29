@@ -77,7 +77,7 @@ class BRC:
     def model(self):
         # Empty model for subclassing
         pass
-
+    
     def tree_flatten(self):
         children = ()
         aux_data = (

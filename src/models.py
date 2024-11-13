@@ -129,16 +129,16 @@ class BRCStratified(BRC):
         # Numpyro plates
         self.plate_a = numpyro.plate('age_part', self.A, dim=-2)
         self.plate_b = numpyro.plate('age_cnt', self.A, dim=-1)
-        self.plates_X = {c: numpyro.plate(c, self.K_dim[c], dim=-3) for c in self.X_cols}
+        self.plates_X = {c: numpyro.plate(c, self.K_dim[c]-1, dim=-3) for c in self.X_cols}
 
         if smooth_type is None:
             self.smooth_type = {col: 'random' for col in self.X_cols}
         else:
             self.smooth_type = smooth_type
             if 'bspline' in self.smooth_type.values():
-                self._make_bspline_bases()
+                model_utils.make_bspline_bases()
             if 'regularised_bspline' in self.smooth_type.values():
-                self._make_bspline_bases()
+                model_utils.make_bspline_bases()
         
     def _preprocess_input(self):
         self.y = self.data['y'].values
@@ -152,14 +152,9 @@ class BRCStratified(BRC):
         self.K_ids = {col: self.data[col].astype(int).values for col in self.X_cols}
         self.K_dim = {col: self.data[col].nunique() for col in self.X_cols}
         self.log_pratio = {k: np.log(v) for k, v in self.pratio.items()}
-
-    def _make_bspline_bases(self):
-        x = jnp.arange(self.A)
-        self.bspline = BSplines(x, df=30, degree=3, include_intercept=False) # TODO: avoid hardcoding df
-        self.bspline_basis = self.bspline.basis
-        self.PHI = jnp.kron(self.bspline_basis, self.bspline_basis)
     
     def sample_omega(self, key):
+        # TODO refactor code
         if self.smooth_type[key] == 'random':
             with self.plates_X[key], self.plate_a, self.plate_b:
                 omega = numpyro.sample('omega', dist.Normal(0, 1)) # omega.dim = (Kx, A, A)
@@ -175,12 +170,12 @@ class BRCStratified(BRC):
         
         elif self.smooth_type[key] == 'bspline':
             with self.plates_X[key]:
-                alpha = numpyro.sample('spline_intercept', dist.Normal(0, 1)) # alpha: (Kx, 1, 1)
+                alpha = numpyro.sample('spline_intercept', dist.Normal(0, 1)) # alpha: (Kx-1, 1, 1)
             with numpyro.plate('bspline', self.PHI.shape[1]):
                 beta = numpyro.sample('spline_coef', dist.Normal(0, 1)) # beta: (900,)
             
             g = (self.PHI @ beta).reshape(self.A, self.A) # g: (A, A)
-            omega = numpyro.deterministic('omega', alpha + g) # omega.dim = (Kx, A, A)
+            omega = numpyro.deterministic('omega', alpha + g) # omega.dim = (Kx-1, A, A)
         
         elif self.smooth_type[key] == 'regularised_bspline':
             global_shrink = numpyro.sample('omega_global_shrink', dist.HalfCauchy(1))
@@ -199,7 +194,7 @@ class BRCStratified(BRC):
         omega = self.sample_omega(key)
         log_delta = numpyro.deterministic(
             'log_delta',
-            jax.nn.log_softmax(omega, axis=0) - self.log_pratio[key][:,:,None]
+            model_utils.log_mvlogistic(omega, axis=0) - self.log_pratio[key][:,:,None]
         )
         return log_delta
 

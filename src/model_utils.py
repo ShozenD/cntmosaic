@@ -1,6 +1,9 @@
 import numpy as np
+import jax.numpy as jnp
+from jax import Array
+from jax.typing import ArrayLike
 from numpy.typing import NDArray
-
+from statsmodels.gam.smooth_basis import BSplines
 
 def non_nuisance_grid(A: int) -> NDArray:
     """
@@ -66,3 +69,22 @@ def transpose_vector_indices(rows: int, cols: int) -> NDArray:
 
 def to_square_matrix(x, N: int):
     return x.reshape(N, N, order='')
+
+def bspline_basis(x: NDArray,
+                  df: int=30,
+                  degree: int=3,
+                  include_intercept: bool=False):
+    bspline = BSplines(x, df=df, degree=degree, include_intercept=include_intercept)
+    bspline_basis = bspline.basis
+    PHI = np.kron(bspline_basis, bspline_basis)
+    
+    return PHI
+
+def mvlogistic(x: ArrayLike, axis: int) -> Array:
+    u = jnp.exp(x) / (1 + jnp.sum(jnp.exp(x), axis=axis, keepdims=True))
+    v = 1 - jnp.sum(u, axis=axis, keepdims=True)
+    
+    return jnp.concatenate([u, v], axis=axis)
+
+def log_mvlogistic(x: ArrayLike, axis: int) -> Array:
+    return jnp.log(mvlogistic(x, axis))

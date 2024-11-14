@@ -19,11 +19,13 @@ class BRC:
     def __init__(self,
                  data: pd.DataFrame,
                  M: int | list[int],
-                 C: float | list[float]=[1.5, 1.5]):
+                 C: float | list[float]=[1.5, 1.5],
+                 likelihood: str='negbin'):
         self.data = data.copy()
 
         self.M = M
         self.C = C
+        self.likelihood = likelihood
 
         self.A = self.data['age_part'].unique().size
         self._precompute_indices()
@@ -73,10 +75,6 @@ class BRC:
     def print_model_shape(self):
         tr = trace(seed(self.model, random.PRNGKey(0))).get_trace()
         print(numpyro.util.format_shapes(tr))
-
-    def model(self):
-        # Empty model for subclassing
-        pass
     
     def tree_flatten(self):
         children = ()
@@ -96,8 +94,9 @@ class BRCBasic(BRC):
     def __init__(self,
                  data: pd.DataFrame,
                  M: int | list[int],
-                 C: float | list[float]=[1.5, 1.5]):
-        super().__init__(data, M, C)
+                 C: float | list[float]=[1.5, 1.5],
+                 likelihood: str='negbin'):
+        super().__init__(data, M, C, likelihood)
 
     def model(self):
         beta0 = numpyro.sample('baseline', dist.Normal(0., 10.))
@@ -108,8 +107,14 @@ class BRCBasic(BRC):
         log_rate = numpyro.deterministic('log_rate', beta0 + f)
         log_cint = numpyro.deterministic('log_cint', log_rate + self.log_p)
         log_lam = log_cint + self.log_n
-
-        numpyro.sample('obs', dist.Poisson(rate=jnp.exp(log_lam[self.yid])), obs=self.y)
+        
+        if self.likelihood == 'poisson':
+            numpyro.sample('obs', dist.Poisson(rate=jnp.exp(log_lam[self.yid])), obs=self.y)
+        elif self.likelihood == 'negbin':
+            inv_varphi = numpyro.sample('inv_dispersion', dist.Exponential(1))
+            numpyro.sample('obs', dist.NegativeBinomial2(mean=jnp.exp(log_lam[self.yid]),
+                                                         concentration=1/inv_varphi),
+                           obs=self.y)
 
 # ==========
 # Statified Bayesian Rate Consistency Model
@@ -121,10 +126,11 @@ class BRCStratified(BRC):
                  pratio: dict,
                  M: int | list[int],
                  smooth_type: dict=None,
-                 C: float | list[float]=[1.5, 1.5]):
+                 C: float | list[float]=[1.5, 1.5],
+                 likelihood: str='negbin'):
         
         self.pratio = pratio
-        super().__init__(data, M, C)
+        super().__init__(data, M, C, likelihood)
 
         # Numpyro plates
         self.plate_a = numpyro.plate('age_part', self.A, dim=-2)
@@ -135,10 +141,11 @@ class BRCStratified(BRC):
             self.smooth_type = {col: 'random' for col in self.X_cols}
         else:
             self.smooth_type = smooth_type
+            x = np.linspace(start=0, stop=1, num=self.A)
             if 'bspline' in self.smooth_type.values():
-                model_utils.make_bspline_bases()
+                self.PHI = model_utils.bspline_basis(x)
             if 'regularised_bspline' in self.smooth_type.values():
-                model_utils.make_bspline_bases()
+                self.PHI = model_utils.bspline_basis(x)
         
     def _preprocess_input(self):
         self.y = self.data['y'].values
@@ -158,6 +165,7 @@ class BRCStratified(BRC):
         if self.smooth_type[key] == 'random':
             with self.plates_X[key], self.plate_a, self.plate_b:
                 omega = numpyro.sample('omega', dist.Normal(0, 1)) # omega.dim = (Kx, A, A)
+                
         
         elif self.smooth_type[key] == 'plate':
             with self.plates_X[key]:
@@ -213,5 +221,11 @@ class BRCStratified(BRC):
 
         log_cint = numpyro.deterministic('log_cint', log_rate + self.log_p)
         log_mu = log_cint + self.log_n
-
-        numpyro.sample('y', dist.Poisson(rate=jnp.exp(log_mu)), obs=self.y)
+        
+        if self.likelihood == 'poisson':
+            numpyro.sample('obs', dist.Poisson(rate=jnp.exp(log_mu)), obs=self.y)
+        elif self.likelihood == 'negbin':
+            inv_varphi = numpyro.sample('inv_dispersion', dist.Exponential(1))
+            numpyro.sample('obs', dist.NegativeBinomial2(mean=jnp.exp(log_mu),
+                                                         concentration=1/inv_varphi), 
+                           obs=self.y)

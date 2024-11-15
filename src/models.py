@@ -14,6 +14,7 @@ from numpyro.contrib.hsgp.laplacian import eigenfunctions
 from numpyro.contrib.hsgp.spectral_densities import diag_spectral_density_matern
 
 import model_utils
+import math_utils
 
 class BRC:
     def __init__(self,
@@ -184,17 +185,6 @@ class BRCStratified(BRC):
             
             g = (self.PHI @ beta).reshape(self.A, self.A) # g: (A, A)
             omega = numpyro.deterministic('omega', alpha + g) # omega.dim = (Kx-1, A, A)
-        
-        elif self.smooth_type[key] == 'regularised_bspline':
-            global_shrink = numpyro.sample('omega_global_shrink', dist.HalfCauchy(1))
-            with self.plates_X[key]:
-                alpha = numpyro.sample('spline_intercept', dist.Normal(0, 1))
-            with numpyro.plate('bspline', self.PHI.shape[1]):
-                loc_shrink = numpyro.sample('omega_loc_shrink', dist.HalfCauchy(1))
-                beta = numpyro.sample('spline_coef', dist.Normal(0, global_shrink * loc_shrink))
-            
-            g = (self.PHI @ beta).reshape(self.A, self.A)
-            omega = numpyro.deterministic('omega', alpha + g)
             
         return omega
   
@@ -202,7 +192,7 @@ class BRCStratified(BRC):
         omega = self.sample_omega(key)
         log_delta = numpyro.deterministic(
             'log_delta',
-            model_utils.log_mvlogistic(omega, axis=0) - self.log_pratio[key][:,:,None]
+            math_utils.log_inverse_ilr(omega, axis=0) - self.log_pratio[key][:,:,None]
         )
         return log_delta
 

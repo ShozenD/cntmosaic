@@ -1,0 +1,5 @@
+Simulations
+===========
+
+.. automodule:: simulations
+  :members:

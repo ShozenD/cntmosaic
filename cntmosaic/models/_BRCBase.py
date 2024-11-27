@@ -1,3 +1,4 @@
+import numpy as np
 from numpy.typing import NDArray
 
 from jax import random
@@ -9,7 +10,7 @@ from numpyro.handlers import seed, trace
 from numpyro.contrib.hsgp.laplacian import eigenfunctions
 from numpyro.contrib.hsgp.spectral_densities import diag_spectral_density_matern
 
-from ..model_utils import (
+from ..utils.model import (
   non_nuisance_grid,
   lower_tri_indices,
   symmetrize_from_lower_tri,
@@ -49,6 +50,8 @@ class BRCBase:
         
         self.set_hsgp_params()
         self.A = self.data['age_part'].max()
+        self._precompute_indices()
+        self._precompute_fine_age_grid()
     
     def set_hsgp_params(self,
                         M: int | list[int]=None,
@@ -78,6 +81,31 @@ class BRCBase:
             Population age distribution.
         """
         self.age_dist = age_dist
+        
+    def _precompute_fine_age_grid(self):
+        """Precompute the age grid.
+        
+        The default age grid is the difference in age by age parameterisation.
+        
+        References
+        ----------
+        Shozen Dan et al., "Estimating fine age structure and time trends in
+        human contact patterns from coarse contact data: The Bayesian rate consistency model",
+        PLoS Computational Biology. 2023
+        
+        Vendendijck et al., "Cohort-based smoothing methods for age-specific contact rates",
+        BioRxiv. 2022
+        """
+        X = non_nuisance_grid(self.A)
+        ltri_idx = lower_tri_indices(self.A)
+        Xn = (X - X.mean(axis=0)) / X.std(axis=0)
+        self.L = list(np.abs(Xn).max(axis=0) * self.C)
+        self.X = Xn[ltri_idx]
+    
+    def _precompute_indices(self):
+        """Precompute the indices for symmetrizing and transposing the contact matrix."""
+        self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
+        self.tran_vec_idx = transpose_vector_indices(self.A, self.A)
     
     def print_model_shape(self):
         """Print the shapes of the model parameters."""

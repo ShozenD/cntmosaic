@@ -1,5 +1,7 @@
-from ._BRCBase import BRCBase
+from ._BRC import BRC
+from ._BRCFineAge import BRCFineAge
 
 __all__ = [
-    'BRCBase'
+    'BRC'
+    'BRCFineAge'
 ]

@@ -2,13 +2,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from jax import random
-import jax.numpy as jnp
 import pandas as pd
 import numpyro
-from numpyro import distributions as dist
 from numpyro.handlers import seed, trace
-from numpyro.contrib.hsgp.laplacian import eigenfunctions
-from numpyro.contrib.hsgp.spectral_densities import diag_spectral_density_matern
 
 from ..utils.model import (
   non_nuisance_grid,
@@ -17,7 +13,7 @@ from ..utils.model import (
   transpose_vector_indices
 )
 
-class BRCBase:
+class BRC:
     """Base class for the Bayesian Rate Consistency model.
     
     Parameters

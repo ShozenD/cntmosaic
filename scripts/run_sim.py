@@ -2,7 +2,7 @@ import sys
 import time
 from pathlib import Path
 root_dir = Path(__file__).parent.parent
-sys.path.append(str(root_dir/'src'))
+sys.path.append(str(root_dir/'cntmosaic'))
 
 import pickle
 import pandas as pd
@@ -10,8 +10,11 @@ import pandas as pd
 import numpyro
 from numpyro_utils import run_inference_mcmc
 from models import BRCStratified
-from simulations import (
+from simulation import (
   ModelEvaluatorMCMC,
+  simulate_ses,
+  load_contact_patterns,
+  load_age_distribution,
   plot_rates_matrix,
   plot_rates_marginal
 )
@@ -28,12 +31,14 @@ def run(cfg: DictConfig) -> None:
   output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
 
   # Load data
-  log.info('Loading data')
-  with open(root_dir/'data/sim/stratified2/train.pkl', 'rb') as f:
-    data_train = pickle.load(f)
-
-  with open(root_dir/'data/sim/stratified2/eval.pkl', 'rb') as f:
-    data_eval = pickle.load(f)
+  log.info('Simulating data')
+  patterns = load_contact_patterns(repo_path=cfg.data.patterns_repo_path,
+                                   country=cfg.data.country,
+                                   level=cfg.data.level)
+  age_dist = load_age_distribution(repo_path=cfg.data.patterns_repo_path,
+                                   country=cfg.data.country,
+                                   level=cfg.data.level)
+  data_train, data_eval = simulate_ses(patterns, age_dist.P.values)
 
   # Prepare data
   log.info('Preparing data')

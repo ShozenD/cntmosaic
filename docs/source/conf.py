@@ -15,6 +15,7 @@ release = '0.1'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+  'sphinx.ext.napoleon',
   'sphinx.ext.autodoc',
 ]
 
@@ -32,4 +33,4 @@ html_static_path = ['_static']
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path('../../', 'cntmosaic').resolve()))
+sys.path.insert(0, str(Path('../../').resolve()))

@@ -1,5 +1,5 @@
 Simulations
 ===========
 
-.. automodule:: simulations
+.. automodule:: cntmosaic.sim
   :members:

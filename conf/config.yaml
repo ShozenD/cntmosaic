@@ -2,6 +2,11 @@ defaults:
   - mcmc: short
   - _self_
 
+data:
+  patterns_repo_path: /Users/shozendan/Imperial/0_Research/mixing-patterns
+  country: United_States
+  level: country
+
 hydra:
   run:
     dir: /rds/general/user/sd121/home/high_res_brc_outputs/sim/${hydra.job.name}_${now:%Y-%m-%d_%H-%M-%S}

@@ -8,7 +8,6 @@ from numpyro import distributions as dist
 from ._BRC import BRC
 from ..utils.prior import HSGP
 
-@jax.tree_util.register_pytree_node_class
 class BRCFineAge(BRC):
     """Bayesian Rate Consistency model with fine age inputs.
     

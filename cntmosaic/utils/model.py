@@ -1,6 +1,5 @@
 import numpy as np
 from numpy.typing import NDArray
-from statsmodels.gam.smooth_basis import BSplines
 
 def non_nuisance_grid(A: int) -> NDArray:
     """
@@ -91,13 +90,3 @@ def transpose_vector_indices(rows: int, cols: int) -> NDArray:
     original_indices = np.arange(rows * cols).reshape((rows, cols), order='F')
     transposed_indices = original_indices.T.flatten(order='F')
     return transposed_indices
-
-def bspline_basis(x: NDArray,
-                  df: int=30,
-                  degree: int=3,
-                  include_intercept: bool=False):
-    bspline = BSplines(x, df=df, degree=degree, include_intercept=include_intercept)
-    bspline_basis = bspline.basis
-    PHI = np.kron(bspline_basis, bspline_basis)
-    
-    return PHI

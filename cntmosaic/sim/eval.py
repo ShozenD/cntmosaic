@@ -5,7 +5,7 @@ from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 import arviz as az
 from plotnine import *
 from mizani.formatters import scientific_format
-
+    
 class ModelEvaluatorMCMC:
     def __init__(self, mcmc, model, data_eval: pd.DataFrame):
         self.mcmc = mcmc
@@ -139,91 +139,3 @@ class ModelEvaluatorMCMC:
             'mae': mean_absolute_error(df_eval['rate'], df_eval['estimate']),
             'coverage': np.mean(((df_eval['lower'] <= df_eval['rate']) & (df_eval['upper'] >= df_eval['rate']))*100)
         }, index=[0])
-    
-def plot_rates_matrix(x: pd.DataFrame, path: str, filename: str='rates.pdf'):
-  x = pd.melt(x,
-              id_vars=['subgroup', 'age_part', 'age_cnt'],
-              value_vars=['rate', 'estimate'],
-              var_name='type')
-
-  plot = (
-    ggplot(x, aes(x='age_part', y='age_cnt')) +
-    geom_tile(aes(fill='value')) +
-    facet_wrap('~ subgroup + type') +
-    scale_x_continuous(expand=(0,0)) +
-    scale_y_continuous(expand=(0,0)) +
-    scale_fill_distiller(type='div',
-                         palette='Spectral',
-                         labels=scientific_format(digits=2),
-                         direction=-1) +
-    labs(x='Age of contacting individual',
-         y='Age of contact',
-         fill='rate') +
-    theme_bw() +
-    theme(strip_background=element_blank())
-  )
-    
-  plot.save(Path(path) / filename, width=6.4, height=5.9)
-  
-def plot_rates_marginal(x: pd.DataFrame, path: str, filename: str='rates_marginal.pdf'):
-  plot = (
-    ggplot(x, aes(x='age_part', y='estimate')) +
-    geom_line(color='#58508d') +
-    geom_line(aes(y='rate'), color='#de425b') +
-    geom_ribbon(aes(ymin='lower', ymax='upper'), alpha=0.3, fill='#58508d') +
-    facet_wrap('~subgroup') +
-    labs(x='Age of contacting individual', y='Rate') +
-    scale_x_continuous(expand=(0,0)) +
-    scale_y_continuous(labels=scientific_format(digits=2)) +
-    theme_bw() +
-    theme(strip_background=element_blank())
-  )
-  plot.save(Path(path) / filename, width=6.4, height=4.8)
-  
-def plot_base_patterns(patterns: dict):
-    """Plots the base contact patterns used to construct synthetic contact matrices.
-    
-    :param patterns: Dictionary containing contact patterns for different settings
-    
-    :return: Plotnine plot
-    """
-    # Prepare data for plotnine
-    data = []
-    for setting, matrix in patterns.items():
-        df = pd.DataFrame(matrix)
-        df = df.reset_index().melt(id_vars='index', var_name='part_age', value_name='y')
-        df['part_age'] = df['part_age'].astype(int)
-        df.rename(columns={'index': 'cnt_age'}, inplace=True)
-        df['y'] = (df['y'] - np.min(df['y'])) / (np.max(df['y']) - np.min(df['y']))
-        
-        df['Setting'] = setting.capitalize()
-        data.append(df)
-
-    # Concatenate all data into a single DataFrame
-    data = pd.concat(data, ignore_index=True)
-    data['Setting'] = pd.Categorical(data['Setting'], categories=['Household', 'School', 'Work', 'Community'])
-
-    # Create the plot
-    plot = (
-        ggplot(data, aes(x='part_age', y='cnt_age')) +
-        geom_tile(aes(fill='y')) +
-        scale_fill_cmap('Spectral_r') +
-        scale_x_continuous(expand=[0, 0]) +
-        scale_y_continuous(expand=[0, 0]) +
-        facet_wrap('~Setting', nrow=1) +
-        labs(
-            x="Age of Contacting Individual",
-            y="Age of Contact"
-        ) +
-        theme_bw() +
-        theme(
-            aspect_ratio=1,
-            strip_background=element_blank(),
-            strip_text=element_text(size=9),
-            axis_text=element_text(size=8),
-            axis_title=element_text(size=9),
-            legend_position="none",
-            figure_size=(10, 3)
-        )
-    )
-    return plot

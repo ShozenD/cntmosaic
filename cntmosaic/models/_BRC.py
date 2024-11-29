@@ -24,26 +24,25 @@ from ..utils.inference import (
 )
 
 class BRC(ABC):
-	"""
- 	Base class for the Bayesian Rate Consistency model.
-	
-	Parameters
-	----------
-	data: DataFrame
-		DataFrame containing the contact data. Must contain the columns 'y', 'age_part', and 'age_cnt.
-		'y' is the number of contacts between 'age_part' and 'age_cnt'.
-		'age_part' is the age of the contactor.
-		'age_cnt' is the age of the contacted.
-		
-	likelihood: str, default='negbin'
-		Likelihood function to use.
-		
-	References
-	----------
-	
-	Shozen Dan et al., "Estimating fine age structure and time trends in 
-	human contact patterns from coarse contact data: The Bayesian rate consistency model",
-	PLoS Computational Biology. 2023
+	"""Base class for the Bayesian Rate Consistency model.
+ 
+    Parameters
+    ----------
+    data: DataFrame
+        DataFrame containing the contact data. Must contain the columns 'y', 'age_part', and 'age_cnt.
+        'y' is the number of contacts between 'age_part' and 'age_cnt'.
+        'age_part' is the age of the contactor.
+        'age_cnt' is the age of the contacted.
+    age_dist: NDArray
+        The population age distribution.
+    likelihood: str, default='negbin'
+        Likelihood function to use.
+    
+    References
+    ----------
+    Shozen Dan et al., "Estimating fine age structure and time trends in
+    human contact patterns from coarse contact data: The Bayesian rate consistency model",
+    PLoS Computational Biology. 2023
 	"""
   
 	def __init__(self,

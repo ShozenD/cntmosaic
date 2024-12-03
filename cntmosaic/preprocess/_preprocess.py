@@ -82,6 +82,8 @@ def make_train_data(data: pd.DataFrame,
     df['y'] = df['y'].fillna(0)
     df['y'] = df['y'].astype(int)
     df['N'] = df['N'].astype(int)
+    df['age_part'] = df['age_part'].astype(int)
+    df['age_cnt'] = df['age_cnt'].astype(int)
     
     # Bring ['age_part', 'age_cnt'] to the front
     age_part = df.pop('age_part')

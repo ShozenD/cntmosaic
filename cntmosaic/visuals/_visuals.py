@@ -2,7 +2,7 @@ import numpy as np
 from numpy.typing import NDArray
 import matplotlib.pyplot as plt
 
-def plot_cint_matrix(
+def plot_contact_matrix(
     ax,
     cint: NDArray,
     title: str = 'True Contact Intensity',
@@ -78,13 +78,14 @@ def plot_cint_matrix(
 
     return im
 
-def plot_cint_marginal(
+def plot_contact_marginal(
     ax,
     mcint,
     mcint_lb: NDArray | None = None,
     mcint_ub: NDArray | None = None,
     color: str = '#de425b',
-    label: str | None = None
+    title: str = None,
+    **kwargs
 ):
     """Plot the marginal contact intensity on a given axis.
     
@@ -100,17 +101,16 @@ def plot_cint_marginal(
         Upper bound of the marginal contact intensity. Default is None.
     color : str, optional
         Color of the plot. Default is '#de425b'.
-    label : str or None, optional
-        Label for the plot. If None, no label is added. Default is None.
+    title : str or None, optional
+        Title of the plot. Default is None.
+    **kwargs
+        Additional keyword arguments to pass to the plot function.
     
     Returns
     -------
     None
     """
-    if label is not None:
-        ax.plot(mcint, c=color, label=label)
-    else:
-        ax.plot(mcint, c=color)
+    ax.plot(mcint, c=color, **kwargs)
         
     if mcint_lb is not None and mcint_ub is not None:
         ax.fill_between(
@@ -121,6 +121,8 @@ def plot_cint_marginal(
 			alpha=0.2
 		)
         
+    if title:
+        ax.set_title(title, fontsize=9, loc='left')
     ax.set_xlabel('Age of contacting individual', fontsize=8)
     ax.set_ylabel('Intensity', fontsize=8)
     ax.tick_params(axis='both', which='major', labelsize=8)

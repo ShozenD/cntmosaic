@@ -1,5 +1,6 @@
 __all__ = [
     "models",
-    "utils",
-    "sim"
+    "preprocess",
+    "sim",
+    "visuals"
 ]

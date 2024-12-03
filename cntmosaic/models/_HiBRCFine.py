@@ -7,21 +7,21 @@ import numpyro
 from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
 
-from ._BRCFine import BRCFine
-from ._priors import HSGP, TensorSplines
+from ._BRCfine import BRCfine
+from ._priors import TensorSplines, TensorPSplines
 from ._math import log_inverse_alr, log_inverse_ilr
 
 def set_default_smoother_types(X_vars: list, smoother_types: dict | None):
     if smoother_types is None:
-        smoother_types = {k: 'tspline' for k in X_vars}
+        smoother_types = {k: 'tpspline' for k in X_vars}
     else:
         for x in X_vars:
             if x not in smoother_types.keys():
-                smoother_types[x] = 'tspline'
+                smoother_types[x] = 'tpspline'
                 
     return smoother_types
 
-class HiBRCFine(BRCFine):
+class HiBRCfine(BRCfine):
     """High-resolution Bayesian Rate Consistency model with fine age inputs.
     
     Parameters
@@ -52,41 +52,49 @@ class HiBRCFine(BRCFine):
                  likelihood: str='negbin'):
         
         super().__init__(data, age_dist, offset, likelihood)
-        self.age_dist_props = age_dist_props
-        self.smoother_types = smoother_types
-        
-        self._preprocess_input()
-        self._define_plates() # Define numpyro plates
-        self._get_idx() # Get indices for age and stratification variables
-        
-        if 'tspline' in self.smoother_types.values():
-            self.tspline = TensorSplines(np.arange(self.A))
-    
-    def _define_plates(self):
-        """Define numpyro plates for age and stratification variables."""
-        self.plate_a = numpyro.plate('age_part', self.A, dim=-2)
-        self.plate_b = numpyro.plate('age_cnt', self.A, dim=-1)
-        self.plates_X = {x: numpyro.plate(f'plate_{x}', self.X_dims[x]-1, dim=-3) for x in self.X_vars}
-        
-    def _get_idx(self):
-        self.aid = self.data['age_part'].values
-        self.bid = self.data['age_cnt'].values
-        self.X_ids = {c: self.data[c].cat.codes.values for c in self.X_vars} 
-        
-    def _preprocess_input(self):
+            
         self.y = self.data['y'].values
         self.log_N = jnp.log(self.data['N'].values)
         self.log_P = jnp.log(self.age_dist)[jnp.newaxis,:]
         self.X_vars = self.data.select_dtypes(include='category').columns
         self.X_dims = {x: len(self.data[x].cat.categories) for x in self.X_vars}
         
-        self.log_age_dist_props = {k: np.log(v).T for k, v in self.age_dist_props.items()}
+        # Compute the log of the age distribution proportions
+        self.log_age_dist_props = {k: np.log(v).T for k, v in age_dist_props.items()}
         
-        self.smoother_types = set_default_smoother_types(self.X_vars, self.smoother_types)
-    
+        # Set default smoother types
+        self.smoother_types = set_default_smoother_types(self.X_vars, smoother_types)
+        if 'tspline' in self.smoother_types.values():
+            self.tspline = TensorSplines(np.arange(self.A), n_knots=27, degree=3)
+        if 'tpspline' in self.smoother_types.values():
+            self.tpspline = TensorPSplines(np.arange(self.A), n_knots=27, degree=3, neighborhood=8)
+        
+        # Setup indices
+        self.aid = self.data['age_part'].values
+        self.bid = self.data['age_cnt'].values
+        self.X_ids = {c: self.data[c].cat.codes.values for c in self.X_vars}
+        
+    def set_spline_params(self, n_knots: int=27, degree: int=3):
+        """Set the parameters for the splines.
+        
+        Parameters
+        ----------
+        n_knots: int, default=27
+            The number of knots to use.
+        degree: int, default=3
+            The degree of the B-splines.
+        """
+        self.n_knots = n_knots
+        self.degree = degree
+        
+        #TODO: Implement for multiple variables
+        
     def sample_omega(self, var):
         if self.smoother_types[var] == 'tspline':
             omega = self.tspline.sample(self.X_dims[var]-1)
+            return omega
+        elif self.smoother_types[var] == 'tpspline':
+            omega = self.tpspline.sample(self.X_dims[var]-1)
             return omega
     
     def sample_log_delta(self, var):

@@ -1,8 +1,9 @@
 from ._BRC import BRC
-from ._BRCFine import BRCFine
-from ._HiBRCFine import HiBRCFine
+from ._BRCfine import BRCfine
+from ._HiBRCfine import HiBRCfine
 
 __all__ = [
     'BRC'
-    'BRCFine'
+    'BRCfine'
+    'HiBRCfine'
 ]

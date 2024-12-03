@@ -9,6 +9,8 @@ from numpyro import distributions as dist
 from numpyro.contrib.hsgp.laplacian import eigenfunctions
 from numpyro.contrib.hsgp.spectral_densities import diag_spectral_density_matern
 
+from ._utils import gmrf_adjacency_matrix
+
 class HSGP:
     """Sample from a Hilbert space approximate Gaussian process (HSGP).
     
@@ -71,27 +73,48 @@ class HSGP:
             return f
   
 class TensorSplines:
+    """Sample from a tensor product of B-splines.
+    
+    Parameters
+    ----------
+    x: NDArray
+        The input data.
+    df: int
+        The degrees of freedom. The number of basis functions is df - 1.
+    degree: int
+        The degree of the B-splines.
+    
+    Attributes
+    ----------
+    basis: NDArray
+        The tensor product of B-splines.
+    
+    Examples
+    --------
+    >>> x = np.linspace(0, 1, 100)
+    >>> ts = TensorSplines(x, df=30, degree=3)
+    """
     def __init__(self,
                  x: NDArray,
-                 df: int=30,
+                 n_knots: int=30,
                  degree: int=3):
         self.x = x
         self.A = len(x)
-        self.df = df
+        self.n_knots = n_knots
         self.degree = degree
         self.compute_basis()
     
     def tspline_basis(self,
                       x: NDArray,
-                      df: int=30,
-                      degree: int=3,
-                      include_intercept: bool=False):
-        bs = BSplines(x, df=df, degree=degree, include_intercept=include_intercept)
+                      n_knots: int=30,
+                      degree: int=3):
+        bs = BSplines(x, df=n_knots+degree, degree=degree, include_intercept=False)
         
         return np.kron(bs.basis, bs.basis)
     
     def compute_basis(self):
-        self.basis = self.tspline_basis(self.x, df=self.df, degree=self.degree).T
+        self.basis = self.tspline_basis(self.x, self.n_knots, self.degree)
+        self.basis_transpose = self.basis.T
         
     def sample(self, K: int):
         plate_x = numpyro.plate('x', K, dim=-2)
@@ -101,4 +124,47 @@ class TensorSplines:
         with plate_x, plate_tspline:
             beta = numpyro.sample('tspline_coef', dist.Normal(0, 0.1))
         
-        return (alpha + beta @ self.basis).reshape((K, self.A, self.A))
+        return (alpha + beta @ self.basis_transpose).reshape((K, self.A, self.A))
+    
+class TensorPSplines(TensorSplines):
+    """Sample from a tensor product of P-splines.
+    
+    Parameters
+    ----------
+    x: NDArray
+        The input data.
+    df: int
+        The degrees of freedom. The number of basis functions is df - 1.
+    degree: int
+        The degree of the B-splines.
+    neighborhood: int
+        The number of neighbors to consider in the GMRF. Default is 4.
+    cond_prec: float
+        The conditional precision of the GMRF. Default is 0.1.    
+        
+    Examples
+    --------
+    
+    >>> x = np.linspace(0, 1, 100)
+    >>> tps = TensorPSplines(x, df=30, degree=3)
+    """
+    def __init__(self,
+                 x: NDArray,
+                 n_knots: int=30,
+                 degree: int=3,
+                 neighborhood: int=4,
+                 cond_prec: float=10):
+        super().__init__(x, n_knots, degree)
+        self.cond_prec = cond_prec
+        self.adj_matrix = gmrf_adjacency_matrix(n_knots+degree-1,
+                                                n_knots+degree-1,
+                                                neighborhood)
+        
+    def sample(self, K: int):
+        with numpyro.plate('x_alpha', K, dim=-2):
+            alpha = numpyro.sample('tpspline_intercept', dist.Normal(0, 0.1))
+        with numpyro.plate('x_beta', K, dim=-1):
+            beta = numpyro.sample('tpspline_coef', dist.CAR(0, 0.999, self.cond_prec, self.adj_matrix, is_sparse=True))
+        
+        return (alpha + beta @ self.basis_transpose).reshape((K, self.A, self.A))
+    

@@ -37,8 +37,11 @@ source .venv/bin/activate
 ```
 Install the dependencies using pip
 ```bash
-pip install -r requirements.txt
+pip install -r requirements_hpc.txt
 ```
+> [!IMPORTANT]  
+> To enable GPU computations, you may need to explicitly tell pip to install a version of JAX with CUDA.
+> For specific instructions, visit the [JAX GitHub page](https://github.com/jax-ml/jax).
 
 #### Enabling JupyterHub
 To enable JupyterHub, a custom conda environment must be created. First, login to the HPC via SSH and load the module

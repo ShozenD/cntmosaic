@@ -1,0 +1,5 @@
+seed: 0
+device_count: 4
+num_warmup: 500
+num_samples: 2000
+num_chains: 4

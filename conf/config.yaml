@@ -1,5 +1,5 @@
 defaults:
-  - mcmc: short
+  - mcmc: medium
   - _self_
 
 data:

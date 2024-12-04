@@ -5,7 +5,7 @@ OUTPUT_DIR="/rds/general/user/sd121/home/high_res_brc_outputs"
 # Main script
 cat > "$OUTPUT_DIR/run_sim_gpu.pbs" <<EOF
 #!/bin/bash
-#PBS -l select=1:ncpus=4:mem=64gb:ngpus=1
+#PBS -l select=1:ncpus=4:mem=64gb:ngpus=1:gpu_type=RTX6000
 #PBS -l walltime=08:00:00
 
 module load tools/prod

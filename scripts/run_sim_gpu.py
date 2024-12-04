@@ -13,6 +13,7 @@ import seaborn as sns
 
 import jax
 import numpyro
+numpyro.set_platform('gpu')
 numpyro.set_host_device_count(4)
 
 from cntmosaic.sim import load_base_patterns, load_age_distribution, simulate_ses

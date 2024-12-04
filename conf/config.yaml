@@ -3,7 +3,7 @@ defaults:
   - _self_
 
 data:
-  patterns_repo_path: /Users/shozendan/Imperial/0_Research/mixing-patterns
+  patterns_repo_path: /rds/general/user/sd121/home/mixing-patterns
   country: United_States
   level: country
 

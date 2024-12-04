@@ -27,7 +27,8 @@ The following instructions are for setting up the analysis environment on the [I
 Login to the HPC via SSH and cd into the project directory. Load a recent version of the SciPy-bundle.
 ```bash
 cd high_res_brc
-module load SciPy-bundle/2023.07-gfbf-2023a
+module load tools/prod
+module load Python/3.10.8-GCCcore-12.2.0
 ```
 Create a virtual environment and activate it
 ```bash

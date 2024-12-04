@@ -5,7 +5,11 @@ from jax import random
 from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 import arviz as az
 from plotnine import *
-from sklearn.metrics import root_mean_squared_error, mean_absolute_error
+from sklearn.metrics import (
+    root_mean_squared_error,
+    mean_absolute_error,
+    mean_absolute_percentage_error
+)
 
 def compute_metrics(y_true, y_est, y_low, y_high):
     """
@@ -13,8 +17,9 @@ def compute_metrics(y_true, y_est, y_low, y_high):
     """
     rmse = root_mean_squared_error(y_true, y_est)
     mae = mean_absolute_error(y_true, y_est)
+    mape = mean_absolute_percentage_error(y_true, y_est)
     coverage = np.mean((y_true >= y_low) & (y_true <= y_high)) * 100
-    return rmse, mae, coverage
+    return rmse, mae, mape, coverage
 
 def process_variable_metrics(var, data_eval, data_est):
     """
@@ -22,10 +27,17 @@ def process_variable_metrics(var, data_eval, data_est):
     """
     metrics = []
     for cat, values in data_est[var].items():
-        rmse, mae, coverage = compute_metrics(
+        rmse, mae, mape, coverage = compute_metrics(
             data_eval[var][cat], values[1], values[0], values[2]
         )
-        metrics.append({'var': var, 'cat': cat, 'rmse': rmse, 'mae': mae, 'coverage': coverage})
+        metrics.append({
+            'var': var,
+            'cat': cat,
+            'rmse': rmse,
+            'mae': mae,
+            'mape': mape,
+            'coverage': coverage
+        })
 
     # Compute overall metrics for the variable
     y_true = np.vstack([data_eval[var][cat] for cat in data_est[var].keys()])
@@ -33,8 +45,15 @@ def process_variable_metrics(var, data_eval, data_est):
     y_low = np.vstack([values[0] for values in data_est[var].values()])
     y_high = np.vstack([values[2] for values in data_est[var].values()])
 
-    rmse, mae, coverage = compute_metrics(y_true, y_est, y_low, y_high)
-    metrics.append({'var': var, 'cat': 'all', 'rmse': rmse, 'mae': mae, 'coverage': coverage})
+    rmse, mae, mape, coverage = compute_metrics(y_true, y_est, y_low, y_high)
+    metrics.append({
+        'var': var,
+        'cat': 'all',
+        'rmse': rmse,
+        'mae': mae,
+        'mape': mape,
+        'coverage': coverage
+    })
 
     return metrics
 
@@ -54,8 +73,15 @@ def aggregate_metrics(data_eval, data_est):
     y_low = np.vstack([values[0] for var in data_est.keys() for values in data_est[var].values()])
     y_high = np.vstack([values[2] for var in data_est.keys() for values in data_est[var].values()])
 
-    rmse, mae, coverage = compute_metrics(y_true, y_est, y_low, y_high)
-    all_metrics.append({'var': 'all', 'cat': 'all', 'rmse': rmse, 'mae': mae, 'coverage': coverage})
+    rmse, mae, mape, coverage = compute_metrics(y_true, y_est, y_low, y_high)
+    all_metrics.append({
+        'var': 'all',
+        'cat': 'all',
+        'rmse': rmse,
+        'mae': mae,
+        'mape': mape,
+        'coverage': coverage
+    })
 
     # Combine into a DataFrame
     return pd.DataFrame(all_metrics)
@@ -65,17 +91,21 @@ class ModelEvaluator(ABC):
         self.model = model
         self.cint_eval, self.mcint_eval = data_eval
         self.prng_key = random.PRNGKey(0)
-    
+        
     @abstractmethod
-    def get_post_cint(self):
+    def get_predictive(self):
         pass
     
     @abstractmethod
-    def summary_post_cint(self):
+    def get_pred_cint(self):
         pass
     
     @abstractmethod
-    def summary_post_mcint(self):
+    def summary_pred_cint(self):
+        pass
+    
+    @abstractmethod
+    def summary_pred_mcint(self):
         pass
     
     
@@ -83,49 +113,65 @@ class ModelEvaluatorSVI(ModelEvaluator):
     def __init__(self, model, data_eval: pd.DataFrame):
         super().__init__(model, data_eval)
         
-    def get_post_cint(self):
-        post = self.model.posterior_predictive_svi(self.prng_key, self.model.guide)
-        log_rate = post['log_rate']
-        post_cint = {}
-        for name, site in post.items():
+    def get_predictive(self):
+        self.pred = self.model.posterior_predictive_svi(self.prng_key, self.model.guide)
+        
+    def get_pred_cint(self):
+        if not hasattr(self, 'post'):
+            self.get_predictive()
+
+        log_rate = self.pred['log_rate']
+        pred_cint = {}
+        for name, site in self.pred.items():
             if 'log_delta' in name:
                 var = name.split('/')[0]
                 cat = self.model.data[var].cat.categories
-                post_cint[var] = {
+                pred_cint[var] = {
                     cat[i]: np.exp(log_rate[:,None,:,:] + site + self.model.log_P[None,None,:,:])[:,i,:,:]
                     for i in range(len(cat))
                 }
-        self.post_cint = post_cint
-        
-    def summary_post_cint(self, probs: tuple=(0.025, 0.5, 0.975)):
-        if not hasattr(self, 'post_cint'):
-            self.get_post_cint()
+        self.pred_cint = pred_cint
+    
+    def summary_rate(self, probs: tuple=(0.025, 0.5, 0.975)):
+        if not hasattr(self, 'pred'):
+            self.pred = self.get_predictive()
             
-        if not hasattr(self, 'sum_post_mcint'):
-            self.sum_post_cint = {
+        if not hasattr(self, 'sum_pred_rate'):
+            self.sum_pred_rate = np.quantile(
+                np.exp(self.pred['log_rate']),
+                probs,
+                axis=0
+            )
+        
+    def summary_cint(self, probs: tuple=(0.025, 0.5, 0.975)):
+        if not hasattr(self, 'pred_cint'):
+            self.get_pred_cint()
+            
+        if not hasattr(self, 'sum_pred_mcint'):
+            self.sum_pred_cint = {
                 var: {
                     name: np.quantile(value, probs, axis=0)
                     for name, value in cat.items()
                 }
-                for var, cat in self.post_cint.items()
+                for var, cat in self.pred_cint.items()
             }
             
-        return self.sum_post_cint
+        return self.sum_pred_cint
             
-    def summary_post_mcint(self, probs: tuple=(0.025, 0.5, 0.975)):
-        if not hasattr(self, 'post_cint'):
-            self.get_post_cint()
+    def summary_mcint(self, probs: tuple=(0.025, 0.5, 0.975)):
+        if not hasattr(self, 'pred_cint'):
+            self.get_pred_cint()
             
-        if not hasattr(self, 'sum_post_mcint'):
-            self.sum_post_mcint = {
+        if not hasattr(self, 'sum_pred_mcint'):
+            self.sum_pred_mcint = {
                 var: {
                     name: np.quantile(value.sum(axis=-1), probs, axis=0)
                     for name, value in cat.items()
                 }
-                for var, cat in self.post_cint.items()
+                for var, cat in self.pred_cint.items()
             }
         
-        return self.sum_post_mcint
+        return self.sum_pred_mcint
  
     def evaluate_cint(self):
         return aggregate_metrics(self.cint_eval, self.summary_post_cint())

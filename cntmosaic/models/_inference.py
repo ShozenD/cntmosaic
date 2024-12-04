@@ -35,7 +35,7 @@ def run_inference_mcmc(
   mcmc.run(prng_key, **model_kwargs)
 
   extra_fields = mcmc.get_extra_fields()
-  print(f'Number of divergences: {jnp.sum(extra_fields['diverging'])}')
+  print(f"Number of divergences: {jnp.sum(extra_fields['diverging'])}")
 
   return mcmc
 

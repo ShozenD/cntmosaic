@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 from pathlib import Path
@@ -13,7 +14,7 @@ import seaborn as sns
 
 import jax
 import numpyro
-numpyro.set_host_device_count(4)
+numpyro.set_host_device_count(os.cpu_count())
 
 from cntmosaic.sim import load_base_patterns, load_age_distribution, simulate_ses
 from cntmosaic.preprocess import make_train_data
@@ -64,7 +65,7 @@ def run(cfg: DictConfig) -> None:
   end = time.time()
   elapsed = (end - start)/60
   log.info(f'MCMC run time: {elapsed:.2f} minutes')
-  pd.DataFrame({'time': elapsed}, index=0).to_csv(output_dir/'mcmc_time.csv', index=False)
+  pd.DataFrame({'time': elapsed}, index=[0]).to_csv(output_dir/'mcmc_time.csv', index=False)
   
   log.info('Saving model')
   with open(output_dir/'model.pkl', 'wb') as f:

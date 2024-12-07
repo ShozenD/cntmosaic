@@ -11,12 +11,18 @@ import pandas as pd
 
 import matplotlib.pyplot as plt
 import seaborn as sns
+sns.set_theme(style='whitegrid', context='paper')
 
 import jax
 import numpyro
 numpyro.set_host_device_count(os.cpu_count())
 
-from cntmosaic.sim import load_base_patterns, load_age_distribution, simulate_ses
+from cntmosaic.sim import (
+  load_base_patterns,
+  load_age_distribution,
+  simulate_ses,
+  ModelEvaluatorMCMC
+)
 from cntmosaic.preprocess import make_train_data
 from cntmosaic.models import HiBRCfine
 from cntmosaic.visuals import plot_contact_matrix, plot_contact_marginal
@@ -67,24 +73,29 @@ def run(cfg: DictConfig) -> None:
   log.info(f'MCMC run time: {elapsed:.2f} minutes')
   pd.DataFrame({'time': elapsed}, index=[0]).to_csv(output_dir/'mcmc_time.csv', index=False)
   
-  log.info('Saving model')
-  with open(output_dir/'model.pkl', 'wb') as f:
-    pickle.dump(model, f)
-
   log.info('Evaluating model')
-  # evaluator = ModelEvaluatorMCMC(mcmc, brcs, data_eval)
+  evaluator = ModelEvaluatorMCMC(model, data_eval)
 
-  # diagnosis = evaluator.diagnose()
-  # diagnosis.to_csv(output_dir/'diagnosis.csv', index=False)
+  # Diagnostics stats
+  diagnosis = evaluator.diagnose()
+  diagnosis.to_csv(output_dir/'diagnosis.csv', index=False)
 
-  # error = evaluator.evaluate_rate()
-  # error.to_csv(output_dir/'error.csv', index=False)
+  # Error stats: contact intensity
+  error_cint = evaluator.evaluate_cint()
+  error_cint.to_csv(output_dir/'error_cint.csv', index=False)
   
-  log.info('Plotting results')
-  # df_eval_rates, df_eval_marginal_rates = evaluator.get_eval_dfs()
+  # Error stats: marginal contact intensity
+  error_mcint = evaluator.evaluate_mcint()
+  error_mcint.to_csv(output_dir/'error_mcint.csv', index=False)
   
-  # plot_rates_matrix(df_eval_rates, output_dir)
-  # plot_rates_marginal(df_eval_marginal_rates, output_dir)
+  log.info('Saving results')  
+  cint = evaluator.summary_cint()
+  with open(output_dir/'summary_cint.pkl', 'wb') as f:
+    pickle.dump(cint, f)
+    
+  mcint = evaluator.summary_mcint()
+  with open(output_dir/'summary_mcint.pkl', 'wb') as f:
+    pickle.dump(mcint, f)
   
   log.info('Finished experiment')
   

@@ -105,12 +105,13 @@ class BRCfine(BRC):
         if self.offset is not None:
             log_cint += jnp.log(self.offset)
         
-        if self.likelihood == 'poisson':
-            lam = jnp.exp(log_cint[self.aid, self.bid] + self.log_N)
-            numpyro.sample('obs', dist.Poisson(rate=lam), obs=self.y)
-        elif self.likelihood == 'negbin':
-            inv_varphi = numpyro.sample('inv_dispersion', dist.Exponential(1))
-            mu = jnp.exp(log_cint[self.aid, self.bid] + self.log_N)
-            numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
-                                                         concentration=1/inv_varphi),
-                           obs=self.y)
+        with numpyro.plate('data', len(self.y)):
+            if self.likelihood == 'poisson':
+                lam = jnp.exp(log_cint[self.aid, self.bid] + self.log_N)
+                numpyro.sample('obs', dist.Poisson(rate=lam), obs=self.y)
+            elif self.likelihood == 'negbin':
+                inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
+                mu = jnp.exp(log_cint[self.aid, self.bid] + self.log_N)
+                numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
+                                                            concentration=inv_disp),
+                               obs=self.y)

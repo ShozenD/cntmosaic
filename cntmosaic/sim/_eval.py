@@ -4,7 +4,6 @@ import numpy as np
 from jax import random
 from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 import arviz as az
-from plotnine import *
 from sklearn.metrics import (
     root_mean_squared_error,
     mean_absolute_error,
@@ -87,36 +86,60 @@ def aggregate_metrics(data_eval, data_est):
     return pd.DataFrame(all_metrics)
 
 class ModelEvaluator(ABC):
-    def __init__(self, model, data_eval: tuple):
+    def __init__(self, model, data_eval: tuple=None):
         self.model = model
-        self.cint_eval, self.mcint_eval = data_eval
         self.prng_key = random.PRNGKey(0)
         
-    @abstractmethod
-    def get_predictive(self):
-        pass
-    
-    @abstractmethod
-    def get_pred_cint(self):
-        pass
-    
-    @abstractmethod
-    def summary_pred_cint(self):
-        pass
-    
-    @abstractmethod
-    def summary_pred_mcint(self):
-        pass
-    
+        if data_eval is not None:
+            self.cint_eval, self.mcint_eval = data_eval
+        
+    def set_data_eval(self, data_eval: tuple):
+        """Set the data for evaluation
+        
+        Parameters
+        ----------
+        data_eval : tuple
+            A tuple containing the dictionaries of true contact intensity and marginal contact intensity values
+        """
+        self.cint_eval, self.mcint_eval = data_eval
     
 class ModelEvaluatorSVI(ModelEvaluator):
-    def __init__(self, model, data_eval: pd.DataFrame):
+    """Class for diagnosing, evaluating, and summarising SVI results.
+    
+    Parameters
+    ----------
+    model : Model
+        The model object
+    
+    data_eval : tuple, default=None
+        A tuple containing the dictionaries of true contact intensity and marginal contact intensity values
+    
+    Attributes
+    ----------
+    pred : dict
+        The posterior predictive samples
+    
+    pred_cint : dict
+        The posterior predictive contact intensity
+        
+    sum_pred_rate : np.ndarray
+        The summary of the posterior predictive contact rate
+        
+    sum_pred_cint : dict
+        The summary of the posterior predictive contact intensity
+    
+    sum_pred_mcint : dict
+        The summary of the posterior predictive marginal contact intensity
+    """
+    def __init__(self, model, data_eval: tuple=None):
         super().__init__(model, data_eval)
         
     def get_predictive(self):
+        """Get posterior predictive samples from the SVI run."""
         self.pred = self.model.posterior_predictive_svi(self.prng_key, self.model.guide)
         
     def get_pred_cint(self):
+        """Calculate posterior predictive contact intensity from SVI samples"""
         if not hasattr(self, 'post'):
             self.get_predictive()
 
@@ -133,6 +156,18 @@ class ModelEvaluatorSVI(ModelEvaluator):
         self.pred_cint = pred_cint
     
     def summary_rate(self, probs: tuple=(0.025, 0.5, 0.975)):
+        """Summarise the posterior predictive contact rate
+        
+        Parameters
+        ----------
+        probs : tuple
+            The quantiles to compute
+        
+        Returns
+        -------
+        np.ndarray
+            The summary of the posterior predictive contact rate
+        """
         if not hasattr(self, 'pred'):
             self.pred = self.get_predictive()
             
@@ -143,7 +178,21 @@ class ModelEvaluatorSVI(ModelEvaluator):
                 axis=0
             )
         
+        return self.sum_pred_rate
+        
     def summary_cint(self, probs: tuple=(0.025, 0.5, 0.975)):
+        """Summarise the posterior predictive contact intensity
+        
+        Parameters
+        ----------
+        probs : tuple
+            The quantiles to compute
+            
+        Returns
+        -------
+        dict
+            A dictionary containing the quantiles of the posterior predictive contact intensity
+        """
         if not hasattr(self, 'pred_cint'):
             self.get_pred_cint()
             
@@ -159,6 +208,18 @@ class ModelEvaluatorSVI(ModelEvaluator):
         return self.sum_pred_cint
             
     def summary_mcint(self, probs: tuple=(0.025, 0.5, 0.975)):
+        """Summarise the posterior predictive marginal contact intensity
+        
+        Parameters
+        ----------
+        probs : tuple
+            The quantiles to compute
+        
+        Returns
+        -------
+        dict
+            A dictionary containing the quantiles of the posterior predictive marginal contact intensity
+        """
         if not hasattr(self, 'pred_cint'):
             self.get_pred_cint()
             
@@ -174,24 +235,67 @@ class ModelEvaluatorSVI(ModelEvaluator):
         return self.sum_pred_mcint
  
     def evaluate_cint(self):
-        return aggregate_metrics(self.cint_eval, self.summary_post_cint())
+        """Evaluate the posterior predictive contact intensity.
+        Calculates the RMSE, MAE, MAPE, and 95% posterior coverage.
+        
+        Returns
+        -------
+        pd.DataFrame
+            A DataFrame containing the metrics summary
+        """
+        return aggregate_metrics(self.cint_eval, self.summary_cint())
     
     def evaluate_mcint(self):
-        return aggregate_metrics(self.mcint_eval, self.summary_post_mcint())
+        """Evaluate the posterior predictive marginal contact intensity.
+        Calculates the RMSE, MAE, MAPE, and 95% posterior coverage.
+        
+        Returns
+        -------
+        pd.DataFrame
+            A DataFrame containing the metrics summary
+        """
+        return aggregate_metrics(self.mcint_eval, self.summary_mcint())
  
-class ModelEvaluatorMCMC:
-    def __init__(self, mcmc, model, data_eval: pd.DataFrame):
-        self.mcmc = mcmc
-        self.S = mcmc.num_chains * mcmc.num_samples
-        self.data_eval = data_eval
-        self.model = model
-        self.A = model.A
+class ModelEvaluatorMCMC(ModelEvaluator):
+    """Class for diagnosing, evaluating, and summarising MCMC results.
+    
+    Parameters
+    ----------
+    model : Model
+        The model object
+        
+    data_eval : tuple
+        A tuple containing the dictionaries of true contact intensity and marginal contact intensity values
+        
+    Attributes
+    ----------
+    idata : az.InferenceData
+        The ArviZ InferenceData object
+    
+    diag : pd.DataFrame
+        The diagnostics summary
+        
+    loo : az.LOO
+        The Leave-One-Out cross-validation object
+        
+    post : dict
+        The posterior samples
+    """
+    def __init__(self, model, data_eval: tuple=None):
+        super().__init__(model, data_eval)
         
     def diagnose(self):
+        """Diagnose the MCMC run
+        
+        Returns
+        -------
+        pd.DataFrame
+            A DataFrame containing the diagnostics summary
+        """
         if not hasattr(self, 'idata'):
-            self.idata = az.from_numpyro(self.mcmc)
+            self.idata = az.from_numpyro(self.model.mcmc)
             self.diag = az.summary(self.idata, kind='diagnostics')
-            self.loo = az.loo(self.mcmc)
+            self.loo = az.loo(self.model.mcmc)
         
         return pd.DataFrame({
             'statistic': ['min_ess_bulk', 'min_ess_tail', 'max_rhat', 'elpd_loo', 'elpd_loo_se'],
@@ -206,109 +310,127 @@ class ModelEvaluatorMCMC:
                       np.round(self.loo['se'], 2)]
         })
         
+    def get_posterior(self):
+        """Get posterior samples from the MCMC run."""
+        self.post = self.model.mcmc.get_samples()
         
-    def summarise_rate_bl(self):
-        po_samples = self.mcmc.get_samples()
-        beta0 = po_samples['baseline']
-        f = po_samples['f']
-        log_rate_bl = (beta0[:,None] + f).reshape((self.S, self.A, self.A))
-        su_log_rate_bl = np.quantile(log_rate_bl, (0.025, 0.5, 0.975), axis=0)
+    def get_post_cint(self):
+        """Calculate posterior contact intensity from MCMC samples"""
+        if not hasattr(self, 'post'):
+            self.get_posterior()
+            
+        log_rate = self.post['log_rate']
+        post_cint = {}
+        for name, site in self.post.items():
+            if 'log_delta' in name:
+                var = name.split('/')[0]
+                cat = self.model.data[var].cat.categories
+                post_cint[var] = {
+                    cat[i]: np.exp(log_rate[:,None,:,:] + site + self.model.log_P[None,None,:,:])[:,i,:,:]
+                    for i in range(len(cat))
+                }
+        self.post_cint = post_cint
         
-        return np.exp(su_log_rate_bl)
+    def summary_rate(self, probs: tuple=(0.025, 0.5, 0.975)):
+        """Summarise the posterior contact rate
+        
+        Parameters
+        ----------
+        probs : tuple
+            The quantiles to compute
+        
+        Returns
+        -------
+        dict
+            A dictionary containing the quantiles of the posterior contact rate
+        """
+        if not hasattr(self, 'prob'):
+            self.pred = self.get_posterior()
+            
+        if not hasattr(self, 'sum_post_rate'):
+            self.sum_post_rate = np.quantile(
+                np.exp(self.post['log_rate']),
+                probs,
+                axis=0
+            )
+            
+        return self.sum_post_rate
+        
+    def summary_cint(self, probs: tuple=(0.025, 0.5, 0.975)):
+        """Summarise the posterior contact intensity
+        
+        Parameters
+        ----------
+        probs : tuple
+            The quantiles to compute
+        
+        Returns
+        -------
+        dict
+            A dictionary containing the quantiles of the posterior contact intensity
+        """
+        if not hasattr(self, 'post_cint'):
+            self.get_post_cint()
+            
+        if not hasattr(self, 'sum_post_mcint'):
+            self.sum_post_cint = {
+                var: {
+                    name: np.quantile(value, probs, axis=0)
+                    for name, value in cat.items()
+                }
+                for var, cat in self.post_cint.items()
+            }
+            
+        return self.sum_post_cint
+            
+    def summary_mcint(self, probs: tuple=(0.025, 0.5, 0.975)):
+        """Summarise the posterior marginal contact intensity
+        
+        Parameters
+        ----------
+        probs : tuple
+            The quantiles to compute
+        
+        Returns
+        -------
+        dict
+            A dictionary containing the quantiles of the posterior marginal contact intensity
+        """
+        if not hasattr(self, 'post_cint'):
+            self.get_post_cint()
+            
+        if not hasattr(self, 'sum_post_mcint'):
+            self.sum_post_mcint = {
+                var: {
+                    name: np.quantile(value.sum(axis=-1), probs, axis=0)
+                    for name, value in cat.items()
+                }
+                for var, cat in self.post_cint.items()
+            }
+        
+        return self.sum_post_mcint
     
-    def summarise_rates(self, quantiles: tuple=(0.025, 0.5, 0.975)):
-        samples = self.mcmc.get_samples()
-        
-        beta0 = samples['baseline']
-        f     = samples['f']
-      
-        # Calculate baseline rate
-        log_rate_bl = (beta0[:,None] + f).reshape((self.S, self.A, self.A))
-
-        site_names = self.model.X_cols + '/log_delta'
-        dfs = []
-        for site in site_names:
-            log_delta = samples[site]
-            log_rates = log_rate_bl[:,None,:,:] + log_delta
-            sum_rates = np.exp(np.quantile(log_rates, quantiles, axis=0))
-            
-            K = sum_rates.shape[-3]
-            idx = np.array([[k, i, j] for k in range(K) for i in range(self.A) for j in range(self.A)])
-            
-            estim   = sum_rates[1, idx[:,0], idx[:,1], idx[:,2]]
-            lower = sum_rates[0, idx[:,0], idx[:,1], idx[:,2]]
-            upper = sum_rates[2, idx[:,0], idx[:,1], idx[:,2]]
-            
-            df = pd.DataFrame({'var_name': site.replace('/log_delta', ''),
-                               'subgroup': idx[:,0],
-                               'age_part': idx[:,1],
-                               'age_cnt': idx[:,2],
-                               'lower': lower,
-                               'estimate': estim,
-                               'upper': upper})
-            dfs.append(df)
-            
-        return pd.concat(dfs)
+    def post_pred_check(self):
+        pass
     
-    def summarise_marginal_rates(self, quantiles: tuple=(0.025, 0.5, 0.975)):
-        samples = self.mcmc.get_samples()
+    def evaluate_cint(self):
+        """Evaluate the posterior contact intensity.
+        Calculates the RMSE, MAE, MAPE, and 95% posterior coverage.
         
-        beta0 = samples['baseline']
-        f     = samples['f']
-        log_rate_bl = (beta0[:,None] + f).reshape((self.S, self.A, self.A))
-        
-        site_names = self.model.X_cols + '/log_delta'
-        dfs = []
-        for site in site_names:
-            log_delta = samples[site]
-            log_rates = log_rate_bl[:,None,:,:] + log_delta
-            marginal_rates = np.sum(np.exp(log_rates), axis=-2)
-            sum_marginal_rates = np.quantile(marginal_rates, quantiles, axis=0)
-            
-            K = sum_marginal_rates.shape[-2]
-            idx = np.array([[k, i] for k in range(K) for i in range(self.A)])
-            
-            estim   = sum_marginal_rates[1, idx[:,0], idx[:,1]]
-            lower = sum_marginal_rates[0, idx[:,0], idx[:,1]]
-            upper = sum_marginal_rates[2, idx[:,0], idx[:,1]]
-            
-            df = pd.DataFrame({'var_name': site.replace('/log_delta', ''),
-                               'subgroup': idx[:,0],
-                               'age_part': idx[:,1],
-                               'lower': lower,
-                               'estimate': estim,
-                               'upper': upper})
-            dfs.append(df)
-        
-        return pd.concat(dfs)
+        Returns
+        -------
+        pd.DataFrame
+            A DataFrame containing the metrics summary
+        """
+        return aggregate_metrics(self.cint_eval, self.summary_cint())
     
-    def get_eval_dfs(self):
-        df_sum_rates = self.summarise_rates()
-        df_sum_marginal_rates = self.summarise_marginal_rates()
+    def evaluate_mcint(self):
+        """Evaluate the posterior marginal contact intensity.
+        Calculates the RMSE, MAE, MAPE, and 95% posterior coverage.
         
-        df_true_marginal_rates = (
-            self.data_eval
-            .groupby(['var_name', 'subgroup', 'age_part'])['rate']
-            .sum()
-            .reset_index()
-        )
-        
-        df_eval_rates = pd.merge(self.data_eval,
-                                df_sum_rates,
-                                how='inner',
-                                on=['var_name', 'subgroup', 'age_part', 'age_cnt'])
-        df_eval_marginal_rates = pd.merge(df_true_marginal_rates,
-                                         df_sum_marginal_rates,
-                                         how='inner',
-                                         on=['var_name', 'subgroup', 'age_part'])
-        
-        return df_eval_rates, df_eval_marginal_rates
-    
-    def evaluate_rate(self):
-        df_eval, _ = self.get_eval_dfs()
-            
-        return pd.DataFrame({
-            'rmse': root_mean_squared_error(df_eval['rate'], df_eval['estimate']),
-            'mae': mean_absolute_error(df_eval['rate'], df_eval['estimate']),
-            'coverage': np.mean(((df_eval['lower'] <= df_eval['rate']) & (df_eval['upper'] >= df_eval['rate']))*100)
-        }, index=[0])
+        Returns
+        -------
+        pd.DataFrame
+            A DataFrame containing the metrics summary
+        """
+        return aggregate_metrics(self.mcint_eval, self.summary_mcint())

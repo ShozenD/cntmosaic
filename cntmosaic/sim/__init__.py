@@ -11,6 +11,8 @@ from ._sim import (
     simulate_ses
 )
 
+from ._eval import ModelEvaluatorSVI, ModelEvaluatorMCMC
+
 utils_module = [
     'print_available_countries',
     'load_base_patterns',
@@ -27,4 +29,9 @@ sim_module = [
     'simulate_ses'
 ]
 
-__all__ = utils_module + sim_module
+eval_module = [
+    'ModelEvaluatorSVI',
+    'ModelEvaluatorMCMC'
+]
+
+__all__ = utils_module + sim_module + eval_module

@@ -6,12 +6,7 @@ root_dir = Path(__file__).parent.parent
 sys.path.append(str(root_dir))
 
 import pickle
-import numpy as np
 import pandas as pd
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set_theme(style='whitegrid', context='paper')
 
 import jax
 import numpyro
@@ -25,7 +20,6 @@ from cntmosaic.sim import (
 )
 from cntmosaic.preprocess import make_train_data
 from cntmosaic.models import HiBRCfine
-from cntmosaic.visuals import plot_contact_matrix, plot_contact_marginal
 
 import logging
 from omegaconf import DictConfig

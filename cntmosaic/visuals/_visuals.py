@@ -85,6 +85,8 @@ def plot_contact_marginal(
     mcint_ub: NDArray | None = None,
     color: str = '#de425b',
     title: str = None,
+    xlabel: str | None = 'Age of contacting individual',
+    ylabel: str | None = 'Intensity',
     **kwargs
 ):
     """Plot the marginal contact intensity on a given axis.
@@ -123,6 +125,9 @@ def plot_contact_marginal(
         
     if title:
         ax.set_title(title, fontsize=9, loc='left')
-    ax.set_xlabel('Age of contacting individual', fontsize=8)
-    ax.set_ylabel('Intensity', fontsize=8)
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=8)
+    if xlabel:  
+        ax.set_xlabel(xlabel, fontsize=8)
+
     ax.tick_params(axis='both', which='major', labelsize=8)

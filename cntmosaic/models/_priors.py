@@ -2,7 +2,7 @@ import numpy as np
 from numpy.typing import NDArray
 import jax.numpy as jnp
 
-from statsmodels.gam.smooth_basis import BSplines
+from scipy.interpolate import BSpline
 
 import numpyro
 from numpyro import distributions as dist
@@ -96,24 +96,36 @@ class TensorSplines:
     """
     def __init__(self,
                  x: NDArray,
-                 n_knots: int=30,
+                 df: int=30,
                  degree: int=3):
         self.x = x
         self.A = len(x)
-        self.n_knots = n_knots
+        self.df = df
         self.degree = degree
+        self.n_knots_inner = df + degree + 1
+        self.n_knots_outer = 2 * (degree + 1)
         self.compute_basis()
     
     def tspline_basis(self,
                       x: NDArray,
-                      n_knots: int=30,
-                      degree: int=3):
-        bs = BSplines(x, df=n_knots+degree, degree=degree, include_intercept=False)
+                      n_knots: int,
+                      degree: int) -> NDArray:
         
-        return np.kron(bs.basis, bs.basis)
+        boundary_extension = (x.max() - x.min()) * 0.05
+        x_quantiles = np.quantile(x, np.linspace(0, 1, n_knots))
+        padded_knots = np.hstack([
+            [x.min() - boundary_extension] * (degree + 1),
+            x_quantiles,
+            [x.max() + boundary_extension] * (degree + 1)
+        ])
+        basis = BSpline(padded_knots, np.eye(len(padded_knots) - degree - 1), degree)(x)[:, 1:]
+        
+        return np.kron(basis, basis)
     
     def compute_basis(self):
-        self.basis = self.tspline_basis(self.x, self.n_knots, self.degree)
+        self.basis = self.tspline_basis(self.x,
+                                        self.n_knots_inner - self.n_knots_outer + 1, # Control the degree of freedom
+                                        self.degree)
         self.basis_transpose = self.basis.T
         
     def sample(self, K: int):
@@ -150,15 +162,13 @@ class TensorPSplines(TensorSplines):
     """
     def __init__(self,
                  x: NDArray,
-                 n_knots: int=30,
+                 df: int=30,
                  degree: int=3,
                  neighborhood: int=4,
                  cond_prec: float=10):
-        super().__init__(x, n_knots, degree)
+        super().__init__(x, df, degree)
         self.cond_prec = cond_prec
-        self.adj_matrix = gmrf_adjacency_matrix(n_knots+degree-1,
-                                                n_knots+degree-1,
-                                                neighborhood)
+        self.adj_matrix = gmrf_adjacency_matrix(df, df, neighborhood)
         
     def sample(self, K: int):
         with numpyro.plate('x_alpha', K, dim=-2):

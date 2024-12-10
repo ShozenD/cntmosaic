@@ -65,9 +65,9 @@ class HiBRCfine(BRCfine):
         # Set default smoother types
         self.smoother_types = set_default_smoother_types(self.X_vars, smoother_types)
         if 'tspline' in self.smoother_types.values():
-            self.tspline = TensorSplines(np.arange(self.A), n_knots=27, degree=3)
+            self.tspline = TensorSplines(np.arange(self.A), df=30, degree=3)
         if 'tpspline' in self.smoother_types.values():
-            self.tpspline = TensorPSplines(np.arange(self.A), n_knots=27, degree=3, neighborhood=8)
+            self.tpspline = TensorPSplines(np.arange(self.A), df=30, degree=3, neighborhood=8)
         
         # Setup indices
         self.aid = self.data['age_part'].values

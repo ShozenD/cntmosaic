@@ -29,7 +29,7 @@ class BRCrefine(BRC):
         
     # Setup
     self.aid = self.data['age_part'].values
-    self.cid = self.data['age_grp_cnt'].cat.codes
+    self.cid = self.data['age_grp_cnt'].cat.codes.values
     self.fine_coarse_matrix = fine_coarse_matrix(self.data['age_grp_cnt'])
     
     self.y = self.data['y'].values
@@ -94,7 +94,7 @@ class BRCrefine(BRC):
     if self.offset is not None:
       log_cint += jnp.log(self.offset)
       
-    mu = (self.fine_coarse_matrix @ jnp.exp(log_cint))[self.aid, self.cid] * self.N
+    mu = (jnp.exp(log_cint) @ self.fine_coarse_matrix)[self.aid, self.cid] * self.N
     with numpyro.plate('data', len(self.y)):
       if self.likelihood == 'poisson':
         numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y)

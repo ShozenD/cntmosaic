@@ -65,3 +65,13 @@ Install the python kernel for Jupyter
 python -m ipykernel install --user --name python312_cntmosaic --display-name "Python3.12 (cntmosaic)"
 ```
 Now, you can start a new [Jupyter Hub](https://jupyter.rcs.imperial.ac.uk/) session and select the new ```Python3.12 (cntmosaic)``` kernel icon in the Jupyter Launcher.
+
+## Usage
+`cntmosaic` is currently under development and is not yet available on PyPI. To use the package, clone the repository and include the following code in your Python script
+or Jupyter notebook.
+```python
+import sys
+sys.path.append('path/to/cntmosaic/repo')
+
+import cntmosaic
+```

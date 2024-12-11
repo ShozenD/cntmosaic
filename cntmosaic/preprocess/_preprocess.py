@@ -2,6 +2,8 @@ import itertools
 import pandas as pd
 import numpy as np
 
+from ._utils import check_required_columns
+
 def expand_grid(data_dict):
     """Create a dataframe from a dictionary of lists. Analogous to R's expand.grid."""
     rows = itertools.product(*data_dict.values())
@@ -48,28 +50,37 @@ def make_train_data(data: pd.DataFrame,
     >>> df_train = make_train_data(data, 'id', ['sex', 'ses'])
     """
     
-    # Isolate the necessary columns
     data = data.copy()
-    selected_vars = [id_var, 'age_part', 'age_cnt'] + grp_vars + ['y']
+    if 'age_cnt' in data.columns:
+        age_vars = ['age_part', 'age_cnt']
+    elif 'age_grp_cnt' in data.columns:
+        age_vars = ['age_part', 'age_grp_cnt']
+    
+    selected_vars = [id_var] + age_vars + grp_vars + ['y']
     data = data[selected_vars]
     
     # Convert non-numeric columns to categorical
     non_numeric_cols = data.select_dtypes(include='object').columns
     data = convert_to_categorical(data, non_numeric_cols)
     
-    # Document the categories
+    # Document the categories, intervals
     dict_cats = document_categories(data)
     
     # ===== Calculate N and y =====
     grp_vars_part = ['age_part'] + grp_vars
     df_N = data.groupby(grp_vars_part, observed=False).agg(N = (id_var, 'nunique')).reset_index()
     
-    grp_vars_cnt = ['age_part', 'age_cnt'] + grp_vars
+    grp_vars_cnt = age_vars + grp_vars
     df_y = data.groupby(grp_vars_cnt, observed=False).agg(y = ('y', 'sum')).reset_index()
     
     # ===== Create the grid =====
     data_dict = {k: data[k].unique() for k in grp_vars_part}
-    data_dict['age_cnt'] = np.arange(np.array(data_dict['age_part']).max() + 1)
+    
+    if 'age_cnt' == age_vars[1]:
+        data_dict['age_cnt'] = np.arange(np.array(data_dict['age_part']).max() + 1)
+    elif 'age_grp_cnt' == age_vars[1]:
+        data_dict['age_grp_cnt'] = data['age_grp_cnt'].cat.categories
+
     df_grid = expand_grid(data_dict)
     
     # ===== Merge the dataframes =====
@@ -83,16 +94,16 @@ def make_train_data(data: pd.DataFrame,
     df['y'] = df['y'].astype(int)
     df['N'] = df['N'].astype(int)
     df['age_part'] = df['age_part'].astype(int)
-    df['age_cnt'] = df['age_cnt'].astype(int)
+    if 'age_cnt' in df.columns:
+        df['age_cnt'] = df['age_cnt'].astype(int)
     
     # Bring ['age_part', 'age_cnt'] to the front
     age_part = df.pop('age_part')
     df.insert(0, 'age_part', age_part)
-    age_cnt = df.pop('age_cnt')
-    df.insert(1, 'age_cnt', age_cnt)
     
-    # Sort by ['age_part', 'age_cnt']
-    df.sort_values(['age_part', 'age_cnt'], inplace=True)
+    age_cnt = df.pop(age_vars[1])
+    df.insert(1, age_vars[1], age_cnt)
+    df.sort_values(age_vars, inplace=True)
     
     # Convert to categorical
     for col in dict_cats.keys():

@@ -132,9 +132,9 @@ class TensorSplines:
         plate_x = numpyro.plate('x', K, dim=-2)
         plate_tspline = numpyro.plate('tspline', self.basis.shape[0], dim=-1)
         with plate_x:
-            alpha = numpyro.sample('tspline_intercept', dist.Normal(0, 0.1))
+            alpha = numpyro.sample('tspline_intercept', dist.Normal(0, 0.2))
         with plate_x, plate_tspline:
-            beta = numpyro.sample('tspline_coef', dist.Normal(0, 0.1))
+            beta = numpyro.sample('tspline_coef', dist.Normal(0, 0.2))
         
         return (alpha + beta @ self.basis_transpose).reshape((K, self.A, self.A))
     

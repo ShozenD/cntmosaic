@@ -48,7 +48,7 @@ class BRC(ABC):
     self.data = data.copy()
     self.age_dist = age_dist
     self.likelihood = likelihood
-    self.A = self.data['age_part'].max() + 1
+    self.A = np.max([self.data['age_part'].max(), self.data['age_cnt'].max()]) + 1
     self._compute_indices()
     
   def set_age_dist(self, age_dist: NDArray):

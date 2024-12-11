@@ -56,7 +56,8 @@ class HiBRCfine(BRCfine):
         self.y = self.data['y'].values
         self.log_N = jnp.log(self.data['N'].values)
         self.log_P = jnp.log(self.age_dist)[jnp.newaxis,:]
-        self.X_vars = self.data.select_dtypes(include='category').columns
+        self.log_S = jnp.log(offset) if offset is not None else jnp.zeros_like(self.y)
+        self.X_vars = self.data.select_dtypes(include='category').columns        
         self.X_dims = {x: len(self.data[x].cat.categories) for x in self.X_vars}
         
         # Compute the log of the age distribution proportions
@@ -118,8 +119,7 @@ class HiBRCfine(BRCfine):
             with scope(prefix=var):
                 log_cint += self.sample_log_delta(var)[self.X_ids[var], self.aid, self.bid]
         
-        mu = jnp.exp(log_cint + self.log_N)
-        
+        mu = jnp.exp(log_cint + self.log_N + self.log_S)
         with plate('data', len(self.y)):
             if self.likelihood == 'poisson':
                 numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y) 

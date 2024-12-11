@@ -1,13 +1,7 @@
-import itertools
 import pandas as pd
 import numpy as np
 
-from ._utils import check_required_columns
-
-def expand_grid(data_dict):
-    """Create a dataframe from a dictionary of lists. Analogous to R's expand.grid."""
-    rows = itertools.product(*data_dict.values())
-    return pd.DataFrame.from_records(rows, columns=data_dict.keys())
+from ._utils import make_full_grid
 
 def convert_to_categorical(data: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     """Convert columns to categorical type."""
@@ -18,6 +12,83 @@ def convert_to_categorical(data: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
 def document_categories(data: pd.DataFrame) -> dict:
     """Document the categories of categorical columns."""
     return {col: data[col].cat.categories for col in data.select_dtypes(include='category').columns}
+
+def impute_age_min_max(data: pd.DataFrame,
+                       age_col: str,
+                       age_min_col: str,
+                       age_max_col: str,
+                       dropna: bool=False,
+                       remove_min_max_col: bool=True) -> pd.DataFrame:
+    """
+    Impute missing values in an age column based on the average of corresponding 
+    minimum and maximum age columns and optionally clean up the DataFrame.
+
+    This function fills missing values in the specified 'age_col' by computing the 
+    average of the 'age_min_col' and 'age_max_col'. It can also remove rows where 
+    'age_col' remains NaN after imputation if specified. Additionally, it offers the 
+    option to remove the minimum and maximum age columns from the DataFrame.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        The DataFrame containing the age data.
+    age_col : str
+        The name of the column in `data` where the age (or imputed age) is stored.
+    age_min_col : str
+        The name of the column containing the minimum age values.
+    age_max_col : str
+        The name of the column containing the maximum age values.
+    dropna : bool, optional
+        If True, rows where 'age_col' is NaN after imputation are dropped. Default is False.
+    remove_min_max_col : bool, optional
+        If True, the columns specified by 'age_min_col' and 'age_max_col' are removed 
+        from the DataFrame after processing. Default is True.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame with the imputed age column. Depending on the options, it may have 
+        fewer rows and columns.
+
+    Raises
+    ------
+    Warning
+        Warns about the number of dropped rows if any rows are removed due to NaN values in 'age_col'.
+
+    Example
+    -------
+    >>> df = pd.DataFrame({
+    ...     'age': [None, 25, None, 30],
+    ...     'age_min': [20, 25, 40, 30],
+    ...     'age_max': [30, 25, 50, 30]
+    ... })
+    >>> imputed_df = impute_age_min_max(df, 'age', 'age_min', 'age_max', dropna=True, remove_min_max_col=True)
+    >>> print(imputed_df)
+       age
+    1   25
+    3   30
+
+    Note
+    ----
+    After imputation, if 'dropna' is True and 'age_col' still contains NaN, such rows will be dropped,
+    potentially reducing the size of the returned DataFrame.
+    """
+    data = data.copy()
+    data[age_col] = np.where(data[age_col].isna(), 
+                             (data[age_min_col] + data[age_max_col]) // 2,
+                             data[age_col])
+    
+    if dropna:
+        n0 = data.shape[0]
+        data = data.dropna(subset=[age_col])
+        n1 = data.shape[0]
+        Warning(f'Dropped {n0 - n1} rows with missing values in {age_col}')
+    
+    if remove_min_max_col:
+        data = data.drop(columns=[age_min_col, age_max_col], axis=1)
+    
+    return data
+
 
 def make_train_data(data: pd.DataFrame,
                     id_var: str,
@@ -74,14 +145,7 @@ def make_train_data(data: pd.DataFrame,
     df_y = data.groupby(grp_vars_cnt, observed=False).agg(y = ('y', 'sum')).reset_index()
     
     # ===== Create the grid =====
-    data_dict = {k: data[k].unique() for k in grp_vars_part}
-    
-    if 'age_cnt' == age_vars[1]:
-        data_dict['age_cnt'] = np.arange(np.array(data_dict['age_part']).max() + 1)
-    elif 'age_grp_cnt' == age_vars[1]:
-        data_dict['age_grp_cnt'] = data['age_grp_cnt'].cat.categories
-
-    df_grid = expand_grid(data_dict)
+    df_grid = make_full_grid(data, age_vars, grp_vars)
     
     # ===== Merge the dataframes =====
     df = pd.merge(df_grid, df_y, on=grp_vars_cnt, how='left')
@@ -110,4 +174,59 @@ def make_train_data(data: pd.DataFrame,
         df[col] = pd.Categorical(df[col], categories=dict_cats[col])
     
     return df
+
+def make_group_cnt_offsets(df_cnt: pd.DataFrame,
+                           df_grp: pd.DataFrame,
+                           grp_vars: str | list,
+                           max: int | None=None) -> pd.DataFrame:
+    """Create offsets for group contacts and contacts with missing information.
+    
+    Suppose grp_vars = ['sex_part']. Given the total number of contacts with complete information :math:`Y^g_a = sum_{b} Y^{g}_{a,b}`
+    and the total number of contacts with missing information :math:`Z^g_a`, the offset for group contacts is calculated as
+    
+    ..math::
+		S^g_a = \frac{Y^g_a}{Y^g_a + Z^g_a}
+	
+	If S is missing or 0, it is replaced with 1 to avoid missing value and log(0) = -inf errors.
+	
+    Parameters
+    ----------
+    df_cnt : pd.DataFrame
+		Data frame containing the contact counts of contacts with complete information.
+  		Usually, this is the output of the make_train_data function.
+	df_grp : pd.DataFrame
+		Data frame containing information for each individual and the number of group & contacts with missing information
+		in a column named `z`.
+	grp_vars : str | list
+		Column(s) to group by.
+	max : int | None, optional
+		Maximum number of group & missing contacts allowed. This is useful for avoiding offsets that are too large.
   
+    Returns
+	-------
+	pd.DataFrame
+		A data frame containing the offsets.
+  
+	Examples
+	--------
+	>>> df_cnt = make_train_data(df, 'id', ['sex_part'])
+	>>> df_grp = df_part
+	>>> df_grp['z'] = df_grp['class_size'] + df_grp['work_contacts_nr'] # Group contacts for school and work
+	>>> offsets = make_group_cnt_offsets(df_cnt, df_grp, 'sex_part', max=60)
+    """
+    
+    grp_vars = ['age_part'] + list(grp_vars)
+    
+    df_cnt_part = df_cnt.groupby(grp_vars, observed=True).agg({'y': 'sum'}).reset_index()
+    df_grp_sum = df_grp.groupby(grp_vars, observed=True).agg({'z': 'sum'}).reset_index()
+    
+    if max is not None: # Cap the sum of group contacts
+        df_grp_sum['z'] = df_grp_sum['z'].apply(lambda x: min(x, max))
+    
+    df_offsets = pd.merge(df_cnt_part, df_grp_sum, on=grp_vars, how='left')
+    df_offsets['S'] = df_offsets['y'] / (df_offsets['y'] + df_offsets['z'])
+    df_offsets['S'] = df_offsets['S'].fillna(0)
+    df_offsets['S'] = np.where(df_offsets['S'] == 0, 1, df_offsets['S']) # Avoid log(0) = -inf errors
+    
+    cols = grp_vars + ['S']
+    return df_offsets[cols]

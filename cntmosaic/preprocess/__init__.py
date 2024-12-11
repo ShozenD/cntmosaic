@@ -1,5 +1,11 @@
-from ._preprocess import make_train_data
+from ._preprocess import (
+  impute_age_min_max,
+  make_train_data,
+  make_group_cnt_offsets
+)
 
 __all__ = [
-  'make_train_data'
+  'impute_age_min_max',
+  'make_train_data',
+  'make_group_cnt_offsets'
 ]

@@ -1,3 +1,5 @@
+import itertools
+import numpy as np
 import pandas as pd
 
 def expand_age_grp_cnt(df: pd.DataFrame):
@@ -31,3 +33,44 @@ def check_required_columns(data: pd.DataFrame):
 		raise ValueError("data must contain a column 'age_part'")
 	if ('age_cnt' not in data.columns) and ('age_grp_cnt' not in data.columns):
 		raise ValueError("data must contain a column 'age_cnt' or 'age_grp_cnt'")
+
+def expand_grid(data_dict):
+    """Create a dataframe from a dictionary of lists. Analogous to R's expand.grid."""
+    rows = itertools.product(*data_dict.values())
+    return pd.DataFrame.from_records(rows, columns=data_dict.keys())
+
+def make_full_grid(data: pd.DataFrame,
+                   age_vars: list[str],
+                   grp_vars: list[str]):
+    """Create a full grid of all possible combinations of age and grouping variables.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input data containing necessary columns.
+    age_vars : list[str]
+        List of age variables.
+    grp_vars : list[str]
+        List of non-age grouping variables.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Full grid of age and grouping variables.
+    """
+    
+    grp_vars_all = age_vars + grp_vars
+    data_dict = {k: data[k].unique() for k in grp_vars_all}
+    
+    if 'age_cnt' == age_vars[1]:
+        
+        min_age = np.min([data_dict['age_part'].min(), data_dict['age_cnt'].min()])
+        max_age = np.max([data_dict['age_part'].max(), data_dict['age_cnt'].max()])
+        
+        data_dict['age_part'] = np.arange(min_age, max_age + 1)
+        data_dict['age_cnt'] = np.arange(min_age, max_age + 1)
+        
+    elif 'age_grp_cnt' == age_vars[1]:
+        data_dict['age_grp_cnt'] = data['age_grp_cnt'].cat.categories
+
+    return expand_grid(data_dict)

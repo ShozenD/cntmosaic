@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 from numpy.typing import NDArray
 import scipy.sparse as sp
+import jax
+import jax.numpy as jnp
+import jax.scipy as jsp
 
 def age_age_grid(A: int) -> NDArray:
 	"""
@@ -228,3 +231,117 @@ def fine_coarse_matrix(x: pd.Series) -> NDArray:
 				indicator_matrix[age - age_min, i] = 1
 	
 	return indicator_matrix
+
+import numpy as np
+import pandas as pd
+
+def make_idarrs_for_intervals(
+		data: pd.DataFrame,
+		interval_col: str,
+		aid: np.ndarray
+):
+		"""
+		Prepares index arrays for 3D interval-based operations from DataFrame interval data.
+
+		This function processes a specified interval column in a DataFrame to generate
+		index arrays for the second and third dimensions of a 3D array, corresponding to 
+		each interval's range. These index arrays are uniformly padded to allow for batch 
+		operations. Additionally, it expands provided `xid` and `id_array` arrays to match 
+		the length of the padded index arrays for aligned operations across all dimensions.
+
+		Parameters
+		----------
+		data : pd.DataFrame
+				DataFrame containing at least one interval column.
+		interval_col : str
+				Name of the column in 'data' that contains interval data.
+		xid : np.ndarray
+				Array of indices for the first dimension of a 3D array.
+		aid : np.ndarray
+				Array of IDs or indices that need to be expanded to match the interval operations.
+
+		Returns
+		-------
+		np.ndarray, np.ndarray
+				- A numpy array of the expanded ID array matching the dimensions of the index arrays.
+				- A numpy array of padded index arrays corresponding to each interval.
+				
+		Example
+		-------
+		>>> df = pd.DataFrame({
+		...     'age_grp_cnt': pd.IntervalIndex.from_arrays([0, 10, 20], [5, 15, 25], closed='left')
+		... })
+		>>> aid = np.array([1, 2, 3])
+		>>> bid_pad, aid_exp = prepare_index_arrays_for_interval_operations(df, 'age_grp_cnt', aid)
+		>>> print(bid_pad)
+		>>> print(aid_exp)
+		"""
+		# Extract interval bounds
+		bl = data[interval_col].apply(lambda x: x.left).to_numpy()
+		bu = data[interval_col].apply(lambda x: x.right).to_numpy()
+
+		# Calculate the maximum length of intervals
+		max_length = max(bu - bl)
+
+		# Create index arrays for each interval
+		bid = [np.arange(start, stop) for start, stop in zip(bl, bu)]
+
+		# Pad index arrays to uniform length
+		bid_pad = np.array([np.pad(x, (0, max_length - len(x)), constant_values=-1) for x in bid])
+
+		# Expand the ID array to match the padded index arrays
+		aid_exp = np.repeat(aid[:, np.newaxis], max_length, axis=1)
+
+		return aid_exp, bid_pad
+
+@jax.jit
+def index_mask_logsumexp(
+		x: NDArray,
+		aid_exp: NDArray,
+		bid_pad: NDArray,
+		xid_exp: NDArray=None
+	):
+		"""
+		Computes the log-sum-exp over selected elements in an array, masked appropriately.
+
+		This function is designed to process outputs from `make_idarr_for_intervals`.
+		It performs advanced indexing to extract elements from the input array `x` using index arrays `aid` 
+		and `bid_pad`. The selected elements are then passed through the log-sum-exp operation after 
+		applying a mask where non-selected elements are replaced with negative infinity. This is
+		useful in statistical computations where log-sum-exp is used to stabilize the computations
+		to prevent overflow.
+
+		Parameters
+		----------
+		x : NDArray
+				The input data array from which to compute the log-sum-exp.
+		aid : NDArray
+				The index array for the first dimension of `x`, as prepared by 
+				`make_idarr_for_intervals`.
+		bid_pad : NDArray
+				The index array for the second dimension of `x`, padded uniformly and prepared by 
+				`make_idarr_for_intervals`.
+		xid_exp : NDArray, optional
+				The expanded ID array matching the dimensions of the index arrays.
+
+		Returns
+		-------
+		NDArray
+				The result of the log-sum-exp computation across the specified axis, after advanced indexing
+				and masking.
+
+		Example
+		-------
+		>>> x = jnp.array([[10, 20, 30, 40],
+		...                [50, 60, 70, 80],
+		...                [90, 100, 110, 120]])
+		>>> aid_exp, bid_pad = make_idarr_for_intervals(df, 'age_grp_cnt', np.array([0, 1, 2]))
+		>>> result = index_mask_logsumexp(x, aid_exp, bid_pad)
+		>>> print(result)
+		"""
+		if xid_exp is not None:
+				y = x[xid_exp, aid_exp, bid_pad]
+		else:
+				y = x[aid_exp, bid_pad]
+		z = jnp.where(y, y, -jnp.inf)
+		return jax.scipy.special.logsumexp(z, axis=-1)

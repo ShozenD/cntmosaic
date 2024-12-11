@@ -133,14 +133,17 @@ class ModelEvaluatorSVI(ModelEvaluator):
     """
     def __init__(self, model, data_eval: tuple=None):
         super().__init__(model, data_eval)
+        self.pred = None
         
     def get_predictive(self):
         """Get posterior predictive samples from the SVI run."""
         self.pred = self.model.posterior_predictive_svi(self.prng_key, self.model.guide)
+        if self.pred is None:
+            raise ValueError("Failed to get predictive samples, check model output.")
         
     def get_pred_cint(self):
         """Calculate posterior predictive contact intensity from SVI samples"""
-        if not hasattr(self, 'post'):
+        if self.pred is None:
             self.get_predictive()
 
         log_rate = self.pred['log_rate']
@@ -150,7 +153,7 @@ class ModelEvaluatorSVI(ModelEvaluator):
                 var = name.split('/')[0]
                 cat = self.model.data[var].cat.categories
                 pred_cint[var] = {
-                    cat[i]: np.exp(log_rate[:,None,:,:] + site + self.model.log_P[None,None,:,:])[:,i,:,:]
+                    cat[i]: np.exp(log_rate[:, None, :, :] + site + self.model.log_P[None, None, :, :])[:, i, :, :]
                     for i in range(len(cat))
                 }
         self.pred_cint = pred_cint
@@ -168,16 +171,16 @@ class ModelEvaluatorSVI(ModelEvaluator):
         np.ndarray
             The summary of the posterior predictive contact rate
         """
-        if not hasattr(self, 'pred'):
-            self.pred = self.get_predictive()
-            
-        if not hasattr(self, 'sum_pred_rate'):
+        if self.pred is None:
+            self.get_predictive()
+
+        if 'sum_pred_rate' not in self.__dict__:
             self.sum_pred_rate = np.quantile(
                 np.exp(self.pred['log_rate']),
                 probs,
                 axis=0
             )
-        
+
         return self.sum_pred_rate
         
     def summary_cint(self, probs: tuple=(0.025, 0.5, 0.975)):

@@ -1,17 +1,50 @@
 import itertools
+import re
 import numpy as np
 import pandas as pd
 
-def expand_age_grp_cnt(df: pd.DataFrame):
+def as_interval_type(s):
+    """Parse interval string to Interval"""
+    s = s.replace(' ', '') # Remove all spaces
+    left = re.search(r'(\d+),(\d+)', s).group(1)
+    right = re.search(r'(\d+),(\d+)', s).group(2)
+    
+    try:
+        left = int(left)
+        right = int(right)
+    except:
+        left = float(left)
+        right = float(right)
+    
+    left_closed = s.startswith('[')
+    right_closed = s.endswith(']')
+
+    t = 'neither'
+    if left_closed and right_closed:
+        t = 'both'
+    elif left_closed:
+        t = 'left'
+    elif right_closed:
+        t = 'right'
+    
+    return pd.Interval(left, right, closed=t)
+
+def expand_age_interval(df: pd.DataFrame,
+                        interval_col: str,
+                        name: str = 'age_expanded') -> pd.DataFrame:
+    
+    if df[interval_col].dtype.name == 'object':
+        df[interval_col] = df[interval_col].apply(as_interval_type)
+    
     expanded_rows = []
     dtype_dict = df.dtypes  # Store the original dtypes
     
     for _, row in df.iterrows(): # Note: Iterrows is slow, but more readable
-        age_grp = row['age_grp_cnt']
+        age_grp = row[interval_col]
         age_range = range(int(age_grp.left), int(age_grp.right))
         for age in age_range:
             new_row = row.copy()
-            new_row['age_cnt'] = age
+            new_row[name] = age
             expanded_rows.append(new_row)
     
     # Create a new DataFrame from expanded rows

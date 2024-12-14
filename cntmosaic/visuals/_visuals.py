@@ -3,7 +3,7 @@ from numpy.typing import NDArray
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from ..preprocess._utils import check_required_columns, expand_age_grp_cnt
+from ..preprocess._utils import check_required_columns, expand_age_interval
 
 def plot_contact_matrix(
     ax,
@@ -155,7 +155,7 @@ def plot_empirical_contact_matrix(
 	is_coarse = 'age_grp_cnt' in data.columns
  
 	if is_coarse:
-		data = expand_age_grp_cnt(data)
+		data = expand_age_interval(data, 'age_grp_cnt')
   
 	data['cint'] = data['y'] / data['N']
 	A = data['age_part'].max() - data['age_part'].min() + 1

@@ -1,3 +1,5 @@
+![CI](https://github.com/github/docs/actions/workflows/ci.yml/badge.svg)
+
 # Contact Mosaic
 
 ## What is Contact Mosaic?

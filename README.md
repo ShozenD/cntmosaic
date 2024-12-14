@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/ShozenD/cntmosaic/graph/badge.svg?token=9U271V3D3H)](https://codecov.io/gh/ShozenD/cntmosaic)
+
 # Contact Mosaic
 
 ## What is Contact Mosaic?

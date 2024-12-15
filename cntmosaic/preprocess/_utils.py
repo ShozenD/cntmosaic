@@ -3,31 +3,36 @@ import re
 import numpy as np
 import pandas as pd
 
-def as_interval_type(s):
-    """Parse interval string to Interval"""
-    s = s.replace(' ', '') # Remove all spaces
-    left = re.search(r'(\d+),(\d+)', s).group(1)
-    right = re.search(r'(\d+),(\d+)', s).group(2)
-    
-    try:
-        left = int(left)
-        right = int(right)
-    except:
-        left = float(left)
-        right = float(right)
-    
-    left_closed = s.startswith('[')
-    right_closed = s.endswith(']')
+import re
+import pandas as pd
 
-    t = 'neither'
-    if left_closed and right_closed:
-        t = 'both'
-    elif left_closed:
-        t = 'left'
-    elif right_closed:
-        t = 'right'
-    
+def as_interval_type(s):
+    """Parse interval string to Interval. Return None if input is None, not a string, or improperly formatted."""
+    # Convert non-string inputs to string (except None which directly returns None)
+    if s is None:
+        return None
+    if not isinstance(s, str):
+        s = str(s)
+
+    # Remove all spaces
+    s = s.replace(' ', '')
+
+    # Validate the format of the string to ensure it is suitable for interval parsing
+    if not re.match(r'^[\[\(]\d+,\d+[\]\)]$', s):
+        return None  # Return None if the format does not match expected pattern
+
+    # Extract numbers using regex and convert them to integers
+    left, right = map(int, re.findall(r'\d+', s))
+
+    # Determine the closure of the interval using the first and last character
+    t = ('both' if s[0] == '[' and s[-1] == ']' else
+         'left' if s[0] == '[' and s[-1] == ')' else
+         'right' if s[0] == '(' and s[-1] == ']' else
+         'neither')  # for the case '(a,b)'
+
     return pd.Interval(left, right, closed=t)
+
+
 
 def expand_age_interval(df: pd.DataFrame,
                         interval_col: str,

@@ -1,3 +1,4 @@
+import warnings
 import pandas as pd
 import numpy as np
 
@@ -92,7 +93,7 @@ def impute_age_min_max(data: pd.DataFrame,
 
 def make_train_data(data: pd.DataFrame,
                     id_var: str,
-                    grp_vars: list[str]=[]) -> pd.DataFrame:
+                    grp_vars: str | list[str] | None=None) -> pd.DataFrame:
     """
     Prepare training data for Bayesian Rate Consistency model.
 
@@ -102,8 +103,8 @@ def make_train_data(data: pd.DataFrame,
         Input data containing necessary columns.
     id_var : str
         Name of the column containing unique individual identifiers.
-    grp_vars : list[str], optional
-        Additional grouping variables for stratification, by default [].
+    grp_vars : str or list[str], optional
+        Additional grouping variables for stratification, by default None.
 
     Returns
     -------
@@ -122,26 +123,46 @@ def make_train_data(data: pd.DataFrame,
     """
     
     data = data.copy()
+    
+    # Drop rows with missing values
+    n_all = data.shape[0]
+    data = data.dropna(axis=0)
+    n_dropped = n_all - data.shape[0]
+    if n_dropped > 0:
+        warnings.warn(f'Dropped {n_dropped} rows with missing values', RuntimeWarning)
+    
+    # Add a column 'y' if it does not exist
+    if 'y' not in data.columns:
+        warnings.warn('No column "y" found. Assuming each row represents a single contact.', RuntimeWarning)
+        data['y'] = 1
+            
     if 'age_cnt' in data.columns:
         age_vars = ['age_part', 'age_cnt']
     elif 'age_grp_cnt' in data.columns:
         age_vars = ['age_part', 'age_grp_cnt']
+    else:
+        raise ValueError('data must contain a column "age_cnt" or "age_grp_cnt"')
     
-    selected_vars = [id_var] + age_vars + grp_vars + ['y']
+    if grp_vars is None:
+        selected_vars = [id_var] + age_vars + ['y']
+        grp_vars_part = grp_vars_cnt = ['age_part']
+    else:
+        grp_vars = [grp_vars] if isinstance(grp_vars, str) else grp_vars
+        selected_vars = [id_var] + age_vars + grp_vars + ['y']
+        grp_vars_part = ['age_part'] + grp_vars
+        grp_vars_cnt = age_vars + grp_vars
+            
     data = data[selected_vars]
     
     # Convert non-numeric columns to categorical
-    non_numeric_cols = data.select_dtypes(include='object').columns
+    non_numeric_cols = data[grp_vars_cnt].select_dtypes(include='object').columns
     data = convert_to_categorical(data, non_numeric_cols)
     
     # Document the categories, intervals
     dict_cats = document_categories(data)
     
     # ===== Calculate N and y =====
-    grp_vars_part = ['age_part'] + grp_vars
     df_N = data.groupby(grp_vars_part, observed=False).agg(N = (id_var, 'nunique')).reset_index()
-    
-    grp_vars_cnt = age_vars + grp_vars
     df_y = data.groupby(grp_vars_cnt, observed=False).agg(y = ('y', 'sum')).reset_index()
     
     # ===== Create the grid =====
@@ -175,10 +196,10 @@ def make_train_data(data: pd.DataFrame,
     
     return df
 
-def make_group_cnt_offsets(df_cnt: pd.DataFrame,
-                           df_grp: pd.DataFrame,
-                           grp_vars: str | list,
-                           max: int | None=None) -> pd.DataFrame:
+def make_grp_cnt_offsets(df_cnt: pd.DataFrame,
+                        df_grp: pd.DataFrame,
+                        grp_vars: str | list[str] | None=None,
+                        max: int | None=None) -> pd.DataFrame:
     """Create offsets for group contacts and contacts with missing information.
     
     Suppose grp_vars = ['sex_part']. Given the total number of contacts with complete information :math:`Y^g_a = sum_{b} Y^{g}_{a,b}`
@@ -197,8 +218,8 @@ def make_group_cnt_offsets(df_cnt: pd.DataFrame,
 	df_grp : pd.DataFrame
 		Data frame containing information for each individual and the number of group & contacts with missing information
 		in a column named `z`.
-	grp_vars : str | list
-		Column(s) to group by.
+	grp_vars : str | list | None, optional
+		Column(s) to group by. default is None.
 	max : int | None, optional
 		Maximum number of group & missing contacts allowed. This is useful for avoiding offsets that are too large.
   
@@ -215,7 +236,18 @@ def make_group_cnt_offsets(df_cnt: pd.DataFrame,
 	>>> offsets = make_group_cnt_offsets(df_cnt, df_grp, 'sex_part', max=60)
     """
     
-    grp_vars = ['age_part'] + list(grp_vars)
+    if 'y' not in df_cnt.columns:
+        warnings.warn('No column "y" found. Assuming each row represents a single contact.', RuntimeWarning)
+        df_cnt['y'] = 1
+    
+    if 'z' not in df_grp.columns:
+        raise RuntimeError('No column "z" found. Please provide the number of group contacts in a column named "z"')
+    
+    if grp_vars is None:
+        grp_vars = ['age_part']
+    else:
+        grp_vars = [grp_vars] if isinstance(grp_vars, str) else grp_vars
+        grp_vars = ['age_part'] + grp_vars
     
     df_cnt_part = df_cnt.groupby(grp_vars, observed=True).agg({'y': 'sum'}).reset_index()
     df_grp_sum = df_grp.groupby(grp_vars, observed=True).agg({'z': 'sum'}).reset_index()

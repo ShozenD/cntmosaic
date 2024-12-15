@@ -23,3 +23,19 @@ def load_polymod_germany():
   """
   
   return load_pickle_data('polymod_germany.pkl')
+
+def load_covimod():
+  """Loads the COVIMOD dataset.
+  
+  This function loads the Covimod dataset.
+  
+  Returns
+  -------
+  dict
+      A dictionary with the following
+      - 'contacts': a pandas DataFrame with the contact data
+      - 'participants': a pandas DataFrame with the participant data
+      - 'population': a pandas DataFrame with the population data
+  """
+  
+  return load_pickle_data('covimod.pkl')

@@ -74,7 +74,7 @@ def expand_grid(data_dict):
 
 def make_full_grid(data: pd.DataFrame,
                    age_vars: list[str],
-                   grp_vars: list[str]):
+                   grp_vars: list[str] | None=None) -> pd.DataFrame:
     """Create a full grid of all possible combinations of age and grouping variables.
     
     Parameters
@@ -83,8 +83,8 @@ def make_full_grid(data: pd.DataFrame,
         Input data containing necessary columns.
     age_vars : list[str]
         List of age variables.
-    grp_vars : list[str]
-        List of non-age grouping variables.
+    grp_vars : list[str] or None, optional
+        List of non-age grouping variables. default is None.
         
     Returns
     -------
@@ -92,7 +92,11 @@ def make_full_grid(data: pd.DataFrame,
         Full grid of age and grouping variables.
     """
     
-    grp_vars_all = age_vars + grp_vars
+    if grp_vars is None:
+        grp_vars_all = age_vars
+    else:
+        grp_vars_all = age_vars + grp_vars
+        
     data_dict = {k: data[k].unique() for k in grp_vars_all}
     
     if 'age_cnt' == age_vars[1]:

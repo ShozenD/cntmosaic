@@ -22,13 +22,25 @@ def test_basic_functionality():
     # Check the dimensions
     assert df_grid.shape == (18, 3), "Incorrect dimensions"
     
+def test_no_grouping_vars():
+    # Create a simple DataFrame
+    data = pd.DataFrame({
+      'age_part': [0, 1, 2],
+      'age_cnt': [0, 1, 2],
+    })
+    
+    df_grid = make_full_grid(data, ['age_part', 'age_cnt'])
+    
+    # Check the dimensions
+    assert df_grid.shape == (9, 2), "Incorrect dimensions"
+    
 def test_partially_missing_age_bounds():
     data = pd.DataFrame({
       'age_part': [0, 1],
       'age_cnt': [1, 2]
     })
     
-    df_grid = make_full_grid(data, ['age_part', 'age_cnt'], [])
+    df_grid = make_full_grid(data, ['age_part', 'age_cnt'])
     
     # Check the dimensions
     assert df_grid.shape == (9, 2), "Incorrect dimensions"
@@ -39,7 +51,7 @@ def test_non_zero_start_age():
       'age_cnt': [1, 2]
     })
     
-    df_grid = make_full_grid(data, ['age_part', 'age_cnt'], [])
+    df_grid = make_full_grid(data, ['age_part', 'age_cnt'])
     
     # Check the dimensions
     assert df_grid.shape == (4, 2), "Incorrect dimensions"

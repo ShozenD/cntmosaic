@@ -9,15 +9,21 @@ def closure(x: ArrayLike, axis: int=0) -> Array:
   """Closure operation for a given axis"""
   return x / jnp.sum(x, axis=axis, keepdims=True)
 
-def aitchison_orthnorm_basis(d: int) -> Array:
-  """Aitchison orthonormal basis"""
+def basis_contrast_matrix(d: int) -> Array:
+  """Basis contrast matrix associated with an orthonormal basis of S^D
+  
+  See eq. (18) of J.J. Egozcue, V. Pawlowsky-Glahn, G. Mateu-Figueras, and C. Barcelo-Vidal.
+  Isometric logratio transformations for compositional data analysis. Mathematical Geology, 35(3):279–300, 2003.
+  
+  and eq. (3) of Ana M. Bianco et al. Robust Nonparametric Regression for Compositional Data: the Simplicial-Real case. 2024.
+  """
   U = np.zeros((d, d-1))
   for i in range(d-1):
     j = i + 1
     U[:j,i] = np.sqrt(1/(j*(j+1)))
     U[i+1,i] = -np.sqrt(1/(j+1))
     
-  return closure(np.exp(U))
+  return U
 
 def alr(x: ArrayLike, axis: int=0) -> Array:
   """Additive log ratio transformation"""
@@ -31,8 +37,8 @@ def clr(x: ArrayLike, axis: int=0) -> Array:
 def ilr(x: ArrayLike, axis: int=0) -> Array:
   """Isometric log ratio transformation"""
   shape = list(x.shape)
-  U = aitchison_orthnorm_basis(shape[axis])
-  y = clr(x, axis=axis)
+  U = basis_contrast_matrix(shape[axis])
+  y = jnp.log(x)
   return jnp.apply_along_axis(lambda y: jnp.matmul(U.T, y), axis=axis, arr=y)
   
 def inverse_alr(x: ArrayLike, axis: int=0) -> Array:
@@ -56,10 +62,10 @@ def inverse_clr(x: ArrayLike, axis: int=0) -> Array:
 def inverse_ilr(x: ArrayLike, axis: int=0) -> Array:
   """Inverse isometric log ratio transformation"""
   shape = list(x.shape)
-  U = aitchison_orthnorm_basis(shape[axis]+1)
+  U = basis_contrast_matrix(shape[axis]+1)
   Uz = jnp.apply_along_axis(lambda z: jnp.matmul(U, z), axis=axis, arr=x)
   
-  return jax.nn.softmax(jnp.exp(Uz), axis=axis)
+  return jax.nn.softmax(Uz, axis=axis)
 
 def log_inverse_ilr(x: ArrayLike, axis: int=0) -> Array:
   """Log inverse isometric log ratio transformation"""

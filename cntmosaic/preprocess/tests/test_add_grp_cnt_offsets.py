@@ -20,7 +20,7 @@ def test_basic_functionality():
   })
   
   df = add_grp_cnt_offsets(df_cnt, df_grp, 'sex_part')
-  assert df.shape == (3, 3), "Incorrect dimensions"
+  assert df.shape == (3, 5), "Incorrect dimensions"
   assert df['S'].values == pytest.approx([1/3, 1/4, 1/5]), "Incorrect values"
   
 def test_no_grouping_vars():
@@ -38,7 +38,7 @@ def test_no_grouping_vars():
   
   df = add_grp_cnt_offsets(df_cnt, df_grp)
   
-  assert df.shape == (3, 2), "Incorrect dimensions"
+  assert df.shape == (3, 4), "Incorrect dimensions"
   assert df['S'].values == pytest.approx([1/3, 1/4, 1/5]), "Incorrect values"
   
 def test_no_y_column():

@@ -52,13 +52,13 @@ class HiBRCrefine(BRCrefine):
                  age_dist: NDArray,
                  age_dist_props: dict,
                  smoother_types: dict=None,
-                 offset: NDArray=None,
                  likelihood: str='negbin'):
         
-        super().__init__(data, age_dist, offset, likelihood)
+        super().__init__(data, age_dist, likelihood)
             
         self.y = self.data['y'].values
         self.log_N = jnp.log(self.data['N'].values)
+        self.log_S = jnp.log(self.data['S'].values) if 'S' in self.data.columns else jnp.zeros_like(self.y)
         self.log_P = jnp.log(self.age_dist)[jnp.newaxis,:]
         self.X_vars = self.data.drop(columns='age_grp_cnt').select_dtypes(include='category').columns
         self.X_dims = {x: len(self.data[x].cat.categories) for x in self.X_vars}
@@ -132,7 +132,7 @@ class HiBRCrefine(BRCrefine):
                 )
                 log_cint += contribution
         
-        mu = jnp.exp(log_cint + self.log_N)
+        mu = jnp.exp(log_cint + self.log_N + self.log_S)
         with plate('data', len(self.y)):
             if self.likelihood == 'poisson':
                 numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y) 

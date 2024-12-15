@@ -18,6 +18,7 @@ def impute_age_min_max(data: pd.DataFrame,
                        age_col: str,
                        age_min_col: str,
                        age_max_col: str,
+                       type: str='midpoint',
                        dropna: bool=False,
                        remove_min_max_col: bool=True) -> pd.DataFrame:
     """
@@ -39,6 +40,10 @@ def impute_age_min_max(data: pd.DataFrame,
         The name of the column containing the minimum age values.
     age_max_col : str
         The name of the column containing the maximum age values.
+    type : str, optional
+        The type of imputation to perform. Default is 'midpoint'.
+        - 'midpoint': Impute the average of 'age_min_col' and 'age_max_col'.
+        - 'random': Impute a random value between 'age_min_col' and 'age_max_col'.
     dropna : bool, optional
         If True, rows where 'age_col' is NaN after imputation are dropped. Default is False.
     remove_min_max_col : bool, optional
@@ -74,16 +79,25 @@ def impute_age_min_max(data: pd.DataFrame,
     After imputation, if 'dropna' is True and 'age_col' still contains NaN, such rows will be dropped,
     potentially reducing the size of the returned DataFrame.
     """
+    if type not in ['midpoint', 'random']:
+        raise ValueError('type must be either "midpoint" or "random"')
+    
     data = data.copy()
-    data[age_col] = np.where(data[age_col].isna(), 
-                             (data[age_min_col] + data[age_max_col]) // 2,
-                             data[age_col])
+    
+    if type == 'midpoint':
+        data[age_col] = np.where(data[age_col].isna(), 
+                                (data[age_min_col] + data[age_max_col]) // 2,
+                                data[age_col])
+    elif type == 'random':
+        data[age_col] = np.where(data[age_col].isna(), 
+                                 np.random.randint(data[age_min_col], data[age_max_col] + 1),
+                                 data[age_col])
     
     if dropna:
         n0 = data.shape[0]
         data = data.dropna(subset=[age_col])
         n1 = data.shape[0]
-        Warning(f'Dropped {n0 - n1} rows with missing values in {age_col}')
+        warnings.warn(f'Dropped {n0 - n1} rows with missing values in {age_col}', UserWarning)
     
     if remove_min_max_col:
         data = data.drop(columns=[age_min_col, age_max_col], axis=1)
@@ -124,13 +138,6 @@ def make_train_data(data: pd.DataFrame,
     
     data = data.copy()
     
-    # Drop rows with missing values
-    n_all = data.shape[0]
-    data = data.dropna(axis=0)
-    n_dropped = n_all - data.shape[0]
-    if n_dropped > 0:
-        warnings.warn(f'Dropped {n_dropped} rows with missing values', RuntimeWarning)
-    
     # Add a column 'y' if it does not exist
     if 'y' not in data.columns:
         warnings.warn('No column "y" found. Assuming each row represents a single contact.', RuntimeWarning)
@@ -153,6 +160,13 @@ def make_train_data(data: pd.DataFrame,
         grp_vars_cnt = age_vars + grp_vars
             
     data = data[selected_vars]
+    
+    # Drop rows with missing values
+    n_all = data.shape[0]
+    data = data.dropna(axis=0)
+    n_dropped = n_all - data.shape[0]
+    if n_dropped > 0:
+        warnings.warn(f'Dropped {n_dropped} rows with missing values', RuntimeWarning)
     
     # Convert non-numeric columns to categorical
     non_numeric_cols = data[grp_vars_cnt].select_dtypes(include='object').columns
@@ -194,9 +208,9 @@ def make_train_data(data: pd.DataFrame,
     for col in dict_cats.keys():
         df[col] = pd.Categorical(df[col], categories=dict_cats[col])
     
-    return df
+    return df.reset_index(drop=True)
 
-def make_grp_cnt_offsets(df_cnt: pd.DataFrame,
+def add_grp_cnt_offsets(df_cnt: pd.DataFrame,
                         df_grp: pd.DataFrame,
                         grp_vars: str | list[str] | None=None,
                         max: int | None=None) -> pd.DataFrame:
@@ -230,10 +244,10 @@ def make_grp_cnt_offsets(df_cnt: pd.DataFrame,
   
 	Examples
 	--------
-	>>> df_cnt = make_train_data(df, 'id', ['sex_part'])
+	>>> df_train = make_train_data(df, 'id', ['sex_part'])
 	>>> df_grp = df_part
 	>>> df_grp['z'] = df_grp['class_size'] + df_grp['work_contacts_nr'] # Group contacts for school and work
-	>>> offsets = make_group_cnt_offsets(df_cnt, df_grp, 'sex_part', max=60)
+	>>> df_train = add_group_cnt_offsets(df_train, df_grp, 'sex_part', max=60)
     """
     
     if 'y' not in df_cnt.columns:
@@ -251,7 +265,7 @@ def make_grp_cnt_offsets(df_cnt: pd.DataFrame,
     
     df_cnt_part = df_cnt.groupby(grp_vars, observed=True).agg({'y': 'sum'}).reset_index()
     df_grp_sum = df_grp.groupby(grp_vars, observed=True).agg({'z': 'sum'}).reset_index()
-    
+        
     if max is not None: # Cap the sum of group contacts
         df_grp_sum['z'] = df_grp_sum['z'].apply(lambda x: min(x, max))
     
@@ -261,4 +275,4 @@ def make_grp_cnt_offsets(df_cnt: pd.DataFrame,
     df_offsets['S'] = np.where(df_offsets['S'] == 0, 1, df_offsets['S']) # Avoid log(0) = -inf errors
     
     cols = grp_vars + ['S']
-    return df_offsets[cols]
+    return pd.merge(df_cnt, df_offsets[cols], on=grp_vars, how='left')

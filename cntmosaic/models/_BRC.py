@@ -41,14 +41,21 @@ class BRC(ABC):
   """
   
   def __init__(self,
-         data: pd.DataFrame,
-         age_dist: NDArray,
-         likelihood: str='negbin'):
+               data: pd.DataFrame,
+               age_dist: NDArray,
+               likelihood: str='negbin'):
     
     self.data = data.copy()
     self.age_dist = age_dist
     self.likelihood = likelihood
-    self.A = np.max([self.data['age_part'].max(), self.data['age_cnt'].max()]) + 1
+    
+    if 'age_grp_cnt' in self.data.columns:
+      age_part_max = self.data['age_part'].max()
+      age_cnt_max = self.data['age_grp_cnt'].apply(lambda x: x.right - 1).astype(int).max()
+      self.A = np.max([age_part_max, age_cnt_max]) + 1
+    else:
+      self.A = np.max([self.data['age_part'].max(), self.data['age_cnt'].max()]) + 1
+      
     self._compute_indices()
     
   def set_age_dist(self, age_dist: NDArray):

@@ -19,12 +19,10 @@ class BRCrefine(BRC):
   def __init__(self,
                data: pd.DataFrame,
                age_dist: NDArray,
-               offset: NDArray=None,
                likelihood: str='negbin'):
     super().__init__(data, age_dist, likelihood)
     
     self.age_dist = age_dist
-    self.offset = offset
     self.set_hsgp_params()
         
     # Setup
@@ -34,6 +32,7 @@ class BRCrefine(BRC):
     
     self.y = self.data['y'].values
     self.N = self.data['N'].values
+    self.S = self.data['S'].values if 'S' in self.data.columns else np.ones_like(self.y)
     self.log_P = jnp.log(self.age_dist)[jnp.newaxis,:]
     
   def set_hsgp_params(self,
@@ -90,11 +89,8 @@ class BRCrefine(BRC):
     f = self.hsgp.sample(alpha, rho).reshape((self.A, self.A), order='F')
     log_rate = numpyro.deterministic('log_rate', beta0 + f)
     log_cint = numpyro.deterministic('log_cint', log_rate + self.log_P)
-    
-    if self.offset is not None:
-      log_cint += jnp.log(self.offset)
       
-    mu = (jnp.exp(log_cint) @ self.fine_coarse_matrix)[self.aid, self.cid] * self.N
+    mu = (jnp.exp(log_cint) @ self.fine_coarse_matrix)[self.aid, self.cid] * self.N * self.S
     with numpyro.plate('data', len(self.y)):
       if self.likelihood == 'poisson':
         numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y)

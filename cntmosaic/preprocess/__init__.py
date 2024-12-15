@@ -5,12 +5,12 @@ from ._utils import (
 from ._preprocess import (
   impute_age_min_max,
   make_train_data,
-  make_group_cnt_offsets
+  make_grp_cnt_offsets
 )
 
 __all__ = [
   'expand_age_interval',
   'impute_age_min_max',
   'make_train_data',
-  'make_group_cnt_offsets'
+  'make_grp_cnt_offsets'
 ]

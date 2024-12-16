@@ -8,17 +8,22 @@ from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
 
 from ._BRCrefine import BRCrefine
-from ._priors import TensorSplines, TensorPSplines
-from ._math import log_inverse_alr, log_inverse_ilr
+from ._priors import TensorSplines2D, PenalisedTensorSplines2D
+from ._math import (
+    alr,
+    ilr,
+    log_inverse_alr,
+    log_inverse_ilr,
+)
 from ._utils import make_idarrs_for_intervals, index_mask_logsumexp
 
 def set_default_smoother_types(X_vars: list, smoother_types: dict | None):
     if smoother_types is None:
-        smoother_types = {k: 'tpspline' for k in X_vars}
+        smoother_types = {k: 'pts' for k in X_vars}
     else:
         for x in X_vars:
             if x not in smoother_types.keys():
-                smoother_types[x] = 'tpspline'
+                smoother_types[x] = 'pts'
                 
     return smoother_types
   
@@ -64,14 +69,15 @@ class HiBRCrefine(BRCrefine):
         self.X_dims = {x: len(self.data[x].cat.categories) for x in self.X_vars}
         
         # Compute the log of the age distribution proportions
+        self.age_dist_props = age_dist_props
         self.log_age_dist_props = {k: np.log(v).T for k, v in age_dist_props.items()}
         
         # Set default smoother types
         self.smoother_types = set_default_smoother_types(self.X_vars, smoother_types)
-        if 'tspline' in self.smoother_types.values():
-            self.tspline = TensorSplines(np.arange(self.A), df=30, degree=3)
-        if 'tpspline' in self.smoother_types.values():
-            self.tpspline = TensorPSplines(np.arange(self.A), df=30, degree=3, neighborhood=8)
+        if 'ts' in self.smoother_types.values():
+            self.ts = TensorSplines2D(np.arange(self.A), M=30, degree=3)
+        if 'pts' in self.smoother_types.values():
+            self.pts = PenalisedTensorSplines2D(np.arange(self.A), M=30, degree=3, neighborhood=8)
         
         # --- Setup indices ---        
         self.aid = self.data['age_part'].values
@@ -97,11 +103,19 @@ class HiBRCrefine(BRCrefine):
         #TODO: Implement for multiple variables
         
     def sample_omega(self, var):
-        if self.smoother_types[var] == 'tspline':
-            omega = self.tspline.sample(self.X_dims[var]-1)
+        if self.smoother_types[var] == 'ts':
+            omega = self.ts.sample(
+                loc=np.repeat(ilr(self.age_dist_props[var], axis=1), self.A),
+                coef_scale=0.5,
+                event_dim=self.X_dims[var]-1
+            )
             return omega
-        elif self.smoother_types[var] == 'tpspline':
-            omega = self.tpspline.sample(self.X_dims[var]-1)
+        elif self.smoother_types[var] == 'pts':
+            omega = self.pts.sample(
+                loc=np.repeat(ilr(self.age_dist_props[var], axis=1), self.A),
+                coef_scale=0.5,
+                event_dim=self.X_dims[var]-1
+            )
             return omega
     
     def sample_log_delta(self, var):

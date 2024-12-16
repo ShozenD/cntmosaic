@@ -81,6 +81,15 @@ class HiBRCfine(BRCfine):
         self.bid = self.data['age_cnt'].values
         self.X_ids = {c: self.data[c].cat.codes.values for c in self.X_vars}
         
+    def set_age_dim(self, A):
+        self.A = A
+        self._compute_indices()
+        self.set_hsgp_params()
+        if 'ts' in self.smoother_types.values():
+            self.ts = TensorSplines2D(np.arange(self.A), M=30, degree=3)
+        if 'pts' in self.smoother_types.values():
+            self.pts = TensorSplines2D(np.arange(self.A), M=30, degree=3)
+        
     def set_spline_params(self, n_knots: int=27, degree: int=3):
         """Set the parameters for the splines.
         

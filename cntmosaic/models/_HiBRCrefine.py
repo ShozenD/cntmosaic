@@ -87,6 +87,15 @@ class HiBRCrefine(BRCrefine):
           for c in self.X_vars
         }
         
+    def set_age_dim(self, A):
+        self.A = A
+        self._compute_indices()
+        self.set_hsgp_params()
+        if 'ts' in self.smoother_types.values():
+            self.ts = TensorSplines2D(np.arange(self.A), M=30, degree=3)
+        if 'pts' in self.smoother_types.values():
+            self.pts = PenalisedTensorSplines2D(np.arange(self.A), M=30, degree=3, neighborhood=8)
+        
     def set_spline_params(self, n_knots: int=27, degree: int=3):
         """Set the parameters for the splines.
         

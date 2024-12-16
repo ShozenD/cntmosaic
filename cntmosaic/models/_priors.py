@@ -72,7 +72,7 @@ class HSGP:
         else:
             return f
   
-class TensorSplines2D:
+class TensorSpline2D:
     """Sample from a 2 dimensional tensor product of B-splines.
     
     Parameters
@@ -96,7 +96,7 @@ class TensorSplines2D:
     Examples
     --------
     >>> x = np.linspace(0, 1, 100)
-    >>> ts = TensorSplines(x, df=30, degree=3)
+    >>> ts = TensorSpline2D(x, df=30, degree=3)
     """
     def __init__(self,
                  x: NDArray,
@@ -159,8 +159,8 @@ class TensorSplines2D:
             beta = numpyro.sample('tsp_coef', dist.Normal(0, coef_scale))
         return (loc[jnp.newaxis,:] + beta @ self.basis_transpose).reshape((event_dim, self.Nx, self.Ny))
     
-class PenalisedTensorSplines2D(TensorSplines2D):
-    """Sample from a penalised tensor product spline.
+class PenalisedTensorSpline2D(TensorSpline2D):
+    """Sample from a 2 dimensional penalised tensor product spline.
     
     Parameters
     ----------
@@ -179,7 +179,7 @@ class PenalisedTensorSplines2D(TensorSplines2D):
     --------
     
     >>> x = np.linspace(0, 1, 100)
-    >>> tps = TensorPSplines(x, df=30, degree=3)
+    >>> tps = PenalisedTensorSpline2D(x, df=30, degree=3)
     """
     def __init__(self,
                  x: NDArray,

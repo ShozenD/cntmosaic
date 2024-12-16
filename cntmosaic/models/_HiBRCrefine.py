@@ -8,7 +8,7 @@ from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
 
 from ._BRCrefine import BRCrefine
-from ._priors import TensorSplines2D, PenalisedTensorSplines2D
+from ._priors import TensorSpline2D, PenalisedTensorSpline2D
 from ._math import (
     alr,
     ilr,
@@ -75,9 +75,9 @@ class HiBRCrefine(BRCrefine):
         # Set default smoother types
         self.smoother_types = set_default_smoother_types(self.X_vars, smoother_types)
         if 'ts' in self.smoother_types.values():
-            self.ts = TensorSplines2D(np.arange(self.A), M=30, degree=3)
+            self.ts = TensorSpline2D(np.arange(self.A), M=30, degree=3)
         if 'pts' in self.smoother_types.values():
-            self.pts = PenalisedTensorSplines2D(np.arange(self.A), M=30, degree=3, neighborhood=8)
+            self.pts = PenalisedTensorSpline2D(np.arange(self.A), M=30, degree=3, neighborhood=8)
         
         # --- Setup indices ---        
         self.aid = self.data['age_part'].values
@@ -92,9 +92,9 @@ class HiBRCrefine(BRCrefine):
         self._compute_indices()
         self.set_hsgp_params()
         if 'ts' in self.smoother_types.values():
-            self.ts = TensorSplines2D(np.arange(self.A), M=30, degree=3)
+            self.ts = TensorSpline2D(np.arange(self.A), M=30, degree=3)
         if 'pts' in self.smoother_types.values():
-            self.pts = PenalisedTensorSplines2D(np.arange(self.A), M=30, degree=3, neighborhood=8)
+            self.pts = PenalisedTensorSpline2D(np.arange(self.A), M=30, degree=3, neighborhood=8)
         
     def set_spline_params(self, n_knots: int=27, degree: int=3):
         """Set the parameters for the splines.

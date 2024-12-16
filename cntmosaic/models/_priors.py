@@ -151,31 +151,13 @@ class TensorSplines2D:
     def sample(self,
                loc: int | float | NDArray,
                coef_scale: float | NDArray=1,
-               intercept_scale: float=1,
-               event_dim: int=1,
-               intercept: bool=False):
+               event_dim: int=1):
         
-        plate_f = numpyro.plate('f', self.basis.shape[0], dim=-1)
-        if intercept:
-            if isinstance(loc, (int, float)):
-                plate_intcpt = numpyro.plate('x', event_dim, dim=-2)
-                with plate_intcpt:
-                    alpha = numpyro.sample('tsp_intcpt', dist.Normal(loc, intercept_scale))
-            else:
-                loc = loc[jnp.newaxis,:]
-                alpha = numpyro.sample('tsp_intcpt', dist.Normal(loc, intercept_scale))
-                
-            with plate_intcpt, plate_f:
-                beta = numpyro.sample('tsp_coef', dist.Normal(0, coef_scale))
+        if isinstance(loc, (int, float)): loc = jnp.array([loc])
         
-            return (alpha + beta @ self.basis_transpose).reshape((event_dim, self.Nx, self.Ny))
-        else:
-            if isinstance(loc, (int, float)):
-                loc = jnp.array([loc])
-            
-            with plate_f:
-                beta = numpyro.sample('tsp_coef', dist.Normal(0, coef_scale))
-            return (loc[jnp.newaxis,:] + beta @ self.basis_transpose).reshape((event_dim, self.Nx, self.Ny))
+        with numpyro.plate('f', self.basis.shape[-1], dim=-1):
+            beta = numpyro.sample('tsp_coef', dist.Normal(0, coef_scale))
+        return (loc[jnp.newaxis,:] + beta @ self.basis_transpose).reshape((event_dim, self.Nx, self.Ny))
     
 class PenalisedTensorSplines2D(TensorSplines2D):
     """Sample from a penalised tensor product spline.
@@ -211,29 +193,11 @@ class PenalisedTensorSplines2D(TensorSplines2D):
     def sample(self,
                loc: int | float | NDArray,
                coef_scale: float | NDArray=1,
-               intercept_scale: float=1,
-               event_dim: int=1,
-               intercept: bool=False):
+               event_dim: int=1):
         
-        plate_f = numpyro.plate('f', event_dim, dim=-1)
-        if intercept:
-            if isinstance(loc, (int, float)):
-                plate_intcpt = numpyro.plate('x', event_dim, dim=-2)
-                with plate_intcpt:
-                    alpha = numpyro.sample('tsp_intcpt', dist.Normal(loc, intercept_scale))
-            else:
-                loc = loc[jnp.newaxis,:]
-                alpha = numpyro.sample('tsp_intcpt', dist.Normal(loc, intercept_scale))
-                
-            with plate_f:
-                beta = numpyro.sample('tsp_coef', dist.CAR(0, 0.999, 1/coef_scale, self.adj_matrix, is_sparse=True))
-        
-            return (alpha + beta @ self.basis_transpose).reshape((event_dim, self.Nx, self.Ny))
-        else:
-            if isinstance(loc, (int, float)):
-                loc = jnp.array([loc])
+        if isinstance(loc, (int, float)): loc = jnp.array([loc])
+        with numpyro.plate('f', event_dim, dim=-1):
+            beta = numpyro.sample('tsp_coef', dist.CAR(0, 0.999, 1/coef_scale, self.adj_matrix, is_sparse=True))
             
-            with plate_f:
-                beta = numpyro.sample('tsp_coef', dist.CAR(0, 0.999, 1/coef_scale, self.adj_matrix, is_sparse=True))
-            return (loc[jnp.newaxis,:] + beta @ self.basis_transpose).reshape((event_dim, self.Nx, self.Ny))
+        return (loc[jnp.newaxis,:] + beta @ self.basis_transpose).reshape((event_dim, self.Nx, self.Ny))
     

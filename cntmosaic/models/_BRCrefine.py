@@ -35,6 +35,11 @@ class BRCrefine(BRC):
     self.S = self.data['S'].values if 'S' in self.data.columns else np.ones_like(self.y)
     self.log_P = jnp.log(self.age_dist)[jnp.newaxis,:]
     
+  def set_age_dim(self, A):
+    self.A = A
+    self._compute_indices()
+    self.set_hsgp_params()
+    
   def set_hsgp_params(self,
                       M: list[int]=[30, 30],
                       C: list[float]=[1.5, 1.5],

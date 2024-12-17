@@ -50,6 +50,11 @@ class BRCfine(BRC):
         self.log_N = jnp.log(self.data['N'].values)
         self.log_P = jnp.log(self.age_dist)[jnp.newaxis,:]
         
+    def set_age_dim(self, A):
+        self.A = A
+        self._compute_indices()
+        self.set_hsgp_params()
+        
     def set_hsgp_params(self, M: list[int]=[30, 30], C: list[float]=[1.5, 1.5], grid_type: str='age-age'):
         """Set the hyperparameters for the Hilbert space approximate Gaussian process prior.
     

@@ -57,6 +57,17 @@ class BRC(ABC):
       self.A = np.max([self.data['age_part'].max(), self.data['age_cnt'].max()]) + 1
       
     self._compute_indices()
+  
+  def set_age_dim(self, A: int):
+    """Set the age dimension.
+    
+    Parameters
+    ----------
+    A: int
+      Age dimension.
+    """
+    self.A = A
+    self._compute_indices()
     
   def set_age_dist(self, age_dist: NDArray):
     """Set the population age distribution.

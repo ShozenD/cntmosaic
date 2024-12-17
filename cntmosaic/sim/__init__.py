@@ -1,7 +1,5 @@
 from ._utils import (
     print_available_countries,
-    load_base_patterns,
-    load_age_distribution,
 )
 
 from ._sim import (
@@ -15,8 +13,6 @@ from ._eval import ModelEvaluatorSVI, ModelEvaluatorMCMC
 
 utils_module = [
     'print_available_countries',
-    'load_base_patterns',
-    'load_age_distribution'
 ]
 
 sim_module = [

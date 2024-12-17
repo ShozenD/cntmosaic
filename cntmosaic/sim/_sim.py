@@ -91,8 +91,8 @@ def sample_contacts(
         if dist == 'poisson':
             sample = rng.poisson(mu)
         elif dist == 'nbinom':
-            n = mu**2 / (overdisp**2 - mu)
-            p = mu / overdisp**2
+            n = overdisp / (overdisp + mu)
+            p = n / overdisp
             sample = rng.negative_binomial(n, p)
         elif dist == 'bnbinom':
             raise NotImplementedError("Beta-negative binomial distribution is not yet implemented.")
@@ -112,9 +112,11 @@ def sample_contacts(
 def simulate_age(patterns: dict,
                  age_dist: NDArray,
                  dist: str='poisson',
+                 overdisp: float=None,
                  N: int=2500,
                  max_margin_cint: int=20,
-                 mixing_weights: list=None) -> tuple:
+                 mixing_weights: list=None,
+                 seed: int=0) -> tuple:
     """Simulate basic contact patterns and return sample and evaluation DataFrames.
     
     Parameters
@@ -148,7 +150,7 @@ def simulate_age(patterns: dict,
     
     # Make sample data
     rate, cint = make_contact_pattern(patterns, age_dist, mixing_weights, max_margin_cint)
-    df_sample = sample_contacts(1000, cint, age_dist, dist=dist)
+    df_sample = sample_contacts(N, cint, age_dist, dist=dist, overdisp=overdisp, seed=seed)
     
     # Make evaluation data
     aidx = np.array(np.meshgrid(range(len(age_dist)), range(len(age_dist)))).T.reshape(-1, 2)
@@ -225,6 +227,7 @@ def simulate_ses(
     def make_sample_df(ses, P_ses, cint):
         df_sample = sample_contacts(config[ses]['sample_size'], cint, P_ses, dist=dist, seed=seed)
         df_sample['ses'] = ses
+        df_sample['id'] = 'pid' + df_sample['id'].astype(str) + df_sample['ses'].astype(str)
         return df_sample
       
     def make_age_dist_props(age_dist):

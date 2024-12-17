@@ -3,8 +3,8 @@ import pytest
 from .._sim import simulate_age
 from cntmosaic.datasets._base import load_base_patterns, load_age_distribution
 
-patterns = load_base_patterns('United_States', 'country')
-age_dist = load_age_distribution('United_States', 'country')
+patterns = load_base_patterns('United_States')
+age_dist = load_age_distribution('United_States')
 
 def test_basic_functionality():
   df_sample, df_eval = simulate_age(patterns, age_dist.P.values)

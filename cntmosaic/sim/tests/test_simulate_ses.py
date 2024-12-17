@@ -4,8 +4,8 @@ import numpy as np
 from .._sim import simulate_ses
 from cntmosaic.datasets import load_base_patterns, load_age_distribution
 
-patterns = load_base_patterns('United_States', 'country')
-age_dist = load_age_distribution('United_States', 'country')
+patterns = load_base_patterns('United_States')
+age_dist = load_age_distribution('United_States')
 
 def test_basic_functionality():
   df_sample, age_dist_props, evals = simulate_ses(patterns, age_dist.P.values)

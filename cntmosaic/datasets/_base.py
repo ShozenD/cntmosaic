@@ -50,8 +50,6 @@ def load_covimod():
   return load_pickle_data('covimod.pkl')
 
 def load_base_patterns(country: str,
-                       level: str,
-                       region: str=None,
                        symmetrise: bool=False,
                        smooth: bool=False) -> dict:
 	"""Load synthetic contact patterns for a given country and region.
@@ -77,10 +75,7 @@ def load_base_patterns(country: str,
 		A dictionary containing contact patterns for household, school, work, and community settings
 	"""
 	
-	if level == 'country':
-		prefix = f'{country}_country_level_F'
-	else:
-		prefix = f'{country}_subnational_{region}_F'
+	prefix = f'{country}_country_level_F'
 		
 	patterns = {
 		'household': load_csv_data(f'contact_matrices/{prefix}_household_setting_85.csv', header=None).values,
@@ -97,10 +92,7 @@ def load_base_patterns(country: str,
 	
 	return patterns
 
-def load_age_distribution(country: str,
-                          level: str,
-                          region: str=None,
-                          n_age_groups: int=85) -> pd.DataFrame:
+def load_age_distribution(country: str, n_age_groups: int=85) -> pd.DataFrame:
 	"""Load age distribution for a given country and region.
  
 	Parameters
@@ -124,10 +116,7 @@ def load_age_distribution(country: str,
 	
 	sub_dir = 'population_rescaled_age_distributions'
 	
-	if level == 'country':
-		file_name = f'{sub_dir}/{country}_country_level_age_distribution_{n_age_groups}.csv'
-	else:
-		file_name = f'{sub_dir}/{country}_subnational_{region}_age_distribution_{n_age_groups}.csv'
+	file_name = f'{sub_dir}/{country}_country_level_age_distribution_85.csv'
 		
 	age_dist = load_csv_data(file_name, header=None)
 	age_dist.columns = ['age', 'P']

@@ -9,8 +9,6 @@ import pandas as pd
 import numpyro
 from numpyro.handlers import seed, trace
 
-from ._utils import symmetrize_from_lower_tri, transpose_vector_indices
-
 from ._inference import (
   run_inference_mcmc,
   run_inference_svi,
@@ -43,31 +41,44 @@ class BRC(ABC):
   def __init__(self,
                data: pd.DataFrame,
                age_dist: NDArray,
+               priors: dict,
                likelihood: str='negbin'):
     
     self.data = data.copy()
     self.age_dist = age_dist
+    self.priors = priors
     self.likelihood = likelihood
     
     if 'age_grp_cnt' in self.data.columns:
+      age_part_min = self.data['age_part'].min()
+      age_cnt_min = self.data['age_grp_cnt'].apply(lambda x: x.left).astype(int).min()
+      
       age_part_max = self.data['age_part'].max()
       age_cnt_max = self.data['age_grp_cnt'].apply(lambda x: x.right - 1).astype(int).max()
-      self.A = np.max([age_part_max, age_cnt_max]) + 1
-    else:
-      self.A = np.max([self.data['age_part'].max(), self.data['age_cnt'].max()]) + 1
       
-    self._compute_indices()
+      age_min = np.min([age_part_min, age_cnt_min])
+      age_max = np.max([age_part_max, age_cnt_max])
+    else:
+      age_min = np.min([self.data['age_part'].min(), self.data['age_cnt'].min()])
+      age_max = np.max([self.data['age_part'].max(), self.data['age_cnt'].max()])
+    
+    self.set_age_bounds(age_min, age_max)
   
-  def set_age_dim(self, A: int):
-    """Set the age dimension.
+  def set_age_bounds(self, age_min: int, age_max: int):
+    """Set the minimum and maximum age.
     
     Parameters
     ----------
-    A: int
-      Age dimension.
+    min: int
+      Minimum age.
+    max: int
+      Maximum age.
     """
-    self.A = A
-    self._compute_indices()
+    self.age_min = age_min
+    self.age_max = age_max
+    self.A = age_max - age_min + 1
+    for _, prior in self.priors.items():
+      prior.set_age_bounds(age_min, age_max)
     
   def set_age_dist(self, age_dist: NDArray):
     """Set the population age distribution.
@@ -78,11 +89,6 @@ class BRC(ABC):
       Population age distribution.
     """
     self.age_dist = age_dist
-  
-  def _compute_indices(self):
-    """Precompute the indices for symmetrizing and transposing the contact matrix."""
-    self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
-    self.tran_vec_idx = transpose_vector_indices(self.A, self.A)
   
   @abstractmethod
   def model(self):

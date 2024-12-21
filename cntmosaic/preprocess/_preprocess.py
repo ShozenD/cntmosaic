@@ -152,7 +152,8 @@ def make_train_data(data: pd.DataFrame,
     
     if grp_vars is None:
         selected_vars = [id_var] + age_vars + ['y']
-        grp_vars_part = grp_vars_cnt = ['age_part']
+        grp_vars_part = ['age_part']
+        grp_vars_cnt = age_vars
     else:
         grp_vars = [grp_vars] if isinstance(grp_vars, str) else grp_vars
         selected_vars = [id_var] + age_vars + grp_vars + ['y']

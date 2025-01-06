@@ -38,6 +38,8 @@ class BRC(ABC):
     PLoS Computational Biology. 2023
   """
   
+  ALLOWED_LIKELIHOODS = ['negbin', 'poisson']
+  
   def __init__(self,
                data: pd.DataFrame,
                age_dist: NDArray,
@@ -48,6 +50,8 @@ class BRC(ABC):
     self.age_dist = age_dist
     self.priors = priors
     self.likelihood = likelihood
+    
+    self._validate_params()
     
     if 'age_grp_cnt' in self.data.columns:
       age_part_min = self.data['age_part'].min()
@@ -63,6 +67,25 @@ class BRC(ABC):
       age_max = np.max([self.data['age_part'].max(), self.data['age_cnt'].max()])
     
     self.set_age_bounds(age_min, age_max)
+    
+  def _validate_params(self):
+    if not isinstance(self.data, pd.DataFrame):
+      raise ValueError("data must be a pandas DataFrame")
+    
+    if not isinstance(self.age_dist, NDArray):
+      raise ValueError("age_dist must be a numpy array")
+    
+    if not isinstance(self.priors, dict):
+      raise ValueError("priors must be a dictionary")
+    
+    if self.likelihood not in self.ALLOWED_LIKELIHOODS:
+      raise ValueError(f"likelihood must be one of: {self.ALLOWED_LIKELIHOODS}")
+    
+    if 'age_part' not in self.data.columns:
+      raise ValueError("data must contain the column 'age_part'")
+    
+    if 'age_cnt' not in self.data.columns | 'age_grp_cnt' not in self.data.columns:
+      raise ValueError("data must contain the column 'age_cnt' or 'age_grp_cnt'")
   
   def set_age_bounds(self, age_min: int, age_max: int):
     """Set the minimum and maximum age.

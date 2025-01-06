@@ -1,4 +1,5 @@
 from numpy.typing import NDArray
+import jax.numpy as jnp
 import numpyro
 from numpyro import distributions as dist
 
@@ -40,6 +41,9 @@ class PenalisedTensorSpline2D(TensorSpline2D):
     
     >>> priors = {'rate': PenalisedTensorSpline2D()}
     """
+    
+    ALLOWED_NEIGHBORHOODS = [4, 8]
+    
     def __init__(self,
                  M: int | list[int]=30,
                  degree: int | list[int]=3,
@@ -50,34 +54,62 @@ class PenalisedTensorSpline2D(TensorSpline2D):
                  event_dim: int=1,
                  transform: str | None=None,
                  symmetric: bool=False):
+        
         super().__init__(M, degree, grid_type, loc, coef_scale, event_dim, transform, symmetric)
+        
+        if neighborhood not in self.ALLOWED_NEIGHBORHOODS:
+            raise ValueError(f"neighborhood must be one of: {self.ALLOWED_NEIGHBORHOODS}")
         self.adj_matrix = gmrf_adjacency_matrix(M, M, neighborhood)
         
     def set_age_bounds(self, min_age, max_age):
         return super().set_age_bounds(min_age, max_age)
     
-    def _make_grid(self):
-        return super()._make_grid()
+    def _set_grid(self):
+        return super()._set_grid()
     
     def sample(self):
-        if self.event_dim == 1:
+        """Sample from the penalised tensor spline prior."""
+        
+        if self.type == 'global':
             beta = numpyro.sample('spline_coef', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
             
-            f = self.basis @ beta
+            f = self.PHI @ beta
             f = f[self.sym_tri_idx] if self.symmetric else f
-            
             return (self.loc + f).reshape((self.A, self.A), order='F')
-        else:
+        
+        elif self.type == 'partial':
             with numpyro.plate('event', self.event_dim_eff):
                 beta = numpyro.sample('spline_coef', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
             
-            f = beta @ self.basis_transpose
+            f = beta @ self.PHI_T
             f = f[self.sym_tri_idx] if self.symmetric else f
-            f = (self.loc + f).reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+        
+        elif self.type == 'full':
+            plate_diag = numpyro.plate('diag', self.event_dim_diag)
+            plate_non_diag = numpyro.plate('non_diag', self.event_dim_non_diag)
             
-            if self.transform == 'alr':
-                return inverse_alr(f, axis=0)
-            elif self.transform == 'clr':
-                return inverse_clr(f, axis=0)
-            elif self.transform == 'ilr':
-                return inverse_ilr(f, axis=0)
+            with plate_diag:
+                beta_diag = numpyro.sample('spline_coef_diag', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
+            
+            with plate_non_diag:
+                beta_non_diag = numpyro.sample('spline_coef_non_diag', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
+            
+            f_diag = beta_diag @ self.PHI_T
+            f_diag = f_diag[self.sym_tri_idx] # Must be symmetric
+            
+            f = beta_non_diag @ self.PHI_T
+            
+            for i in range(self.event_dim_diag):
+                f = jnp.insert(f, (i+1)**2 - 1, f_diag[i,:], axis=0)
+        else:
+            raise ValueError("Unknown prior type")
+        
+        if self.transform == 'alr':
+            return inverse_alr(f, axis=0)
+        elif self.transform == 'clr':
+            return inverse_clr(f, axis=0)
+        elif self.transform == 'ilr':
+            return inverse_ilr(f, axis=0)
+        else:
+            return f

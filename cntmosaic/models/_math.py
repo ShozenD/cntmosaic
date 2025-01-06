@@ -1,9 +1,14 @@
+import math
 import numpy as np
 
 import jax
 import jax.numpy as jnp
 from jax import Array
 from jax.typing import ArrayLike
+
+def is_square(x: int) -> bool:
+  """Check if a number is a perfect square"""
+  return x == math.isqrt(x) ** 2
 
 def closure(x: ArrayLike, axis: int=0) -> Array:
   """Closure operation for a given axis"""

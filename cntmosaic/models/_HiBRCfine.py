@@ -8,12 +8,6 @@ from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
 
 from ._BRCfine import BRCfine
-from ._math import (
-    alr,
-    ilr,
-    log_inverse_alr,
-    log_inverse_ilr,
-)
 
 class HiBRCfine(BRCfine):
     """High-resolution Bayesian Rate Consistency model with fine age inputs.
@@ -30,12 +24,10 @@ class HiBRCfine(BRCfine):
         The population level age distribution.
     age_dist_props: dict
         Dictionary containing the ratios of the population age distribution for each stratification variable.
-    smoother_type: dict, optional
-        Dictionary containing the type of smoother to use for each stratification variable.
-    offset: NDArray, optional
-        Additional offset to be multiplied to the contact intensity.
+    priors: dict, optional
+        Dictionary containing the priors for the components of the model.
     likelihood: str, default='negbin'
-        Likelihood function to use.
+        Likelihood function to use. Options are 'poisson' and 'negbin'.
     """
     def __init__(self,
                  data: pd.DataFrame,
@@ -46,14 +38,16 @@ class HiBRCfine(BRCfine):
         
         super().__init__(data, age_dist, priors, likelihood)
         
-        self.X_vars = self.data.select_dtypes(include='category').columns
+        self.X_vars = [key for key in priors.keys() if key != 'rate']
+        for c in self.X_vars: # Convert stratification variables to integer codes
+            self.data[c] = pd.Categorical(self.data[c], categories=self.data[c].unique().sort(), ordered=True)
         self.X_ids = {c: self.data[c].cat.codes.values for c in self.X_vars}        
-        self.log_age_dist_props = {k: np.log(v).T for k, v in age_dist_props.items()}
+        self.log_age_dist_props = {k: jnp.log(v) for k, v in age_dist_props.items()}
     
     def sample_log_delta(self, var):
         log_delta = numpyro.deterministic(
             'log_delta',
-            jnp.log(self.priors[var].sample()) - self.log_age_dist_props[var][:,:,None]
+            jnp.log(self.priors[var].sample()) - self.log_age_dist_props[var]
         )
         return log_delta
 

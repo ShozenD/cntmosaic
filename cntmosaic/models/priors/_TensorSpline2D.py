@@ -22,6 +22,22 @@ from .._math import (
     inverse_ilr,
 )
 
+def validate_init_params(M: int | list[int], degree: int | list[int], coef_scale: float | NDArray):
+    """Validates additional input parameters for the TensorSpline2D class."""
+    
+    if isinstance(M, int) and M <= 0:
+        raise ValueError("M must be greater than 0")
+    elif isinstance(M, list) and (len(M) == 1 or len(M) > 2):
+        raise ValueError("M must be scalar or a list of length 2")
+    
+    if isinstance(degree, int) and degree <= 0:
+        raise ValueError("degree must be greater than 0")
+    elif isinstance(degree, list) and len(degree) > 2:
+        raise ValueError("degree must be a list of length 2")
+    
+    if coef_scale <= 0:
+        raise ValueError("coef_scale must be greater than 0")
+
 class TensorSpline2D(Prior2D):
     """Sample from a 2 dimensional tensor product of B-splines.
     
@@ -51,7 +67,7 @@ class TensorSpline2D(Prior2D):
     
     Examples
     --------
-    >>> priors = {'rate' = TensorSpline2D(symmetric=True)}
+    >>> priors = {'rate' = TensorSpline2D('global', symmetric=True)}
     """
     def __init__(self,
                  M: int | list[int]=30,
@@ -61,38 +77,34 @@ class TensorSpline2D(Prior2D):
                  coef_scale: float | NDArray=1,
                  event_dim: int=1,
                  transform: str | None=None,
+                 type: str='global',
                  symmetric: bool=False):
         
-        super().__init__(grid_type, loc, event_dim, transform, symmetric)
+        validate_init_params(M, degree, coef_scale)
+        super().__init__(grid_type, loc, event_dim, transform, type)
         
         self.coef_scale = coef_scale
         self.M = np.array([M]*2) if isinstance(M, int) else np.array(M)
         self.degree = np.array([degree]*2) if isinstance(degree, int) else np.array(degree)
         self.n_knots_inner = self.M + self.degree + 1
         self.n_knots_outer = 2 * (self.degree + 1)
+        self.symmetric = symmetric
         
     def set_age_bounds(self, min_age: int, max_age: int):
         self.min_age = min_age
         self.max_age = max_age
         self.A = max_age - min_age + 1
         
-        self._make_loc()
-        self._make_grid()
-        self._make_basis()
+        self._set_loc()
+        self._set_grid()
+        self._set_basis()
         
-    def _make_grid(self):
-        if self.grid_type == 'age-age':
-            X = age_age_grid(self.A)
-        elif self.grid_type == 'diff-age':
-            X = diff_age_age_grid(self.A)
-        else:
-            raise ValueError("grid_type must be 'age-age' or 'diff-age'")
-        
-        if self.symmetric:
-            self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
-            
+    def _set_grid(self):
+        X = age_age_grid(self.A) if self.grid_type == 'age-age' else diff_age_age_grid(self.A)
         self.x = np.sort(np.unique(X[:, 0]))
         self.y = np.sort(np.unique(X[:, 1]))
+        
+        self.sym_tri_idx = symmetrize_from_lower_tri(self.A) if self.symmetric else None
         
     def _define_knots(self, x: NDArray, n_knots: int, degree: int) -> NDArray:
         boundary_extension = (x.max() - x.min()) * 0.05
@@ -117,44 +129,81 @@ class TensorSpline2D(Prior2D):
         
         return np.kron(PHI1, PHI2)
     
-    def _make_basis(self):  
-        self.basis = self.tensor_spline_basis(
-            x=self.x,
-            y=self.y,
-            n_knots=self.n_knots_inner - self.n_knots_outer + 1, # Control the degree of freedom
-            degree=self.degree
-        )
-        if self.symmetric:
-            self.ltri_idx = lower_tri_indices(self.A)
-            self.basis = self.basis[self.ltri_idx]
+    def _set_basis(self):
+        """Sets the basis matrices based on the prior type."""
+        n_basis_functions = self.n_knots_inner - self.n_knots_outer + 1 # Clear variable name
+        self.PHI = self.tensor_spline_basis(self.x, self.y, n_basis_functions, self.degree)
         
-        self.basis_transpose = self.basis.T
+        if self.type == 'global':
+            self.ltri_idx = lower_tri_indices(self.A)
+            self.PHI = self.PHI[self.ltri_idx]
+            self.PHI_T = self.PHI.T
+        elif self.type == 'full': # Full case
+            self.ltri_idx = lower_tri_indices(self.A)
+            self.PHI_diag = self.PHI[self.ltri_idx]
+            self.PHI_non_diag = self.PHI
+            self.PHI_diag_T = self.PHI_diag.T
+            self.PHI_non_diag_T = self.PHI_non_diag.T
+        else: # partial case
+            self.PHI_T = self.PHI.T
         
     def sample(self):
-        if self.event_dim == 1:
-            with numpyro.plate('coef', self.basis.shape[-1]):
+        """Samples from the tensor spline prior."""
+        
+        if self.type == 'global':
+            with numpyro.plate('coef', self.PHI.shape[-1]):
                 beta = numpyro.sample('spline_coef', dist.Normal(0, self.coef_scale))
             
-            f = beta @ self.basis_transpose
+            f = beta @ self.PHI_T
             f = f[self.sym_tri_idx] if self.symmetric else f
-            
-            return (self.loc + f).reshape((self.A, self.A), order='F')
-        else:
+            return self.loc + f.reshape((self.A, self.A), order='F')
+        
+        elif self.type == 'partial':
             plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)
-            plate_coef = numpyro.plate('coef', self.basis.shape[-1], dim=-1)
+            plate_coef = numpyro.plate('coef', self.PHI.shape[-1], dim=-1)
             with plate_event, plate_coef:
                 beta = numpyro.sample('coef', dist.Normal(0, self.coef_scale))
+
+            f = beta @ self.PHI_T
+            f = f[:,self.sym_tri_idx] if self.symmetric else f
+            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+                
+        elif self.type == 'full':
+            plate_diag = numpyro.plate('diag', self.event_dim_diag, dim=-2)
+            plate_non_diag = numpyro.plate('non_diag', self.event_dim_non_diag, dim=-2)
+            plate_coef = numpyro.plate('coef', self.PHI_diag.shape[-1], dim=-1)
             
-            f = beta @ self.basis_transpose
-            f = f[self.sym_tri_idx] if self.symmetric else f
-            f = (self.loc + beta @ self.basis_transpose).reshape((self.event_dim_eff, self.A, self.A), order='F')
+            with plate_diag, plate_coef:
+                beta_diag = numpyro.sample('coef_diag', dist.Normal(0, self.coef_scale))
+                
+            with plate_non_diag, plate_coef:
+                beta_non_diag = numpyro.sample('coef_non_diag', dist.Normal(0, self.coef_scale))
             
-            if self.transform == 'alr':
-                return inverse_alr(f, axis=1)
-            elif self.transform == 'clr':
-                return inverse_clr(f, axis=1)
-            elif self.transform == 'ilr':
-                return inverse_ilr(f, axis=1)
+            f_diag = beta_diag @ self.PHI_diag_T
+            f_diag = f_diag[:,self.sym_tri_idx] # Must be symmetric
             
+            f = beta_non_diag @ self.PHI_non_diag_T
+            
+            # Insert the diagonal elements into the non-diagonal elements
+            # to complete the tensor.
+            for i in range(self.event_dim_diag):
+                f = jnp.insert(f, (i+1)**2 - 1, f_diag[i,:], axis=0)
+                
+            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+        else:
+            raise ValueError("Unknown prior type")
+                
+        # Apply real-to-simplex transformation
+        if self.transform == 'alr':
+            return inverse_alr(f, axis=0)
+        elif self.transform == 'clr':
+            return inverse_clr(f, axis=0)
+        elif self.transform == 'ilr':
+            return inverse_ilr(f, axis=0)
+        else:
+            return f
+            
+                
+                
             
             

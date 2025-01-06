@@ -72,7 +72,7 @@ def symmetrize_from_lower_tri(N: int) -> NDArray:
 	return idx
 
 
-def lower_tri_indices(N: int) -> NDArray:
+def lower_tri_indices(N: int, inc_diag=True) -> NDArray:
 	"""
 	Indices to extract the lower triangular elements of a square matrix
 	in column-major order
@@ -81,6 +81,8 @@ def lower_tri_indices(N: int) -> NDArray:
 	----------
 	N: int
 		size of one dimension of the square matrix
+  inc_diag: bool, optional
+		include the diagonal elements in the lower triangular part (default is True)
 		
 	Returns
 	-------
@@ -90,10 +92,14 @@ def lower_tri_indices(N: int) -> NDArray:
 	n = 0
 	for j in range(N):
 		for i in range(N):
-			if i >= j:
-				idx[n] = i + j*N
-				n += 1
-
+			if inc_diag:
+				if i >= j:
+					idx[n] = i + j*N
+					n += 1
+			else:
+				if i > j:
+					idx[n] = i + j*N
+					n += 1
 	return idx
 
 def transpose_vector_indices(rows: int, cols: int) -> NDArray:

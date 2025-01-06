@@ -86,6 +86,9 @@ class BRC(ABC):
     
     if 'age_cnt' not in self.data.columns | 'age_grp_cnt' not in self.data.columns:
       raise ValueError("data must contain the column 'age_cnt' or 'age_grp_cnt'")
+    
+    if 'rate' not in self.priors.keys():
+      raise ValueError("priors must contain the specifications for 'rate'")
   
   def set_age_bounds(self, age_min: int, age_max: int):
     """Set the minimum and maximum age.

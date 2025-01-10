@@ -90,10 +90,15 @@ class Prior2D(ABC):
       else: # clr or None
         self.event_dim_eff = self.event_dim
         self.event_dim_non_diag = self.event_dim - self.event_dim_diag
-    else: # global or partial
-      self.event_dim_eff = self.event_dim
-      self.event_dim_diag = None
-      self.event_dim_non_diag = None
+        
+    elif self.type == 'partial':
+      if self.transform in ['alr', 'ilr']:
+        self.event_dim_eff = self.event_dim - 1
+      else:
+        self.event_dim_eff = self.event_dim
+        
+    else: # global
+      self.event_dim_eff = 1
     
   @abstractmethod
   def set_age_bounds(self, min_age: int, max_age: int):

@@ -53,9 +53,10 @@ class PenalisedTensorSpline2D(TensorSpline2D):
                  coef_scale: float | NDArray=1,
                  event_dim: int=1,
                  transform: str | None=None,
+                 type: str='global',
                  symmetric: bool=False):
         
-        super().__init__(M, degree, grid_type, loc, coef_scale, event_dim, transform, symmetric)
+        super().__init__(M, degree, grid_type, loc, coef_scale, event_dim, transform, type, symmetric)
         
         if neighborhood not in self.ALLOWED_NEIGHBORHOODS:
             raise ValueError(f"neighborhood must be one of: {self.ALLOWED_NEIGHBORHOODS}")
@@ -75,14 +76,14 @@ class PenalisedTensorSpline2D(TensorSpline2D):
             
             f = self.PHI @ beta
             f = f[self.sym_tri_idx] if self.symmetric else f
-            return (self.loc + f).reshape((self.A, self.A), order='F')
+            return f.reshape((self.A, self.A), order='F')
         
         elif self.type == 'partial':
             with numpyro.plate('event', self.event_dim_eff):
                 beta = numpyro.sample('spline_coef', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
             
             f = beta @ self.PHI_T
-            f = f[self.sym_tri_idx] if self.symmetric else f
+            f = f[:,self.sym_tri_idx] if self.symmetric else f
             f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
         
         elif self.type == 'full':
@@ -95,13 +96,15 @@ class PenalisedTensorSpline2D(TensorSpline2D):
             with plate_non_diag:
                 beta_non_diag = numpyro.sample('spline_coef_non_diag', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
             
-            f_diag = beta_diag @ self.PHI_T
-            f_diag = f_diag[self.sym_tri_idx] # Must be symmetric
+            f_diag = beta_diag @ self.PHI_diag_T
+            f_diag = f_diag[:,self.sym_tri_idx] # Must be symmetric
             
-            f = beta_non_diag @ self.PHI_T
+            f = beta_non_diag @ self.PHI_non_diag_T
             
             for i in range(self.event_dim_diag):
                 f = jnp.insert(f, (i+1)**2 - 1, f_diag[i,:], axis=0)
+                
+            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
         else:
             raise ValueError("Unknown prior type")
         

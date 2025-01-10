@@ -136,10 +136,12 @@ class TensorSpline2D(Prior2D):
         
         if self.type == 'global':
             self.ltri_idx = lower_tri_indices(self.A)
+            self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
             self.PHI = self.PHI[self.ltri_idx]
             self.PHI_T = self.PHI.T
         elif self.type == 'full': # Full case
             self.ltri_idx = lower_tri_indices(self.A)
+            self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
             self.PHI_diag = self.PHI[self.ltri_idx]
             self.PHI_non_diag = self.PHI
             self.PHI_diag_T = self.PHI_diag.T
@@ -156,7 +158,7 @@ class TensorSpline2D(Prior2D):
             
             f = beta @ self.PHI_T
             f = f[self.sym_tri_idx] if self.symmetric else f
-            return self.loc + f.reshape((self.A, self.A), order='F')
+            return f.reshape((self.A, self.A), order='F')
         
         elif self.type == 'partial':
             plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)

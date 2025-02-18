@@ -61,7 +61,7 @@ class HSGP2D(Prior2D):
         
         self._make_grid()
         self._make_eigenfunctions()
-        self._make_loc()
+        self._set_loc()
     
     def _make_grid(self):
         if self.grid_type == 'age-age':

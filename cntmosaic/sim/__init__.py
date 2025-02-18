@@ -6,7 +6,8 @@ from ._sim import (
     make_contact_pattern,
     sample_contacts,
     simulate_age,
-    simulate_ses
+    simulate_ses,
+    sample_participants
 )
 
 from ._eval import ModelEvaluatorSVI, ModelEvaluatorMCMC
@@ -20,6 +21,7 @@ sim_module = [
 	'load_base_patterns',
 	'load_age_distribution',
 	'make_contact_pattern',
+    'sample_participants',
 	'sample_contacts',
     'simulate_age',
     'simulate_ses'

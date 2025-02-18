@@ -1,5 +1,7 @@
 from pathlib import Path
+import itertools
 import pandas as pd
+import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter
 
@@ -74,3 +76,30 @@ def smooth_patterns(patterns: dict) -> dict:
 	patterns['community'] = gaussian_filter(patterns['community'], sigma=1)
 	
 	return patterns
+
+def expand_grid(data_dict) -> pd.DataFrame:
+    """Create a dataframe from a dictionary of lists. Analogous to R's expand.grid."""
+    rows = itertools.product(*data_dict.values())
+    return pd.DataFrame.from_records(rows, columns=data_dict.keys())
+
+def normalise_age_dists(age_dists: dict[NDArray]):
+  assert isinstance(age_dists, dict), 'Age distributions must be a dictionary.'
+  assert 'base' in age_dists, 'Base age distribution is required.'
+  
+  normalised_dists = {}
+    
+  try:
+      base_dist = age_dists['base']
+      normalised_dists['base'] = base_dist / base_dist.sum()
+      
+      for key, conditional_dist in age_dists.items():
+          if key != 'base':
+              normalised_dists[key] = {}
+              dist = np.vstack([value for value in conditional_dist.values()])
+              probs = dist / dist.sum(axis=0)
+              for i, cat in enumerate(conditional_dist.keys()):
+                  normalised_dists[key][cat] = probs[i,:]
+  except:
+      raise TypeError(f'Invalid distribution type: All values in age_dists must be np.ndarrays.')
+    
+  return normalised_dists

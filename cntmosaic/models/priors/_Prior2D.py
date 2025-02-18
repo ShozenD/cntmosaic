@@ -75,7 +75,7 @@ class Prior2D(ABC):
           raise ValueError(f"Unknown transform: {self.transform}")
     else:
       raise ValueError(
-        f"loc must be a scaler, or have shape (event_dim, A, A) or (event_dim, A) but got {self.loc.shape}"
+        f"loc must be a scaler, or have shape ({self.event_dim}, {self.A}, {self.A}) or ({self.event_dim}, {self.A} but got {self.loc.shape}"
       )
   
   def _set_event_dim_eff(self):

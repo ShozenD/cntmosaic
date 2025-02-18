@@ -1,7 +1,5 @@
-import numpy as np
 from numpy.typing import NDArray
 import pandas as pd
-import jax
 import jax.numpy as jnp
 import numpyro
 from numpyro import distributions as dist
@@ -40,10 +38,20 @@ class HiBRCfine(BRCfine):
         
         self.X_vars = [key for key in priors.keys() if key != 'rate']
         for c in self.X_vars: # Convert stratification variables to integer codes
-            self.data[c] = pd.Categorical(self.data[c], categories=self.data[c].unique().sort(), ordered=True)
+            self.data[c] = pd.Categorical(self.data[c], categories=self.data[c].unique(), ordered=True)
         self.X_ids = {c: self.data[c].cat.codes.values for c in self.X_vars}        
-        self.log_age_dist_props = {k: jnp.log(v) for k, v in age_dist_props.items()}
-    
+        self.set_log_age_dist_props(age_dist_props)
+        
+    def set_log_age_dist_props(self, age_dist_props):
+        self.log_age_dist_props = {}
+        for k, v in age_dist_props.items():
+            if age_dist_props[k].shape == (self.priors[k].event_dim, self.A):
+                self.log_age_dist_props[k] = jnp.log(v)[:,:,jnp.newaxis]
+            elif age_dist_props[k].shape == (self.priors[k].event_dim, self.A, self.A):
+                self.log_age_dist_props[k] = jnp.log(v)
+            else:
+                raise ValueError(f"Invalid shape for age_dist_props[{k}].")
+            
     def sample_log_delta(self, var):
         log_delta = numpyro.deterministic(
             'log_delta',
@@ -57,7 +65,6 @@ class HiBRCfine(BRCfine):
             f = self.priors['rate'].sample()
         log_rate = numpyro.deterministic('log_rate', beta0 + f)
         log_cint = (log_rate + self.log_P)[self.aid, self.bid]
-
         for var in self.X_vars:
             with scope(prefix=var):
                 log_cint += self.sample_log_delta(var)[self.X_ids[var], self.aid, self.bid]

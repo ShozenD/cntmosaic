@@ -72,7 +72,7 @@ class BRC(ABC):
     if not isinstance(self.data, pd.DataFrame):
       raise ValueError("data must be a pandas DataFrame")
     
-    if not isinstance(self.age_dist, NDArray):
+    if not isinstance(self.age_dist, np.ndarray):
       raise ValueError("age_dist must be a numpy array")
     
     if not isinstance(self.priors, dict):
@@ -84,7 +84,7 @@ class BRC(ABC):
     if 'age_part' not in self.data.columns:
       raise ValueError("data must contain the column 'age_part'")
     
-    if 'age_cnt' not in self.data.columns | 'age_grp_cnt' not in self.data.columns:
+    if 'age_cnt' not in self.data.columns and 'age_grp_cnt' not in self.data.columns:
       raise ValueError("data must contain the column 'age_cnt' or 'age_grp_cnt'")
     
     if 'rate' not in self.priors.keys():

@@ -16,6 +16,26 @@ from ._utils import (
 
 
 class BRCrefine(BRC):
+  """Bayesian Rate Consistency model with fine participant age but coarse contacted age.
+
+  Parameters
+  ----------
+  data: DataFrame
+      DataFrame containing the contact data. Must contain the columns 'y', 'age_part', and 'age_grp_cnt.
+      'y' is the number of contacts between 'age_part' and 'age_grp_cnt'.
+      'age_part' is the age of the contactor.
+      'age_grp_cnt' is the age group of the contacted.
+  age_dist: NDArray
+      The population age distribution.
+  likelihood: str, default='negbin'
+      Likelihood function to use.
+      
+  References
+  ----------
+  Shozen Dan et al., "Estimating fine age structure and time trends in 
+  human contact patterns from coarse contact data: The Bayesian rate consistency model",
+  PLoS Computational Biology. 2023
+  """
   def __init__(self,
                data: pd.DataFrame,
                age_dist: NDArray,

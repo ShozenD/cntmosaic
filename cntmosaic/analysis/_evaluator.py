@@ -12,7 +12,7 @@ def compute_metrics(y_true, y_est, y_low, y_high):
 	"""
 	rmse = root_mean_squared_error(y_true, y_est)
 	mae = mean_absolute_error(y_true, y_est)
-	mape = mean_absolute_percentage_error(y_true, y_est)
+	mape = mean_absolute_percentage_error(y_true, y_est) * 100
 	coverage = np.mean((y_true >= y_low) & (y_true <= y_high)) * 100
 	return rmse, mae, mape, coverage
 

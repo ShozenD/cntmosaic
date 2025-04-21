@@ -157,11 +157,16 @@ class SocialMix:
 						raise ValueError("Age limits must be a list or numpy array.")
 				if len(self.age_limits) < 2:
 						raise ValueError("At least two age limits are required.")
-				if not all(isinstance(i, (int, float)) for i in self.age_limits):
+				if not all(np.issubdtype(type(i), np.number) for i in self.age_limits):
 						raise ValueError("All age limits must be numeric.")
 				if not all(self.age_limits[i] < self.age_limits[i + 1] for i in range(len(self.age_limits) - 1)):
 						raise ValueError("Age limits must be in ascending order.")
     
+				if 'age_grp_part' not in self.df_part.columns:
+						self.df_part = assign_age_group(
+								self.df_part, "age_part", self.age_limits, "age_grp_part"
+        		)
+      
 				ssizes = self.df_part.groupby("age_grp_part", observed=False).size().reset_index(name="N")
 				if np.min(ssizes['N']) == 0:
 					print("Warning: Some age groups have zero sample sizes. Merging age groups.")

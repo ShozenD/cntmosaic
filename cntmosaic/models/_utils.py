@@ -185,6 +185,8 @@ def gmrf_adjacency_matrix(n_rows, n_cols, neighborhood=4):
 					bottom_right = (row + 1) * n_cols + (col + 1)
 					adjacency[node, bottom_right] = 1
 					adjacency[bottom_right, node] = 1
+     
+	adjacency = adjacency.tocsr()
 
 	# Convert to CSR for efficient arithmetic and slicing
 	return adjacency.tocsr()

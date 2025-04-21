@@ -73,3 +73,41 @@ class ModelSummariserSVI:
 			}
 						
 		return self.sum_mcint
+
+class ModelSummariserSocialMix:
+  def __init__(self, sm):
+    self.sm = sm
+    
+  def summarise_rate(self, probs: tuple = (0.025, 0.5, 0.975)):
+    """
+    Summarise the contact rate matrix.
+    """
+    if not hasattr(self.sm, 'boots_rate'):
+      raise ValueError("Bootstrapping has not been performed.")
+    
+    if not hasattr(self, 'sum_rate'):
+      self.sum_rate = np.quantile(self.sm.boots_rate, probs, axis=0)
+      
+    return self.sum_rate
+      
+  def summarise_cint(self, probs: tuple = (0.025, 0.5, 0.975)):
+    """
+    Summarise the contact intensity matrix.
+    """
+    if not hasattr(self.sm, 'boots_cint'):
+      raise ValueError("Bootstrapping has not been performed.")
+    
+    if not hasattr(self, 'sum_cint'):
+      self.sum_cint = np.quantile(self.sm.boots_cint, probs, axis=0)
+      
+    return self.sum_cint
+      
+  def summarise_mcint(self, probs: tuple = (0.025, 0.5, 0.975)):
+    """
+    Summarise the marginal contact intensity of the model.
+    """
+    if not hasattr(self, 'sum_mcint'):
+      mcint = self.sm.boots_cint.sum(axis=2)
+      self.sum_mcint = np.quantile(mcint, probs, axis=0)
+    
+    return self.sum_mcint

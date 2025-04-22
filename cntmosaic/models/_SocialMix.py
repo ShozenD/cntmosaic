@@ -3,16 +3,16 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-
+from ..utils import AgeBins, depixilate
 
 # Helper functions
-def assign_age_group(df, column, age_limits, new_col):
+def assign_age_group(df, column, age_bins, new_col):
 		"""
 		Adds an age group column to the dataframe using the provided age limits.
 		"""
-		df[new_col] = pd.cut(df[column], bins=age_limits, right=False, include_lowest=True)
+		bins = age_bins.left + [age_bins.right[-1]]
+		df[new_col] = pd.cut(df[column], bins=bins, right=False, include_lowest=True)
 		return df
-
 
 def compute_contact_counts(df_part, df_cnt):
 		"""
@@ -36,21 +36,17 @@ def compute_sample_sizes(df_part, group_col):
 		sample_sizes = (
 				df_part.groupby(group_col, observed=False).size().reset_index(name="N")
 		)
-		return jnp.asarray(sample_sizes["N"].to_numpy())
+		return jnp.asarray(sample_sizes["N"].values)
 
 
-def compute_population_sizes(df_age_dist, age_limits):
+def compute_population_sizes(df_age_dist, group_col):
 		"""
 		Assign age groups to the population data and aggregate the counts by group.
 		"""
-		if "age_grp" not in df_age_dist.columns:
-				df_age_dist["age_grp"] = pd.cut(
-						df_age_dist["age"], bins=age_limits, right=False, include_lowest=True
-				)
-		pop_df = (
+		pop_sizes = (
 				df_age_dist.groupby("age_grp", observed=False).agg({"P": "sum"}).reset_index()
 		)
-		return jnp.asarray(pop_df["P"].to_numpy())
+		return jnp.asarray(pop_sizes["P"].values)
 
 
 def merge_zero_groups(intervals, counts):
@@ -137,37 +133,27 @@ class SocialMix:
 				df_part: pd.DataFrame,
 				df_cnt: pd.DataFrame,
 				df_age_dist: pd.DataFrame,
-				age_limits: list | np.ndarray,
+				age_bins: AgeBins,
 				symmetric: bool = False,
 		):
 				self.df_part = df_part
 				self.df_cnt = df_cnt
 				self.df_age_dist = df_age_dist
 				self.symmetric = symmetric
-				self.age_limits = np.asarray(age_limits)
+				self.age_bins = age_bins
 				self.check_dataframes()
-				self.check_age_limits()
+				self.check_age_bins()
 				self.preprocess()
 				
-		def check_age_limits(self):
+		def check_age_bins(self):
 				"""
 				Check if the age limits are valid.
 				"""
-				if not isinstance(self.age_limits, (list, np.ndarray)):
-						raise ValueError("Age limits must be a list or numpy array.")
-				if len(self.age_limits) < 2:
-						raise ValueError("At least two age limits are required.")
-				if not all(np.issubdtype(type(i), np.number) for i in self.age_limits):
-						raise ValueError("All age limits must be numeric.")
-				if not all(self.age_limits[i] < self.age_limits[i + 1] for i in range(len(self.age_limits) - 1)):
-						raise ValueError("Age limits must be in ascending order.")
-    
-				if 'age_grp_part' not in self.df_part.columns:
-						self.df_part = assign_age_group(
-								self.df_part, "age_part", self.age_limits, "age_grp_part"
-        		)
+				tmp = assign_age_group(
+						self.df_part.copy(), "age_part", self.age_bins, "age_grp_part"
+        )
       
-				ssizes = self.df_part.groupby("age_grp_part", observed=False).size().reset_index(name="N")
+				ssizes = tmp.groupby("age_grp_part", observed=False).size().reset_index(name="N")
 				if np.min(ssizes['N']) == 0:
 					print("Warning: Some age groups have zero sample sizes. Merging age groups.")
 
@@ -176,9 +162,11 @@ class SocialMix:
 							ssizes["age_grp_part"].cat.categories, ssizes["N"].to_numpy()
 					)
      
-					# Define new age_lmits based on the merged intervals
-					new_age_limits = np.array([interval.left for interval in merged_intervals] + [merged_intervals[-1].right])
-					self.age_limits = new_age_limits
+					# Define new age_bins based on the merged intervals
+					new_age_bins = AgeBins(min=merged_intervals[0].left,
+                            		 max=merged_intervals[-1].right,
+                               	 cuts=merged_intervals[1:-1])
+					self.age_bins = new_age_bins
 
 		def check_dataframes(self):
 				"""
@@ -196,11 +184,10 @@ class SocialMix:
 				if not (has_age_part or has_age_grp_part):
 						raise ValueError("Participants dataframe must have either 'age_part' or 'age_grp_part' column.")
 
-				# For df_cnt: must have either 'age_cnt' or 'age_grp_cnt' plus column 'y'.
+				# For df_cnt: must have either 'age_cnt'  plus column 'y'.
 				has_age_cnt = "age_cnt" in self.df_cnt.columns
-				has_age_grp_cnt = "age_grp_cnt" in self.df_cnt.columns
-				if not (has_age_cnt or has_age_grp_cnt):
-						raise ValueError("Contacts dataframe must have either 'age_cnt' or 'age_grp_cnt' column.")
+				if not has_age_cnt:
+						raise ValueError("Contacts dataframe must have 'age_cnt' column.")
 				if "y" not in self.df_cnt.columns:
 						raise ValueError("Missing column 'y' in contacts dataframe.")
 
@@ -210,27 +197,25 @@ class SocialMix:
 				if "P" not in self.df_age_dist.columns:
 						raise ValueError("Missing column 'P' in age distribution dataframe.")
 
-				# Additional rule: if df_part has 'age_grp_part', then df_cnt must have 'age_grp_cnt'.
-				if has_age_grp_part and not has_age_grp_cnt:
-						raise ValueError("Participants dataframe has 'age_grp_part' but contacts dataframe lacks 'age_grp_cnt'.")
-
 		def preprocess(self):
 				self.df_part = self.df_part.reset_index(drop=True)
 				self.df_cnt = self.df_cnt.reset_index(drop=True)
 
-				if "age_grp_part" not in self.df_part.columns:
-						self.df_part = assign_age_group(
-								self.df_part, "age_part", self.age_limits, "age_grp_part"
-						)
+				self.df_part = assign_age_group(
+						self.df_part, "age_part", self.age_bins, "age_grp_part"
+				)
 
-				if "age_grp_cnt" not in self.df_cnt.columns:
-						self.df_cnt = assign_age_group(
-								self.df_cnt, "age_cnt", self.age_limits, "age_grp_cnt"
-						)
+				self.df_cnt = assign_age_group(
+						self.df_cnt, "age_cnt", self.age_bins, "age_grp_cnt"
+				)
+    
+				self.df_age_dist = assign_age_group(
+						self.df_age_dist, "age", self.age_bins, "age_grp"
+				)
 
 				self.Y = compute_contact_counts(self.df_part, self.df_cnt)
 				self.N = compute_sample_sizes(self.df_part, "age_grp_part")
-				self.P = compute_population_sizes(self.df_age_dist, self.age_limits)
+				self.P = compute_population_sizes(self.df_age_dist, 'age_grp')
 
 		def compute_cint(self):
 				"""
@@ -275,7 +260,7 @@ class SocialMix:
 										df_part_sampled,
 										self.df_cnt,
 										self.df_age_dist,
-										self.age_limits,
+										self.age_bins,
 										self.symmetric,
 								)
 

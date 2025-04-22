@@ -5,36 +5,95 @@ import altair as alt
 alt.data_transformers.disable_max_rows()
 import matplotlib.pyplot as plt
 
-from ._utils import ravel_matrix
+from ..utils import AgeBins, depixilate
+from ._utils import ravel_matrix, generate_vega_expression
 from ..preprocess._utils import check_required_columns, expand_age_interval
 
 def plot_mosaic(
-  matrix: np.ndarray,
-  title='Contact pattern',
-  xlabel='Age of contacting individual',
-  ylabel='Age of contacted individual',
-  zlabel=None,
-  axisLabelFontSize=10,
-  axisTitleFontSize=10,
-  axisTitleFontWeight='normal',
-  axisLabelFontWeight='normal',
-  titleFontSize=10,
-  titleFontWeight='normal',
-  legend=None,
-  legendTitle=None,
-  legendLabelFontSize=10,
-  legendLabelFontWeight='normal',
-  legendTitleFontSize=10,
-  legendTitleFontWeight='normal',
-	legendOrient='right',
-  width=250,
-  height=250
-) -> alt.Chart: 
-  
+	matrix: np.ndarray,
+	title: str='Contact pattern',
+	xlabel: str='Age of contacting individual',
+	ylabel: str='Age of contacted individual',
+	zlabel: str=None,
+	width: int | float=250,
+	height: int | float=250,
+ 	style_config: dict = None
+) -> alt.Chart:
+	"""
+	Plot a mosaic visualization of a contact matrix.
+
+	Parameters
+	----------
+	matrix : np.ndarray
+			A 2D array representing the contact intensity or rate matrix.
+	title : str, optional
+			The title of the chart. Default is 'Contact pattern'.
+	xlabel : str, optional
+			Label for the x-axis. Default is 'Age of contacting individual'.
+	ylabel : str, optional
+			Label for the y-axis. Default is 'Age of contacted individual'.
+	zlabel : str, optional
+			Label for the color scale legend. If None, the legend is not displayed.
+	width : int, optional
+			The width of the chart in pixels. Default is 250.
+	height : int, optional
+			The height of the chart in pixels. Default is 250.
+	style_config : dict, optional
+			A dictionary to override default style settings for axes, title, and legend.
+			The keys can include 'x_axis', 'y_axis', 'title', and 'legend'.
+
+	Returns
+	-------
+	alt.Chart
+			An Altair Chart object representing the mosaic visualisation of a contact matrix.
+
+	Notes
+	-----
+	The function flattens the input matrix using `ravel_matrix` to extract the x and y indices along with corresponding values.
+	It then constructs a DataFrame and configures the chart properties using default style settings,
+	which can be further customized via the `style_config` parameter.
+	"""
+	# Default configurations for axis, title, and legend
+	default_config = {
+			'x_axis': {
+					'labelFontSize': 10,
+					'titleFontSize': 10,
+					'titleFontWeight': 'normal',
+					'labelFontWeight': 'normal',
+					'labelAngle': 0,
+					'grid': False
+			},
+			'y_axis': {
+					'labelFontSize': 10,
+					'titleFontSize': 10,
+					'titleFontWeight': 'normal',
+					'labelFontWeight': 'normal',
+					'grid': False
+			},
+			'title': {
+					'fontSize': 10,
+					'fontWeight': 'normal',
+					'anchor': 'middle'
+			},
+			'legend': {
+					'labelFontSize': 10,
+					'labelFontWeight': 'normal',
+					'titleFontSize': 10,
+					'titleFontWeight': 'normal',
+					'orient': 'right'
+			}
+	}
+	if style_config:
+		for key in style_config:
+			if key in default_config:
+				default_config[key].update(style_config[key])
+			else:
+				default_config[key] = style_config[key]
+	
 	x_indices, y_indices, values = ravel_matrix(matrix)
 	source = pd.DataFrame({'x': x_indices,
-						    'y': y_indices,
-						    'z': values})
+                        'y': y_indices,
+                        'z': values})
 
 	tick_values = list(range(0, matrix.shape[0], 10))
  
@@ -42,108 +101,186 @@ def plot_mosaic(
 		x = alt.X(
 			'x:O',
 			axis = alt.Axis(
-     		values=tick_values,
-        labelFontSize=axisLabelFontSize,
-        titleFontSize=axisTitleFontSize,
-        titleFontWeight=axisTitleFontWeight,
-        labelFontWeight=axisLabelFontWeight,
-       	labelAngle=0,
-        grid=False
-      ),
+		 		values=tick_values,
+				**default_config['x_axis'],
+			),
 			title = xlabel,
 		),
 		y = alt.Y(
 			'y:O',
 			scale = alt.Scale(reverse=True),
 			axis = alt.Axis(
-     		values=tick_values,
-        labelFontSize=axisLabelFontSize,
-        titleFontSize=axisTitleFontSize,
-        titleFontWeight=axisTitleFontWeight,
-        labelFontWeight=axisLabelFontWeight,
-       	grid=False
-      ),
+		 		values=tick_values,
+				**default_config['y_axis'],
+			),
 			title = ylabel,
 		),
 		color = alt.Color(
 			'z:Q',
 			scale = alt.Scale(scheme='spectral', reverse=True),
 			title = zlabel,
-			legend = alt.Legend(
-     		title=legendTitle,
-        labelFontSize=legendLabelFontSize,
-				labelFontWeight=legendLabelFontWeight,
-				titleFontSize=legendTitleFontSize,
-				titleFontWeight=legendTitleFontWeight,
-				orient=legendOrient,
-      ) if legend else None
+			legend=alt.Legend(**default_config['legend']) if zlabel else None
 		)
 	).properties(
 		width=width,
 		height=height,
 		title=alt.TitleParams(
-    	text=title,
-     	fontSize=titleFontSize,
-      fontWeight=titleFontWeight,
-      anchor='middle'
-    ),
+			text=title,
+			**default_config['title']
+		),
+	)
+ 
+	return chart
+
+def plot_mosaic_pixilated(
+  matrix: np.ndarray,
+  age_bins: AgeBins,
+  title: str='Contact pattern',
+	xlabel: str='Age of contacting individual',
+	ylabel: str='Age of contacted individual',
+	zlabel: str=None,
+	width: int | float=250,
+	height: int | float=250,
+  style_config: dict = None
+) -> alt.Chart:  
+  # Default configurations for axis, title, and legend
+	default_config = {
+			'x_axis': {
+					'labelFontSize': 10,
+					'titleFontSize': 10,
+					'titleFontWeight': 'normal',
+					'labelFontWeight': 'normal',
+					'labelAngle': -45,
+					'grid': False
+			},
+			'y_axis': {
+					'labelFontSize': 10,
+					'titleFontSize': 10,
+					'titleFontWeight': 'normal',
+					'labelFontWeight': 'normal',
+					'grid': False
+			},
+			'title': {
+					'fontSize': 10,
+					'fontWeight': 'normal',
+					'anchor': 'middle'
+			},
+			'legend': {
+					'labelFontSize': 10,
+					'labelFontWeight': 'normal',
+					'titleFontSize': 10,
+					'titleFontWeight': 'normal',
+					'orient': 'right'
+			}
+	}
+	if style_config:
+		for key in style_config:
+			if key in default_config:
+				default_config[key].update(style_config[key])
+			else:
+				default_config[key] = style_config[key]
+    
+	expanded_matrix = depixilate(matrix, age_bins)
+	
+	x_indices, y_indices, values = ravel_matrix(expanded_matrix)
+	source = pd.DataFrame({'x': x_indices,
+                        'y': y_indices,
+                        'z': values})
+
+	tick_pos = [np.floor(np.mean([age_bins.left[i], age_bins.right[i] + 1])) for i in range(len(age_bins.left))]
+	tick_labels = [f'[{age_bins.left[i]},{age_bins.right[i] + 1})' for i in range(len(age_bins.left))]
+	expression = generate_vega_expression(tick_pos, tick_labels)
+ 
+	chart = alt.Chart(source).mark_rect().encode(
+		x = alt.X(
+			'x:O',
+			axis = alt.Axis(
+		 		values=tick_pos,
+				labelExpr=expression,
+				**default_config['x_axis'],
+			),
+			title = xlabel,
+		),
+		y = alt.Y(
+			'y:O',
+			scale = alt.Scale(reverse=True),
+			axis = alt.Axis(
+		 		values=tick_pos,
+				labelExpr=expression,
+				**default_config['y_axis'],
+			),
+			title = ylabel,
+		),
+		color = alt.Color(
+			'z:Q',
+			scale = alt.Scale(scheme='spectral', reverse=True),
+			title = zlabel,
+			legend=alt.Legend(**default_config['legend']) if zlabel else None
+		)
+	).properties(
+		width=width,
+		height=height,
+		title=alt.TitleParams(
+			text=title,
+			**default_config['title']
+		),
 	)
  
 	return chart
 
 def plot_mosaic_marginal(
-    mcint,
-    ax,
-    mcint_lb: NDArray | None = None,
-    mcint_ub: NDArray | None = None,
-    color: str = '#de425b',
-    title: str = None,
-    xlabel: str | None = 'Age of contacting individual',
-    ylabel: str | None = 'Intensity',
-    **kwargs
+		mcint,
+		ax,
+		mcint_lb: NDArray | None = None,
+		mcint_ub: NDArray | None = None,
+		color: str = '#de425b',
+		title: str = None,
+		xlabel: str | None = 'Age of contacting individual',
+		ylabel: str | None = 'Intensity',
+		**kwargs
 ):
-    """Plot the marginal contact intensity on a given axis.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        The axis on which to plot the marginal contact intensity.
-    mcint : ndarray
-        The marginal contact intensity to plot.
-    mcint_lb : ndarray or None, optional
-        Lower bound of the marginal contact intensity. Default is None.
-    mcint_ub : ndarray or None, optional
-        Upper bound of the marginal contact intensity. Default is None.
-    color : str, optional
-        Color of the plot. Default is '#de425b'.
-    title : str or None, optional
-        Title of the plot. Default is None.
-    **kwargs
-        Additional keyword arguments to pass to the plot function.
-    
-    Returns
-    -------
-    None
-    """
-    ax.plot(mcint, c=color, **kwargs)
-        
-    if mcint_lb is not None and mcint_ub is not None:
-        ax.fill_between(
+		"""Plot the marginal contact intensity on a given axis.
+		
+		Parameters
+		----------
+		ax : matplotlib.axes.Axes
+				The axis on which to plot the marginal contact intensity.
+		mcint : ndarray
+				The marginal contact intensity to plot.
+		mcint_lb : ndarray or None, optional
+				Lower bound of the marginal contact intensity. Default is None.
+		mcint_ub : ndarray or None, optional
+				Upper bound of the marginal contact intensity. Default is None.
+		color : str, optional
+				Color of the plot. Default is '#de425b'.
+		title : str or None, optional
+				Title of the plot. Default is None.
+		**kwargs
+				Additional keyword arguments to pass to the plot function.
+		
+		Returns
+		-------
+		None
+		"""
+		ax.plot(mcint, c=color, **kwargs)
+				
+		if mcint_lb is not None and mcint_ub is not None:
+				ax.fill_between(
 			np.arange(len(mcint)),
 			mcint_lb,
 			mcint_ub,
 			color=color,
 			alpha=0.2
 		)
-    
-    ax.set_title(title, fontsize=9, loc='left') if title else None
-    ax.set_ylabel(ylabel, fontsize=8) if ylabel else None
-    ax.set_xlabel(xlabel, fontsize=8) if xlabel else None
-    
-    ax.tick_params(axis='both', which='major', labelsize=8)
-    
+		
+		ax.set_title(title, fontsize=9, loc='left') if title else None
+		ax.set_ylabel(ylabel, fontsize=8) if ylabel else None
+		ax.set_xlabel(xlabel, fontsize=8) if xlabel else None
+		
+		ax.tick_params(axis='both', which='major', labelsize=8)
+		
 def plot_mosaic_empirical(
-    data: pd.DataFrame,
+		data: pd.DataFrame,
 	ax,
 	title: str = 'Empirical contact intensity',
 	xlabel: str | None = 'Age of contacting individual',
@@ -160,7 +297,7 @@ def plot_mosaic_empirical(
 	# Check if the data is coarse-grained
 	is_coarse = 'age_grp_cnt' in data.columns
 	if is_coarse: data = expand_age_interval(data, 'age_grp_cnt')
-  
+	
 	data['cint'] = data['y'] / data['N']
 	A = data['age_part'].max() - data['age_part'].min() + 1
 	cint = data['cint'].values.reshape(A, A).T
@@ -172,14 +309,14 @@ def plot_mosaic_empirical(
 		ytick_locs = data['age_grp_cnt'].apply(lambda x: x.mid).unique()
 		ytick_labels = data['age_grp_cnt'].unique()
 		ytick_labels = [str(x) for x in ytick_labels]
-  
+	
 		ax.set_yticks(ytick_locs)
 		ax.set_yticklabels(ytick_labels)
 
 		# Set major grid lines at the lower bounds of the intervals
 		ytick_locs_minor = data['age_grp_cnt'].apply(lambda x: x.left).unique()
 		ax.set_yticks(ytick_locs_minor, minor=True)  # Set these as minor ticks
-  
+	
 	ax.tick_params(axis='both', which='major', labelsize=8)
 	ax.grid(which='major', axis='both', visible=False)
 	ax.set_title(title, fontsize=9, loc='left')

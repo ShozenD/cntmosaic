@@ -14,7 +14,7 @@ class CoordToColumns:
     age_cnt: Optional[str] = None
     age_grp_cnt: Optional[str] = None
     id_var: str = 'id'
-    grp_vars: Optional[list[str]] = None
+    grp_vars: Optional[list[str] | str] = None
 
     def age_vars(self):
         if self.age_cnt:
@@ -23,6 +23,12 @@ class CoordToColumns:
             return ['age_part', 'age_grp_cnt']
         else:
             raise ValueError('One of age_cnt or age_grp_cnt must be provided')
+
+    def __post_init__(self):
+        if isinstance(self.grp_vars, str):
+            object.__setattr__(self, 'grp_vars', [self.grp_vars])
+        elif self.grp_vars is None:
+            object.__setattr__(self, 'grp_vars', [])
 
 
 class PandasLoader:

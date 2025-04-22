@@ -1,1 +1,1 @@
-from .loaders import GeneralLoader, DataFrameLoader
+from .restru_loaders import PandasLoader, CoordToColumns

@@ -169,3 +169,6 @@ data/*
 
 # VS Code
 .vscode/
+
+# Figures
+figures/*

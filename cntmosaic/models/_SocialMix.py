@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from ..utils import AgeBins, depixilate
+from ..utils import AgeBins, pixilate, depixilate
 
 # Helper functions
 def assign_age_group(df, column, age_bins, new_col):
@@ -81,7 +81,7 @@ def merge_zero_groups(intervals, counts):
 		array([0, 0, 1, 1])
 		"""
 		assert sum(counts) > 0, "All counts are zero. There are no participants in any group."
-  
+	
 		merged_intervals = []  # new list for merged intervals
 		n = len(intervals)
 
@@ -142,6 +142,7 @@ class SocialMix:
 				self.df_age_dist = df_age_dist
 				self.symmetric = symmetric
 				self.age_bins = age_bins
+				self.effective_age_bins = None
 				self.check_dataframes()
 				self.check_age_bins()
 				self.preprocess()
@@ -152,8 +153,8 @@ class SocialMix:
 				"""
 				tmp = assign_age_group(
 						self.df_part.copy(), "age_part", self.age_bins, "age_grp_part"
-        )
-      
+				)
+			
 				ssizes = tmp.groupby("age_grp_part", observed=False).size().reset_index(name="N")
 				if np.min(ssizes['N']) == 0:
 					print("Warning: Some age groups have zero sample sizes. Merging age groups.")
@@ -162,12 +163,13 @@ class SocialMix:
 					merged_intervals = merge_zero_groups(
 							ssizes["age_grp_part"].cat.categories, ssizes["N"].to_numpy()
 					)
-     
+		 
 					# Define new age_bins based on the merged intervals
-					new_age_bins = AgeBins(min=merged_intervals[0].left,
-                            		 max=merged_intervals[-1].right,
-                               	 cuts=merged_intervals[1:-1])
-					self.age_bins = new_age_bins
+					self.effective_age_bins = AgeBins(min=merged_intervals[0].left,
+																						max=merged_intervals[-1].right,
+																						cuts=merged_intervals[1:-1])
+				else:
+					self.effective_age_bins = self.age_bins
 
 		def check_dataframes(self):
 				"""
@@ -203,22 +205,22 @@ class SocialMix:
 				self.df_cnt = self.df_cnt.reset_index(drop=True)
 
 				self.df_part = assign_age_group(
-						self.df_part, "age_part", self.age_bins, "age_grp_part"
+						self.df_part, "age_part", self.effective_age_bins, "age_grp_part"
 				)
 
 				self.df_cnt = assign_age_group(
-						self.df_cnt, "age_cnt", self.age_bins, "age_grp_cnt"
+						self.df_cnt, "age_cnt", self.effective_age_bins, "age_grp_cnt"
 				)
-    
+		
 				self.df_age_dist = assign_age_group(
-						self.df_age_dist, "age", self.age_bins, "age_grp"
+						self.df_age_dist, "age", self.effective_age_bins, "age_grp"
 				)
 
 				self.Y = compute_contact_counts(self.df_part, self.df_cnt)
 				self.N = compute_sample_sizes(self.df_part, "age_grp_part")
 				self.P = compute_population_sizes(self.df_age_dist, 'age_grp')
 
-		def compute_cint(self):
+		def compute_cint(self, recover_bins: bool = False):
 				"""
 				Get the contact intensity matrix.
 				"""
@@ -233,17 +235,23 @@ class SocialMix:
 								) / 2
 						else:
 								self.cint = N_inv[:, jnp.newaxis] * self.Y
+				
+				if recover_bins:
+						return pixilate(depixilate(self.cint, self.age_bins), self.age_bins)
+				else:
+						return self.cint
 
-				return self.cint
-
-		def compute_rate(self):
+		def compute_rate(self, recover_bins: bool = False):
 				"""
 				Get the contact rate matrix.
 				"""
 				if not hasattr(self, "rate"):
 						self.rate = self.compute_cint() / self.P[jnp.newaxis, :]
-
-				return self.rate
+      
+				if recover_bins:
+						return pixilate(depixilate(self.rate, self.age_bins), self.age_bins)
+				else:
+						return self.rate
 
 		def run_bootstrap(self, n_boot: int = 1000):
 				"""
@@ -264,9 +272,10 @@ class SocialMix:
 										self.age_bins,
 										self.symmetric,
 								)
-
-								boots_cint.append(sm.compute_cint())
-								boots_rate.append(sm.compute_rate())
+        
+								# Ensures that every bootstrapped matrix has the same dimension				
+								boots_cint.append(sm.compute_cint(recover_bins=True))
+								boots_rate.append(sm.compute_rate(recover_bins=True))
 
 				self.boots_cint = np.asarray(boots_cint)
 				self.boots_rate = np.asarray(boots_rate)

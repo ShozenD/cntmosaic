@@ -91,6 +91,6 @@ def depixilate(matrix: np.ndarray, age_bins: AgeBins):
             y_left = age_bins.left[j]
             y_right = age_bins.right[j] + 1
 
-            dpx_matrix[x_left:x_right, y_left:y_right] = matrix[i,j]
+            dpx_matrix[x_left:x_right, y_left:y_right] = matrix[i,j] / age_bins.bin_sizes[j]
 
     return dpx_matrix

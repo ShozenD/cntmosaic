@@ -48,7 +48,6 @@ def compute_population_sizes(df_age_dist, group_col):
 		)
 		return jnp.asarray(pop_sizes["P"].values)
 
-
 def merge_zero_groups(intervals, counts):
 		"""
 		Merge zero-count intervals with their nearest nonzero-count neighbor.
@@ -81,6 +80,8 @@ def merge_zero_groups(intervals, counts):
 		>>> index_map
 		array([0, 0, 1, 1])
 		"""
+		assert sum(counts) > 0, "All counts are zero. There are no participants in any group."
+  
 		merged_intervals = []  # new list for merged intervals
 		n = len(intervals)
 

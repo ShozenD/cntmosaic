@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import jax.random as jrd
 import numpyro
 from numpyro import distributions as dist
+from cntmosaic.dataloader.restru_loaders import GeneralLoader
 from dataclasses import dataclass
 
 from ._BRC import BRC
@@ -86,7 +87,7 @@ class restr_BRCfine(BRC):
 	human contact patterns from coarse contact data: The Bayesian rate consistency model",
 	PLoS Computational Biology. 2023
     """
-    def __init__(self, data: pd.DataFrame):
+    def __init__(self, data: GeneralLoader):
         self.data = data
         self.params = HyperParams()
         self.set_default_params()
@@ -96,10 +97,25 @@ class restr_BRCfine(BRC):
     def compile(self):
         # checks
         self._precompute.prior = True
-        self._precompute.aid = self.data['age_part'].values
-        self._precompute.bid = self.data['age_cnt'].values
-        self._precompute.y = self.data['y'].values
-        self._precompute.log_N = jnp.log(self.data['N'].values)
+        df = self.data.ds.sum(dim=[self.data.col_map.id_var]+self.data.col_map.grp_vars).to_dataframe().reset_index()
+        ds_sum = self.data.ds[self.data.col_map.y].sum(
+            dim=[self.data.col_map.age_cnt]+self.data.col_map.grp_vars, skipna=True)  # sum ignoring NaN
+        ds_count = self.data.ds[self.data.col_map.y].count(
+            dim=[self.data.col_map.age_cnt]+self.data.col_map.grp_vars)           # number of non-NaN values
+        # If count == 0 (all NaN), set sum to NaN
+        ds_sum = ds_sum.where(ds_count > 0, np.nan)
+        df2 = ds_sum.to_dataframe().reset_index()
+        df2_notna = df2[df2[self.data.col_map.y].notna()]
+        N = df2_notna.groupby(self.data.col_map.age_part)[self.data.col_map.id_var].nunique().reset_index(name='N')
+        df2 = self.data.ds.sum(dim=[self.data.col_map.age_cnt], skipna=True).to_dataframe().reset_index()
+        N = df2[df2[self.data.col_map.y].notna()].groupby(self.data.col_map.age_part)[self.data.col_map.id_var].nunique().reset_index(name='N')
+        m = pd.merge(df, N, on=self.data.col_map.age_part, how='left')
+
+
+        self._precompute.aid = m[self.data.col_map.age_part].values
+        self._precompute.bid = m[self.data.col_map.age_cnt].values
+        self._precompute.y = m[self.data.col_map.y].values
+        self._precompute.log_N = jnp.log(m['N'].values)
         self._precompute.log_P = jnp.log(self.params.age_dist)[jnp.newaxis,:]
         self._precompute.hsgp = self.set_hsgp()
         print('model compiled, ready for sampling')
@@ -121,7 +137,8 @@ class restr_BRCfine(BRC):
         self.params.C = [1.5, 1.5]
         self.params.grid_type = 'age-age'
         self.params.likelihood = 'negbin'
-        self.params.A = len(set(self.data['age_cnt']).union(self.data['age_part']))
+        self.params.A = len(set(self.data.ds[self.data.col_map.age_cnt].values).union(
+            self.data.ds[self.data.col_map.age_part].values))
         self.params.prior['beta0'] = dist.Normal(0., 10.)
         self.params.prior['alpha'] = dist.InverseGamma(5, 5)
         self.params.prior['rho'] = dist.InverseGamma(5, 5).expand([2])

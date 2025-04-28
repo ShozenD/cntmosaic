@@ -1,1 +1,1 @@
-from .restru_loaders import PandasLoader, CoordToColumns
+from .restru_loaders import MergedLoader, RawLoader, CoordToColumns

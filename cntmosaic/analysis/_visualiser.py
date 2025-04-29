@@ -34,32 +34,42 @@ class ModelVisualiser:
   def plot_cint(self):
     sum_cint = self.summariser.summarise_cint()
     num_elements = count_leaf_elements(sum_cint)
-    
-    fig, ax = plt.subplots(num_elements // 3, 3, figsize=(15, 5 * (num_elements // 3)))
-    axes = ax.flatten()
-    
-    # Create a list to store all the plot objects for the colorbar
-    plot_objects = []
-    
-    for i, (key, value) in enumerate(sum_cint.items()):
-      if isinstance(value, dict):
-        for j, (subkey, subvalue) in enumerate(value.items()):
-          im = plot_mosaic(subvalue[1], ax=axes[i * 3 + j], title=f'Posterior contact intensity {key} {subkey}')
-          plot_objects.append(im)
-      else:
-        im = plot_mosaic(value[1], ax=axes[i], title=f'Posterior contact intensity {key}')
-        plot_objects.append(im)
-    
-    # Add a colorbar that applies to all subplots
-    fig.subplots_adjust(right=0.9)  # Make space for the colorbar
-    cbar_ax = fig.add_axes([0.91, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
-    fig.colorbar(plot_objects[0], cax=cbar_ax, label='Contact intensity')
-    cbar_ax.yaxis.label.set_fontsize(9)  # Set label fontsize
-    cbar_ax.tick_params(labelsize=8)  # Set tick font size
-    
-    fig.tight_layout(rect=[0, 0, 0.9, 1])  # Adjust layout to account for colorbar
 
-    return fig, ax
+    charts = []  # Store all individual charts here
+
+    for key, value in sum_cint.items():
+        if isinstance(value, dict):
+            for subkey, subvalue in value.items():
+                chart = plot_mosaic(
+                    subvalue[1],
+                    title=f'Posterior contact intensity {key} {subkey}',
+                    zlabel='Contact intensity'
+                )
+                charts.append(chart)
+        else:
+            chart = plot_mosaic(
+                value[1],
+                title=f'Posterior contact intensity {key}',
+                zlabel='Contact intensity'
+            )
+            charts.append(chart)
+
+    # Layout charts in a grid
+    # Determine number of rows and columns based on number of elements
+    cols = 3
+    rows = (len(charts) + cols - 1) // cols
+
+    # Build grid using Altair's concat operators
+    chart_grid = None
+    for r in range(rows):
+        row_charts = charts[r * cols:(r + 1) * cols]
+        row = row_charts[0]
+        for c in row_charts[1:]:
+            row |= c
+        chart_grid = row if chart_grid is None else chart_grid & row
+
+    return chart_grid
+
   
   def plot_mcint(self, evaluator=None):
     sum_mcint = self.summariser.summarise_mcint()

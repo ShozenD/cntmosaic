@@ -1,6 +1,7 @@
 import pandas as pd
 import xarray as xr
 import numpy as np
+import jax.numpy as jnp
 from typing import Optional
 from dataclasses import dataclass
 import itertools
@@ -17,7 +18,8 @@ class CoordToColumns:
     id_var: str = 'id'
     y: Optional[str] = 'y'
     grp_vars: Optional[list[str] | str] = None
-    
+    population_age: Optional[str] = None
+    population_size: Optional[str] = None
 
     def age_vars(self):
         if self.age_cnt:
@@ -32,6 +34,62 @@ class CoordToColumns:
             object.__setattr__(self, 'grp_vars', [self.grp_vars])
         elif self.grp_vars is None:
             object.__setattr__(self, 'grp_vars', [])
+        if (self.population_age is None) != (self.population_size is None):
+            raise ValueError("Both 'population_age' and 'population_size' must be set together or both left as None.")
+
+def get_params(distr):
+    common_distribution_params = [
+        # Central tendency & spread
+        "loc",
+        "scale",
+        "mean",
+        "variance",
+        
+        # Rate & shape
+        "rate",
+        "concentration",
+        "concentration0",
+        "concentration1",
+        "scale_tril",
+        "precision_matrix",
+        "covariance_matrix",
+        
+        # Discrete/multivariate
+        "total_count",
+        "probs",
+        "logits",
+        "low",
+        "high",
+        "df",  # degrees of freedom (StudentT)
+        
+        # Meta/shape
+        "batch_shape",
+        "event_shape",
+        "support"
+    ]
+    return {
+            attr: getattr(distr, attr)
+            for attr in dir(distr)
+            if (not attr.startswith("_") and not callable(getattr(distr, attr) )) and (attr in common_distribution_params)
+        }
+
+@dataclass
+class HyperParams:
+    def __init__(self):
+        self.prior = {}
+
+    def __str__(self):
+        lines = []
+        for k, v in self.__dict__.items():
+            if k != 'prior':
+                lines.append(f"{k}: {v}")
+        lines.append("prior:")
+        for k, v in self.prior.items():
+            lines.append(f'{k}:{v}')
+            d = get_params(v)
+            for k1, v1 in d.items():
+                lines.append(f'{k1}:{v1}')
+        return '\n'.join(lines)
 
 
 class GeneralLoader:
@@ -101,7 +159,53 @@ class GeneralLoader:
             )
 
         self.ds = ds_out
+        self.precomputes = self.precompute()
 
+    # consider class abstractmethod, current implementation is for fine age
+
+    def precompute(self):
+        precomp = HyperParams()
+        precomp.prior = True
+        precomp.A = len(set(self.ds[self.col_map.age_cnt].values).union(
+            self.ds[self.col_map.age_part].values))
+        # population
+        if self.pop is None:
+            precomp.age_dist = 1 / precomp.A * np.ones(precomp.A)
+        elif self.col_map.population_size is None:
+            raise ValueError("Both 'population_age' and 'population_size' must be set")
+        else:
+            # this is assuming discrete integer age dimension for both population and participants
+            pop = self.pop
+            if pop[self.col_map.population_age].nunique() != precomp.A:
+                raise ValueError(f'Population age dimension({pop[self.col_map.population_age].nunique()}) does not match age dimension for participants and contacts({precomp.A})')
+            pop = pop.groupby(self.col_map.population_age)[self.col_map.population_size].sum()
+            precomp.age_dist = (pop/pop.sum()).values
+
+        # y and N
+        df = self.ds.sum(dim=[self.col_map.id_var]+self.col_map.grp_vars).to_dataframe().reset_index()
+        ds_sum = self.ds[self.col_map.y].sum(
+            dim=[self.col_map.age_cnt]+self.col_map.grp_vars, skipna=True)  # sum ignoring NaN
+        ds_count = self.ds[self.col_map.y].count(
+            dim=[self.col_map.age_cnt]+self.col_map.grp_vars)           # number of non-NaN values
+        # If count == 0 (all NaN), set sum to NaN
+        ds_sum = ds_sum.where(ds_count > 0, np.nan)
+        df2 = ds_sum.to_dataframe().reset_index()
+        df2_notna = df2[df2[self.col_map.y].notna()]
+        N = df2_notna.groupby(self.col_map.age_part)[self.col_map.id_var].nunique().reset_index(name='N')
+        df2 = self.ds.sum(dim=[self.col_map.age_cnt], skipna=True).to_dataframe().reset_index()
+        N = df2[df2[self.col_map.y].notna()].groupby(self.col_map.age_part)[self.col_map.id_var].nunique().reset_index(name='N')
+        m = pd.merge(df, N, on=self.col_map.age_part, how='left')
+
+        # Others
+        precomp.aid = m[self.col_map.age_part].values
+        precomp.bid = m[self.col_map.age_cnt].values
+        precomp.y = m[self.col_map.y].values
+        precomp.log_N = jnp.log(m['N'].values)
+        precomp.log_P = jnp.log(precomp.age_dist)[jnp.newaxis,:]
+
+        return precomp
+
+    
     def stratify(self):
         pass
 
@@ -116,8 +220,8 @@ class RawLoader(GeneralLoader):
     Assumes no other duplicate columns, issue warnings if duplicated
 
     '''
-    def __init__(self, part: pd.DataFrame, cnt: pd.DataFrame, col_map: CoordToColumns):
-    
+    def __init__(self, part: pd.DataFrame, cnt: pd.DataFrame, col_map: CoordToColumns, pop=None):
+        self.pop = pop
         common_cols = set(part.columns).intersection(set(cnt.columns))
         if not(col_map.id_var.split('.')[-1] in common_cols):
             raise KeyError('id_var needs to be present in both dataframes')
@@ -164,8 +268,9 @@ class MergedLoader(GeneralLoader):
         col_map: a CoordToColumns object for mapping columns
     Assumes info on participants and contacts have been merged
     '''
-    def __init__(self, df: pd.DataFrame, col_map: CoordToColumns):
-        if not col_map.y in df.columns:
+    def __init__(self, df: pd.DataFrame, col_map: CoordToColumns, pop=None):
+        if col_map.y not in df.columns:
             df['y'] = 1
         self.raw_df = df.copy()
         self.col_map = col_map
+        self.pop = pop

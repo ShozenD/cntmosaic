@@ -5,66 +5,13 @@ import jax.numpy as jnp
 import jax.random as jrd
 import numpyro
 from numpyro import distributions as dist
-from cntmosaic.dataloader.restru_loaders import GeneralLoader
+from cntmosaic.dataloader.restru_loaders import GeneralLoader, HyperParams
 from dataclasses import dataclass
 
 from ._BRC import BRC
 from ._utils import age_age_grid, diff_age_age_grid, lower_tri_indices, symmetrize_from_lower_tri
 from ._priors import HSGP
 
-def get_params(distr):
-    common_distribution_params = [
-        # Central tendency & spread
-        "loc",
-        "scale",
-        "mean",
-        "variance",
-        
-        # Rate & shape
-        "rate",
-        "concentration",
-        "concentration0",
-        "concentration1",
-        "scale_tril",
-        "precision_matrix",
-        "covariance_matrix",
-        
-        # Discrete/multivariate
-        "total_count",
-        "probs",
-        "logits",
-        "low",
-        "high",
-        "df",  # degrees of freedom (StudentT)
-        
-        # Meta/shape
-        "batch_shape",
-        "event_shape",
-        "support"
-    ]
-    return {
-            attr: getattr(distr, attr)
-            for attr in dir(distr)
-            if (not attr.startswith("_") and not callable(getattr(distr, attr) )) and (attr in common_distribution_params)
-        }
-
-@dataclass
-class HyperParams:
-    def __init__(self):
-        self.prior = {}
-
-    def __str__(self):
-        lines = []
-        for k, v in self.__dict__.items():
-            if k != 'prior':
-                lines.append(f"{k}: {v}")
-        lines.append("prior:")
-        for k, v in self.prior.items():
-            lines.append(f'{k}:{v}')
-            d = get_params(v)
-            for k1, v1 in d.items():
-                lines.append(f'{k1}:{v1}')
-        return '\n'.join(lines)
 
 
 class restr_BRCfine(BRC):
@@ -88,48 +35,21 @@ class restr_BRCfine(BRC):
 	PLoS Computational Biology. 2023
     """
     def __init__(self, data: GeneralLoader):
-        self.data = data
         self.params = HyperParams()
         self.set_default_params()
-        self._precompute = HyperParams()
+        self._precompute = data.precomputes
         print('new model instantiated, please check default hyperparameters')
-
-    def compile(self):
-        # checks
-        self._precompute.prior = True
-        df = self.data.ds.sum(dim=[self.data.col_map.id_var]+self.data.col_map.grp_vars).to_dataframe().reset_index()
-        ds_sum = self.data.ds[self.data.col_map.y].sum(
-            dim=[self.data.col_map.age_cnt]+self.data.col_map.grp_vars, skipna=True)  # sum ignoring NaN
-        ds_count = self.data.ds[self.data.col_map.y].count(
-            dim=[self.data.col_map.age_cnt]+self.data.col_map.grp_vars)           # number of non-NaN values
-        # If count == 0 (all NaN), set sum to NaN
-        ds_sum = ds_sum.where(ds_count > 0, np.nan)
-        df2 = ds_sum.to_dataframe().reset_index()
-        df2_notna = df2[df2[self.data.col_map.y].notna()]
-        N = df2_notna.groupby(self.data.col_map.age_part)[self.data.col_map.id_var].nunique().reset_index(name='N')
-        df2 = self.data.ds.sum(dim=[self.data.col_map.age_cnt], skipna=True).to_dataframe().reset_index()
-        N = df2[df2[self.data.col_map.y].notna()].groupby(self.data.col_map.age_part)[self.data.col_map.id_var].nunique().reset_index(name='N')
-        m = pd.merge(df, N, on=self.data.col_map.age_part, how='left')
-
-
-        self._precompute.aid = m[self.data.col_map.age_part].values
-        self._precompute.bid = m[self.data.col_map.age_cnt].values
-        self._precompute.y = m[self.data.col_map.y].values
-        self._precompute.log_N = jnp.log(m['N'].values)
-        self._precompute.log_P = jnp.log(self.params.age_dist)[jnp.newaxis,:]
-        self._precompute.hsgp = self.set_hsgp()
-        print('model compiled, ready for sampling')
-        
-    def prior_sampler(self, para, n=1):
+                
+    def prior_sampler(self, para_name, num_samples=1, seed=0):
         '''
         prior sampling
-        para: parameter to sample from
-        n: number of samples
+        para_name: parameter name to sample from
+        num_samples: number of samples
         '''
 
-        assert(para in self.params.prior)
-        _, subkey = jrd.split(jrd.PRNGKey(0))
-        samples = self.params.prior[para].sample(subkey, sample_shape=(n,))
+        assert(para_name in self.params.prior)
+        _, subkey = jrd.split(jrd.PRNGKey(seed))
+        samples = self.params.prior[para_name].sample(subkey, sample_shape=(num_samples,))
         return samples
         
     def set_default_params(self):
@@ -137,39 +57,36 @@ class restr_BRCfine(BRC):
         self.params.C = [1.5, 1.5]
         self.params.grid_type = 'age-age'
         self.params.likelihood = 'negbin'
-        self.params.A = len(set(self.data.ds[self.data.col_map.age_cnt].values).union(
-            self.data.ds[self.data.col_map.age_part].values))
         self.params.prior['beta0'] = dist.Normal(0., 10.)
         self.params.prior['alpha'] = dist.InverseGamma(5, 5)
         self.params.prior['rho'] = dist.InverseGamma(5, 5).expand([2])
         self.params.offset = None
-        self.params.age_dist = 1 / self.params.A * np.ones(self.params.A)
 
     def set_hsgp(self):
         if self.params.grid_type == 'age-age':
             
-            X = age_age_grid(self.params.A)
+            X = age_age_grid(self._precompute.A)
         elif self.params.grid_type == 'diff-age':
-            X = diff_age_age_grid(self.params.A)
+            X = diff_age_age_grid(self._precompute.A)
         else:
             raise ValueError("grid_type must be 'age-age' or 'diff-age'")
 
-        ltri_idx = lower_tri_indices(self.params.A)
+        ltri_idx = lower_tri_indices(self._precompute.A)
         Xn = (X - X.mean(axis=0)) / X.std(axis=0)
         L = list(np.abs(Xn).max(axis=0) * self.params.C)
         X = Xn[ltri_idx]
-        sym_tri_idx = symmetrize_from_lower_tri(self.params.A)
+        sym_tri_idx = symmetrize_from_lower_tri(self._precompute.A)
         return HSGP(X, L, self.params.M, sym_tri_idx)
 
     def model(self):
         if not self._precompute.prior:
-            raise NotImplementedError('Please compile the model first')
-        
+            raise NotImplementedError('DataLoader.precompute() failed, please check DataLoader object')
+        hsgp = self.set_hsgp()
         alpha = numpyro.sample('baseline', self.params.prior['alpha'])
         rho = numpyro.sample('rho', self.params.prior['rho'])
         beta0 = numpyro.sample('beta0', self.params.prior['beta0'])
-
-        f = self._precompute.hsgp.sample(alpha, rho).reshape((self.params.A, self.params.A), order='F')
+        
+        f = hsgp.sample(alpha, rho).reshape((self._precompute.A, self._precompute.A), order='F')
         log_rate = numpyro.deterministic('log_rate', beta0 + f)
         log_cint = numpyro.deterministic('log_cint', log_rate + self._precompute.log_P)
         

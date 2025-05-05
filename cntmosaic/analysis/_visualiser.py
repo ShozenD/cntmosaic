@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import pandas as pd
+import altair as alt
 from ..vis._visuals import plot_mosaic, plot_mosaic_marginal
 
 def count_leaf_elements(d):
@@ -15,21 +17,13 @@ class ModelVisualiser:
     self.summariser = summariser
     
   def plot_rate(self):
-    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-    im = plot_mosaic(self.summariser.summarise_rate()[1], ax=ax, title='Posterior contact rate')
+    rate_array = self.summariser.summarise_rate()  # assuming rate_array is a 2D numpy array
     
-    # Add a colorbar
-    fig.subplots_adjust(right=0.8)  # Make space for the colorbar
-    cbar_ax = fig.add_axes([0.82, 0.15, 0.05, 0.7])  # [left, bottom, width, height]
-    fig.colorbar(im, cax=cbar_ax, label='Contact rate')
-    
-    # Set colorbar title fontsize and tick size
-    cbar_ax.yaxis.label.set_fontsize(9)  # Set label fontsize
-    cbar_ax.tick_params(labelsize=8)  # Set tick font size
-    
-    fig.tight_layout(rect=[0, 0, 0.8, 1])  # Adjust layout to account for colorbar
-    
-    return fig, ax
+    return plot_mosaic(
+                rate_array[1],
+                title='Posterior contact rate',
+                zlabel='Contact rate'
+            )
   
   def plot_cint(self):
     sum_cint = self.summariser.summarise_cint()

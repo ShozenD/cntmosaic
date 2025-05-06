@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cntmosaic"
+version = "0.1.0"
+authors = [
+  { name="Shozen Dan", email="shozen.dan21@imperial.ac.uk" },
+  { name="Yiming Li"}
+]
+description = "A Python package for modelling, simulating, and visualising social contact data."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/ShozenD/cntmosaic"
+Issues = "https://github.com/ShozenD/cntmosaic/issues"

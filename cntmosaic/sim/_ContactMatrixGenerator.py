@@ -10,16 +10,13 @@ class ContactMatrixGenerator:
         if seed is not None:
           np.random.seed(seed)
           
-        mixing_weights = np.abs(np.random.normal(0, 3, 4))
+        mixing_weights = np.random.dirichlet(np.ones(len(self.patterns)))
         cint_pattern = (
           self.patterns['community'] * mixing_weights[0] +
           self.patterns['school'] * mixing_weights[1] +
           self.patterns['work'] * mixing_weights[2] +
           self.patterns['household'] * mixing_weights[3]
         )
-
-        mcint_max = cint_pattern.sum(axis=0).max() # Find the maximum marginal contact intensity
-        cint_pattern = cint_pattern / mcint_max    # Ensures that maximum marginal cint is 1
 
         M = cint_pattern * max_margin # Ensures that maximum marginal cint is max_margin
         

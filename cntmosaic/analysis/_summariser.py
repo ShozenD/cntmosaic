@@ -1,5 +1,7 @@
 import numpy as np
 import jax
+from ..models import SocialMix
+from ..utils import pixilate, depixilate
 
 class ModelSummariserSVI:
 	def __init__(self, model):
@@ -50,8 +52,8 @@ class ModelSummariserSVI:
 		if 'sum_cint' not in self.__dict__:
 			self.sum_cint = {
 				var: {
-      			name: np.quantile(value, probs, axis=0)
-         		for name, value in cat.items()
+						name: np.quantile(value, probs, axis=0)
+				 		for name, value in cat.items()
 			 		}
 				for var, cat in self.post_pred_cint.items()
 			}
@@ -75,39 +77,64 @@ class ModelSummariserSVI:
 		return self.sum_mcint
 
 class ModelSummariserSocialMix:
-  def __init__(self, sm):
-    self.sm = sm
-    
-  def summarise_rate(self, probs: tuple = (0.025, 0.5, 0.975)):
-    """
-    Summarise the contact rate matrix.
-    """
-    if not hasattr(self.sm, 'boots_rate'):
-      raise ValueError("Bootstrapping has not been performed.")
-    
-    if not hasattr(self, 'sum_rate'):
-      self.sum_rate = np.quantile(self.sm.boots_rate, probs, axis=0)
-      
-    return self.sum_rate
-      
-  def summarise_cint(self, probs: tuple = (0.025, 0.5, 0.975)):
-    """
-    Summarise the contact intensity matrix.
-    """
-    if not hasattr(self.sm, 'boots_cint'):
-      raise ValueError("Bootstrapping has not been performed.")
-    
-    if not hasattr(self, 'sum_cint'):
-      self.sum_cint = np.quantile(self.sm.boots_cint, probs, axis=0)
-      
-    return self.sum_cint
-      
-  def summarise_mcint(self, probs: tuple = (0.025, 0.5, 0.975)):
-    """
-    Summarise the marginal contact intensity of the model.
-    """
-    if not hasattr(self, 'sum_mcint'):
-      mcint = self.sm.boots_cint.sum(axis=2)
-      self.sum_mcint = np.quantile(mcint, probs, axis=0)
-    
-    return self.sum_mcint
+	def __init__(self, sm: SocialMix, alpha: float=0.05):
+		assert alpha > 0 and alpha < 1, "alpha must be between 0 and 1."	
+  
+		self.sm = sm
+		self.age_bins = sm.age_bins
+		self.effective_age_bins = sm.effective_age_bins
+		self.age_dist = sm.df_age_dist['P'].values
+		self.cint = sm.cint
+		self.rate = sm.rate
+		self.alpha = alpha
+		self.summarise_rate(probs=(alpha/2, 0.5, 1-alpha/2))
+		self.summarise_cint(probs=(alpha/2, 0.5, 1-alpha/2))
+		self.summarise_mcint(probs=(alpha/2, 0.5, 1-alpha/2))
+		
+	def summarise_rate(self, probs: tuple = (0.025, 0.5, 0.975)):
+		"""
+		Summarise the contact rate matrix.
+		"""
+		if not hasattr(self.sm, 'boots_rate'):
+			raise ValueError("Bootstrapping has not been performed.")
+		
+		if not hasattr(self, 'sum_rate'):
+			self.sum_rate = np.quantile(self.sm.boots_rate, probs, axis=0)
+			self.depix_sum_rate = np.array([ # TODO: This is not correct
+				depixilate(self.sum_rate[i,:,:], self.sm.effective_age_bins)
+				for i in range(self.sum_rate.shape[0])
+			])
+			
+		return self.sum_rate
+			
+	def summarise_cint(self, probs: tuple = (0.025, 0.5, 0.975)):
+		"""
+		Summarise the contact intensity matrix.
+		"""
+		if not hasattr(self.sm, 'boots_cint'):
+			raise ValueError("Bootstrapping has not been performed.")
+		
+		if not hasattr(self, 'sum_cint'):
+			self.sum_cint = np.quantile(self.sm.boots_cint, probs, axis=0)
+			self.depix_sum_cint = np.array([
+				depixilate(self.sum_cint[i,:,:], self.sm.effective_age_bins, self.age_dist)
+				for i in range(self.sum_cint.shape[0])
+			])
+			
+		return self.sum_cint
+			
+	def summarise_mcint(self, probs: tuple = (0.025, 0.5, 0.975)):
+		"""
+		Summarise the marginal contact intensity of the model.
+		"""
+		if not hasattr(self, 'sum_mcint'):
+			mcint = self.sm.boots_cint.sum(axis=2)
+			depix_boots_cint = np.array([
+				depixilate(self.sm.boots_cint[i,:,:], self.sm.effective_age_bins, self.age_dist)
+				for i in range(self.sm.boots_cint.shape[0])
+			])
+			depix_mcint = depix_boots_cint.sum(axis=2)
+			self.sum_mcint = np.quantile(mcint, probs, axis=0)
+			self.depix_sum_mcint = np.quantile(depix_mcint, probs, axis=0)
+
+		return self.sum_mcint

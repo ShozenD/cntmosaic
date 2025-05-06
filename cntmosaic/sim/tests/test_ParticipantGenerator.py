@@ -11,8 +11,8 @@ def test_basic_functionality():
   age_dist = df_age_dist['P'].values
   
   # ===== Single group ======
-  pg = ParticipantGenerator(1000, age_dist)
-  df_part = pg.generate(seed=0)
+  pg = ParticipantGenerator(age_dist)
+  df_part = pg.generate(1000, seed=0)
   
   # Check the shape of the generated DataFrame
   assert df_part.shape == (1000, 2)
@@ -21,8 +21,7 @@ def test_basic_functionality():
   assert df_part.columns.isin(['id', 'age_part']).all()
   
   # Multiple groups
-  pg = ParticipantGenerator([1000, 2000], [age_dist, age_dist])
-  df_part = pg.generate(seed=0)
+  pg = ParticipantGenerator([age_dist, age_dist])
+  df_part = pg.generate([1000, 2000], seed=0)
   assert df_part.shape == (3000, 3)
   assert df_part.columns.isin(['id', 'age_part', 'subgroup']).all()
-  

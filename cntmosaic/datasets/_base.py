@@ -52,6 +52,7 @@ def load_covimod():
 def load_template_patterns(country: str,
 													 symmetrise: bool=False,
 													 smooth: bool=False,
+													 normalise: bool=True,
 													 max_age: int=80) -> dict:
 	"""Load synthetic contact patterns for a given country and region.
  
@@ -91,6 +92,10 @@ def load_template_patterns(country: str,
 		
 	if smooth:
 		patterns = smooth_patterns(patterns)
+	
+	if normalise:
+		for key, value in patterns.items():
+			patterns[key] = value / (value.sum(axis=1).mean())
 	
 	for key, value in patterns.items():
 		patterns[key] = value[:max_age+1, :max_age+1]

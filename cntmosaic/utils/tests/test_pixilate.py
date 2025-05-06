@@ -6,7 +6,7 @@ from cntmosaic.utils import AgeBins, pixilate, depixilate
 
 def test_basic_functionality():
     matrix = np.ones((10, 10))
-    age_bins = AgeBins(0, 10, 5)
+    age_bins = AgeBins(0, 9, 5)
     
     result = pixilate(matrix, age_bins)
     expected_shape = (2, 2)
@@ -14,17 +14,37 @@ def test_basic_functionality():
     
 def test_values():
     matrix = np.ones((10, 10))
-    age_bins = AgeBins(0, 10, 5)
+    age_bins = AgeBins(0, 9, 5)
     result = pixilate(matrix, age_bins)
     
     expected_result = np.array([[5, 5], [5, 5]])
     assert np.array_equal(result, expected_result), f"Expected {expected_result}, but got {result}"
     
+def test_weights():
+    matrix = np.ones((10, 10))
+    age_bins = AgeBins(0, 9, 5)
+    weights = np.array([1,2,2,2,1, 1,2,2,2,1])
+    print(weights)
+    expected_result = pixilate(matrix, age_bins, weights)
+    print(weights)
+    dpix_matrix = depixilate(expected_result, age_bins, weights)
+    print(weights)
+    result = pixilate(dpix_matrix, age_bins, weights)
+    
+    assert np.array_equal(result, expected_result), f"Expected {expected_result}, but got {result}"
+    
 def test_inverse():
-    matrix = np.array([[5, 5], [5, 5]])
-    age_bins = AgeBins(0, 10, 5)
-    
-    result = depixilate(matrix, age_bins)
-    
+    matrix = np.ones((10, 10))
+    age_bins = AgeBins(0, 9, 5)
+    pix_matrix = pixilate(matrix, age_bins)
+    result = depixilate(pix_matrix, age_bins)
     expected_result = np.ones((10, 10))
     assert np.array_equal(result, expected_result), f"Expected {expected_result}, but got {result}"
+    
+    weights = np.array([1,2,1,1,3,3,2,1,2,3])
+    expected_result = pixilate(matrix, age_bins, weights)
+    print(expected_result)
+    dpix_matrix = depixilate(expected_result, age_bins, weights)
+    result = pixilate(dpix_matrix, age_bins, weights)
+    
+    

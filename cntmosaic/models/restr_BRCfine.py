@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from ._BRC import BRC
 from ._utils import age_age_grid, diff_age_age_grid, lower_tri_indices, symmetrize_from_lower_tri
-from ._priors import HSGP
+from .priors import HSGP2D
 
 
 
@@ -76,7 +76,7 @@ class restr_BRCfine(BRC):
         L = list(np.abs(Xn).max(axis=0) * self.params.C)
         X = Xn[ltri_idx]
         sym_tri_idx = symmetrize_from_lower_tri(self._precompute.A)
-        return HSGP(X, L, self.params.M, sym_tri_idx)
+        return HSGP2D(X, L, self.params.M, sym_tri_idx)
 
     def model(self):
         if not self._precompute.prior:

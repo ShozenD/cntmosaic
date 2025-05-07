@@ -10,7 +10,7 @@ import numpy as np
 import re
 from ._BRC import BRC
 from ._utils import age_age_grid, diff_age_age_grid, lower_tri_indices
-from ._priors import HSGP
+from .priors import HSGP2D
 
 
 class BRCcustom(BRC):
@@ -104,7 +104,7 @@ class BRCcustom(BRC):
         self.L = list(np.abs(Xn).max(axis=0) * self.C)
         self.X = Xn[ltri_idx]
         
-        self.hsgp = HSGP(self.X, self.L, M, self.sym_tri_idx)
+        self.hsgp = HSGP2D(self.X, self.L, M, self.sym_tri_idx)
 
    
     def add_prior(self, name, distribution):

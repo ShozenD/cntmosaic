@@ -6,10 +6,15 @@ from ._sim import (
     make_contact_pattern,
     sample_contacts,
     simulate_age,
-    simulate_ses
+    simulate_ses,
+    sample_participants
 )
 
 from ._eval import ModelEvaluatorSVI, ModelEvaluatorMCMC
+
+from ._ParticipantGenerator import ParticipantGenerator
+from ._ContactMatrixGenerator import ContactMatrixGenerator
+from ._ContactGenerator import ContactGenerator
 
 utils_module = [
     'print_available_countries',
@@ -20,9 +25,13 @@ sim_module = [
 	'load_base_patterns',
 	'load_age_distribution',
 	'make_contact_pattern',
+    'sample_participants',
 	'sample_contacts',
     'simulate_age',
-    'simulate_ses'
+    'simulate_ses',
+    'ParticipantGenerator',
+    'ContactMatrixGenerator',
+    'ContactGenerator'
 ]
 
 eval_module = [

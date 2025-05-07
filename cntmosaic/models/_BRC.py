@@ -10,8 +10,6 @@ import pandas as pd
 import numpyro
 from numpyro.handlers import seed, trace
 
-from ._utils import symmetrize_from_lower_tri, transpose_vector_indices
-
 from ._inference import (
   run_inference_mcmc,
   run_inference_svi,
@@ -41,32 +39,72 @@ class BRC(ABC):
   human contact patterns from coarse contact data: The Bayesian rate consistency model",
   PLoS Computational Biology. 2023
   """
-
-  def __init__(self, data: pd.DataFrame, age_dist: NDArray, likelihood: str = 'negbin'):
-
+  ALLOWED_LIKELIHOODS = ['negbin', 'poisson']
+  
+  def __init__(self,
+               data: pd.DataFrame,
+               age_dist: NDArray,
+               priors: dict,
+               likelihood: str='negbin'):
+    
     self.data = data.copy()
     self.age_dist = age_dist
-    self.likelihood = likelihood
+    self.priors = priors
+    self.likelihood = likelihood    
+    self._validate_params()
 
     if 'age_grp_cnt' in self.data.columns:
+      age_part_min = self.data['age_part'].min()
+      age_cnt_min = self.data['age_grp_cnt'].apply(lambda x: x.left).astype(int).min()
+      
       age_part_max = self.data['age_part'].max()
       age_cnt_max = self.data['age_grp_cnt'].apply(lambda x: x.right - 1).astype(int).max()
-      self.A = np.max([age_part_max, age_cnt_max]) + 1
+      
+      age_min = np.min([age_part_min, age_cnt_min])
+      age_max = np.max([age_part_max, age_cnt_max])
     else:
-      self.A = np.max([self.data['age_part'].max(), self.data['age_cnt'].max()]) + 1
-
-    self._compute_indices()
-
-  def set_age_dim(self, A: int):
-    """Set the age dimension.
+      age_min = np.min([self.data['age_part'].min(), self.data['age_cnt'].min()])
+      age_max = np.max([self.data['age_part'].max(), self.data['age_cnt'].max()])
+    
+    self.set_age_bounds(age_min, age_max)
+    
+  def _validate_params(self):
+    if not isinstance(self.data, pd.DataFrame):
+      raise ValueError("data must be a pandas DataFrame")
+    
+    if not isinstance(self.age_dist, np.ndarray):
+      raise ValueError("age_dist must be a numpy array")
+    
+    if not isinstance(self.priors, dict):
+      raise ValueError("priors must be a dictionary")
+    
+    if self.likelihood not in self.ALLOWED_LIKELIHOODS:
+      raise ValueError(f"likelihood must be one of: {self.ALLOWED_LIKELIHOODS}")
+    
+    if 'age_part' not in self.data.columns:
+      raise ValueError("data must contain the column 'age_part'")
+    
+    if 'age_cnt' not in self.data.columns and 'age_grp_cnt' not in self.data.columns:
+      raise ValueError("data must contain the column 'age_cnt' or 'age_grp_cnt'")
+    
+    if 'rate' not in self.priors.keys():
+      raise ValueError("priors must contain the specifications for 'rate'")
+  
+  def set_age_bounds(self, age_min: int, age_max: int):
+    """Set the minimum and maximum age.
 
     Parameters
     ----------
-    A: int
-      Age dimension.
+    min: int
+      Minimum age.
+    max: int
+      Maximum age.
     """
-    self.A = A
-    self._compute_indices()
+    self.age_min = age_min
+    self.age_max = age_max
+    self.A = age_max - age_min + 1
+    for _, prior in self.priors.items():
+      prior.set_age_bounds(age_min, age_max)
 
   def set_age_dist(self, age_dist: NDArray):
     """Set the population age distribution.

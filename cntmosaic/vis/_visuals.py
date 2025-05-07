@@ -229,55 +229,101 @@ def plot_mosaic_pixilated(
 	return chart
 
 def plot_mosaic_marginal(
-		mcint,
-		ax,
-		mcint_lb: NDArray | None = None,
-		mcint_ub: NDArray | None = None,
-		color: str = '#de425b',
-		title: str = None,
-		xlabel: str | None = 'Age of contacting individual',
-		ylabel: str | None = 'Intensity',
-		**kwargs
-):
-		"""Plot the marginal contact intensity on a given axis.
-		
-		Parameters
-		----------
-		ax : matplotlib.axes.Axes
-				The axis on which to plot the marginal contact intensity.
-		mcint : ndarray
-				The marginal contact intensity to plot.
-		mcint_lb : ndarray or None, optional
-				Lower bound of the marginal contact intensity. Default is None.
-		mcint_ub : ndarray or None, optional
-				Upper bound of the marginal contact intensity. Default is None.
-		color : str, optional
-				Color of the plot. Default is '#de425b'.
-		title : str or None, optional
-				Title of the plot. Default is None.
-		**kwargs
-				Additional keyword arguments to pass to the plot function.
-		
-		Returns
-		-------
-		None
-		"""
-		ax.plot(mcint, c=color, **kwargs)
-				
-		if mcint_lb is not None and mcint_ub is not None:
-				ax.fill_between(
-			np.arange(len(mcint)),
-			mcint_lb,
-			mcint_ub,
-			color=color,
-			alpha=0.2
-		)
-		
-		ax.set_title(title, fontsize=9, loc='left') if title else None
-		ax.set_ylabel(ylabel, fontsize=8) if ylabel else None
-		ax.set_xlabel(xlabel, fontsize=8) if xlabel else None
-		
-		ax.tick_params(axis='both', which='major', labelsize=8)
+  mcint: np.ndarray,
+  mcint_lb: np.ndarray = None,
+  mcint_ub: np.ndarray = None,
+  width: int = 250,
+  height: int = 250,
+  title: str = 'Contact intensity',
+  style_config: dict = None
+) -> alt.Chart:
+  """
+	Plot the marginal contact intensity with optional uncertainty bands.
+	
+ Parameters
+	----------
+	mcint : np.ndarray
+		Array representing the main contact intensity values.
+	mcint_lb : np.ndarray, optional
+		Array representing the lower bound of the uncertainty band. If provided, both mcint_lb and mcint_ub are used to
+		display an error band around the line plot. Default is None.
+	mcint_ub : np.ndarray, optional
+		Array representing the upper bound of the uncertainty band. If provided, both mcint_lb and mcint_ub are used to
+		display an error band around the line plot. Default is None.
+	width : int, optional
+		The width of the resulting chart in pixels. Default is 250.
+	height : int, optional
+		The height of the resulting chart in pixels. Default is 250.
+	title : str, optional
+		The title for the chart. Default is 'Contact intensity'.
+	style_config : dict, optional
+		A dictionary for overriding default style configurations for the axes and title. The keys should correspond to the
+		configuration parts ('x_axis', 'y_axis', or 'title') and the values should be dictionaries of style parameters.
+		Default is None.
+  
+	Returns
+	-------
+	alt.Chart
+		An Altair Chart object that visualizes the marginal contact intensity. When error bounds are provided, the chart includes
+		an error band alongside the main line plot.
+	"""
+  
+  config = {
+    'x_axis': {
+      'values': list(range(0, 100, 10)),
+      'labelFontSize': 10,
+      'titleFontSize': 10,
+      'titleFontWeight': 'normal',
+      'labelFontWeight': 'normal',
+      'labelAngle': 0,
+      'grid': True
+    },
+    'y_axis': {
+      'values': list(range(0, 100, 5)),
+      'labelFontSize': 10,
+      'titleFontSize': 10,
+      'titleFontWeight': 'normal',
+      'labelFontWeight': 'normal',
+      'grid': True
+    },
+    'title': {
+      'fontSize': 10,
+      'fontWeight': 'normal',
+      'anchor': 'middle'
+    }
+  }
+  
+  if style_config:
+    for key in style_config:
+      if key in config:
+        config[key].update(style_config[key])
+      else:
+        config[key] = style_config[key]
+  
+  df = pd.DataFrame({'x': np.arange(mcint.size), 'y': mcint})
+  has_band = mcint_lb is not None and mcint_ub is not None
+  if has_band:
+    df['l'] = mcint_lb
+    df['u'] = mcint_ub
+  
+  x_axis = alt.Axis(title='Age of contacting individuals', **config['x_axis'])
+  y_axis = alt.Axis(title='Contact intensity', **config['y_axis'])
+  
+  base = alt.Chart(df).encode(x=alt.X('x:O', axis=x_axis), y=alt.Y('y:Q', axis=y_axis))
+  line = base.mark_line()
+  
+  if has_band:
+    band = alt.Chart(df).mark_errorband().encode(
+      x=alt.X('x:O', axis=x_axis),
+      y=alt.Y('l:Q', axis=y_axis),
+      y2='u:Q'
+    )
+    chart = band + line
+  else:
+    chart = line
+    
+  return chart.properties(width=width, height=height,
+              title=alt.TitleParams(text=title, **config['title']))
 		
 def plot_mosaic_empirical(
 		data: pd.DataFrame,

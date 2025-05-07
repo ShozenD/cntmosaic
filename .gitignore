@@ -166,3 +166,9 @@ data/*
 # Mac OS
 .DS_Store
 */.DS_Store
+
+# VS Code
+.vscode/
+
+# Figures
+figures/*

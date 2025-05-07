@@ -1,9 +1,14 @@
+import math
 import numpy as np
 
 import jax
 import jax.numpy as jnp
 from jax import Array
 from jax.typing import ArrayLike
+
+def is_square(x: int) -> bool:
+  """Check if a number is a perfect square"""
+  return x == math.isqrt(x) ** 2
 
 def closure(x: ArrayLike, axis: int=0) -> Array:
   """Closure operation for a given axis"""
@@ -20,8 +25,9 @@ def basis_contrast_matrix(d: int) -> Array:
   U = np.zeros((d, d-1))
   for i in range(d-1):
     j = i + 1
-    U[:j,i] = np.sqrt(1/(j*(j+1)))
-    U[i+1,i] = -np.sqrt(1/(j+1))
+    U[:j,i] = 1./j
+    U[j,i] = -1
+    U[:,i] *= np.sqrt(j/(j+1.)) 
     
   return U
 
@@ -32,14 +38,15 @@ def alr(x: ArrayLike, axis: int=0) -> Array:
   
 def clr(x: ArrayLike, axis: int=0) -> Array:
   """Centered log ratio transformation"""
-  return jnp.log(x) - jnp.mean(jnp.log(x), axis=axis, keepdims=True)
+  y = jnp.log(x + jnp.finfo(x.dtype).eps)
+  return y - jnp.mean(y, axis=axis, keepdims=True)
 
 def ilr(x: ArrayLike, axis: int=0) -> Array:
   """Isometric log ratio transformation"""
   shape = list(x.shape)
   U = basis_contrast_matrix(shape[axis])
-  y = jnp.log(x)
-  return jnp.apply_along_axis(lambda y: jnp.matmul(U.T, y), axis=axis, arr=y)
+  y = clr(x)
+  return jnp.apply_along_axis(lambda z: jnp.matmul(U.T, z), axis=axis, arr=y)
   
 def inverse_alr(x: ArrayLike, axis: int=0) -> Array:
   """Inverse additive log ratio transformation"""

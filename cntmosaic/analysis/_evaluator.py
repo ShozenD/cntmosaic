@@ -5,16 +5,28 @@ from sklearn.metrics import (
 	mean_absolute_error,
 	mean_absolute_percentage_error
 )
+from ..utils import pixilate, depixilate
+from ._summariser import ModelSummariserSocialMix
+
+def interval_score(y_true, y_low, y_high, alpha):
+	"""
+	Compute the interval score for given true values and interval bounds.
+	"""
+	return np.mean(
+   	(y_high - y_low) + 2/alpha * (y_low - y_true) * np.maximum(0, y_low - y_true) +
+				   2/alpha * (y_high - y_true) * np.maximum(0, y_high - y_true)
+)
 
 def compute_metrics(y_true, y_est, y_low, y_high):
 	"""
-	Compute RMSE, MAE, and coverage for given true values, estimates, and interval bounds.
+	Compute MSE, MAE, and coverage for given true values, estimates, and interval bounds.
 	"""
-	rmse = root_mean_squared_error(y_true, y_est)
+	mse = root_mean_squared_error(y_true, y_est)**2
 	mae = mean_absolute_error(y_true, y_est)
 	mape = mean_absolute_percentage_error(y_true, y_est) * 100
+	int_score = interval_score(y_true, y_low, y_high, alpha=0.05)
 	coverage = np.mean((y_true >= y_low) & (y_true <= y_high)) * 100
-	return rmse, mae, mape, coverage
+	return mse, mae, mape, int_score, coverage
 
 def process_variable_metrics(var, data_eval, data_est):
 	"""
@@ -22,15 +34,16 @@ def process_variable_metrics(var, data_eval, data_est):
 	"""
 	metrics = []
 	for cat, values in data_est[var].items():
-			rmse, mae, mape, coverage = compute_metrics(
+			mse, mae, mape, int_score, coverage = compute_metrics(
 					data_eval[var][cat], values[1], values[0], values[2]
 			)
 			metrics.append({
 					'var': var,
 					'cat': cat,
-					'rmse': rmse,
+					'mse': mse,
 					'mae': mae,
 					'mape': mape,
+					'interval_score': int_score,
 					'coverage': coverage
 			})
 
@@ -39,14 +52,16 @@ def process_variable_metrics(var, data_eval, data_est):
 	y_est = np.vstack([values[1] for values in data_est[var].values()])
 	y_low = np.vstack([values[0] for values in data_est[var].values()])
 	y_high = np.vstack([values[2] for values in data_est[var].values()])
-	rmse, mae, mape, coverage = compute_metrics(y_true, y_est, y_low, y_high)
+  
+	mse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
  
 	metrics.append({
 			'var': var,
 			'cat': 'all',
-			'rmse': rmse,
+			'mse':	mse,
 			'mae': mae,
 			'mape': mape,
+			'interval_score': int_score,
 			'coverage': coverage
 	})
 	
@@ -68,13 +83,15 @@ def aggregate_metrics(data_eval, data_est):
 	y_low = np.vstack([values[0] for var in data_est.keys() for values in data_est[var].values()])
 	y_high = np.vstack([values[2] for var in data_est.keys() for values in data_est[var].values()])
 
-	rmse, mae, mape, coverage = compute_metrics(y_true, y_est, y_low, y_high)
+
+	mse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
 	all_metrics.append({
 			'var': 'all',
 			'cat': 'all',
-			'rmse': rmse,
+			'mse': mse,
 			'mae': mae,
 			'mape': mape,
+			'interval_score': int_score,
 			'coverage': coverage
 	})
 
@@ -134,4 +151,51 @@ class ModelEvaluator:
 			self.eval_mcint = aggregate_metrics(self.mcint_true, self.summariser.summarise_mcint())
    
 		return self.eval_mcint
+
+class ModelEvaluatorSocialMix:
+	def __init__(self,
+							summariser: ModelSummariserSocialMix,
+							cint_matrix_true: np.ndarray):
+		self.summariser = summariser
+		self.age_bins = summariser.effective_age_bins
+		self.m_true = cint_matrix_true 		# True contact intensity matrix (1-year age)
+		self.pix_m_true = pixilate(self.m_true, self.age_bins, summariser.age_dist)   # True contact intensity matrix (prespecified age bins)
+		self.depix_m_true = depixilate(self.pix_m_true, self.age_bins, summariser.age_dist)
+		self.m_hat = summariser.cint			# Estimated contact intensity matrix (prespecified age bins)
+		self.evaluate_cint()
+	
+	def evaluate_cint(self):
+		"""Evaluate the estimated contact intensity matrix"""
+		self.discretisation_error()
+		self.estimation_error()
+		self.total_error()
+		self.interval_score()
+
+	def discretisation_error(self):
+		"""Compute the discretisation error"""
+		self.disc_err = np.mean(np.square(self.depix_m_true - self.m_true))
+		return self.disc_err
+
+	def estimation_error(self):
+		"""Compute the estimation error"""
+		self.est_err = np.mean(np.square(self.m_hat - self.pix_m_true))
+		return self.est_err
+
+	def total_error(self):
+		"""Compute the total error"""
+		self.total_err = self.discretisation_error() + self.estimation_error()
+		# The values i equavalent to np.mean(np.square(self.depix_m_hat - self.m_true))
+		return self.total_err
+
+	def interval_score(self):
+		"""Compute the negatively oriented interval score"""
+		if not hasattr(self, 'interval_score'):
+			u = self.summariser.depix_sum_cint[2]
+			l = self.summariser.depix_sum_cint[0]
+			self.interval_score = np.mean(
+				(u - l) + 2/self.summariser.alpha * (l - self.m_true) * np.maximum(0, l - self.m_true) +
+				2/self.summariser.alpha * (u - self.m_true) * np.maximum(0, u - self.m_true)
+			)
+  
+		return self.interval_score
 		

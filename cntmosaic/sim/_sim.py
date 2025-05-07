@@ -2,6 +2,9 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from numpy.typing import NDArray
+from tqdm import tqdm
+
+from ._utils import normalise_age_dists, expand_grid
 
 def make_contact_pattern(patterns: dict,
                       age_dist: NDArray,
@@ -40,6 +43,31 @@ def make_contact_pattern(patterns: dict,
     
     rate = cint / age_dist[None,:]
     return rate, cint
+
+def sample_participants(
+    N: int,
+    age_dists: dict[NDArray],
+    seed: int=0
+): 
+    rng = np.random.default_rng(seed)
+    age_probs = normalise_age_dists(age_dists)
+    
+    participants = []
+    print('Generating participants...')
+    for i in tqdm(range(N)):
+        participant = pd.DataFrame({'id_part': [i]}, index=[0])
+        age = rng.choice(len(age_probs['base']), p=age_probs['base'])
+        participant['age_part'] = age
+        
+        for key, variable in age_probs.items():
+            if key != 'base':
+                probs = np.array([prob[age] for prob in variable.values()])
+                cats = np.array([value for value in variable.keys()])
+                participant[f'{key}_part'] = rng.choice(cats, p=probs)
+                
+        participants.append(participant)
+        
+    return pd.concat(participants, ignore_index=True) 
 
 def sample_contacts(
     N: int,
@@ -231,7 +259,7 @@ def simulate_ses(
         return df_sample
       
     def make_age_dist_props(age_dist):
-      return {"ses": np.vstack([(config[ses]["pop_prop"] * age_dist) / age_dist for ses in config.keys()]).T}
+      return {"ses": np.vstack([(config[ses]["pop_prop"] * age_dist) / age_dist for ses in config.keys()])}
 
     dfs_train = [make_sample_df(ses, P_ses, cint) for ses, (P_ses, _, cint) in ses_patterns.items()]
     age_dist_props = make_age_dist_props(age_dist)

@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 import jax.random as random
 import numpyro
-from .._priors import TensorSpline2D
+from ..priors._priors import TensorSpline2D
 
 prng_key = random.PRNGKey(0)
 

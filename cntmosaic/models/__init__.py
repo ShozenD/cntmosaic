@@ -14,4 +14,5 @@ __all__ = [
     'HiBRCrefine',
     'BRCcustom',
     'restr_BRCfine'
+    'BRCcustom'
 ]

@@ -4,6 +4,7 @@ from ._BRCrefine import BRCrefine
 from ._HiBRCfine import HiBRCfine
 from ._HiBRCrefine import HiBRCrefine
 from .custom import BRCcustom
+from .restr_BRCfine import restr_BRCfine
 
 __all__ = [
     'BRC',
@@ -11,5 +12,7 @@ __all__ = [
     'BRCrefine',
     'HiBRCfine',
     'HiBRCrefine',
+    'BRCcustom',
+    'restr_BRCfine'
     'BRCcustom'
 ]

@@ -138,3 +138,96 @@ class ModelSummariserSocialMix:
 			self.depix_sum_mcint = np.quantile(depix_mcint, probs, axis=0)
 
 		return self.sum_mcint
+
+class ModelSummariserMCMC:
+    '''
+    Basic Model implementation only
+    '''
+    def __init__(self, model):
+        self.model = model
+        self.prng_key = jax.random.PRNGKey(0)
+    
+    def get_posterior(self):
+        """Get posterior samples from the MCMC run."""
+        self.post = self.model.mcmc.get_samples()
+        
+    def get_post_cint(self):
+        """Calculate posterior contact intensity from MCMC samples"""
+        if not hasattr(self, 'post'):
+            self.get_posterior()
+        self.post_cint = {'general': np.exp(self.post['log_cint'])}
+        return self.post_cint
+        
+    def summarise_rate(self, probs: tuple=(0.025, 0.5, 0.975)):
+        """Summarise the posterior contact rate
+        
+        Parameters
+        ----------
+        probs : tuple
+            The quantiles to compute
+        
+        Returns
+        -------
+        dict
+            A dictionary containing the quantiles of the posterior contact rate
+        """
+        if not hasattr(self, 'post'):
+            self.post = self.get_posterior()
+            
+        if not hasattr(self, 'sum_post_rate'):
+            self.sum_post_rate = np.quantile(
+                np.exp(self.post['log_rate']),
+                probs,
+                axis=0
+            )
+            
+        return self.sum_post_rate
+        
+    def summarise_cint(self, probs: tuple=(0.025, 0.5, 0.975)):
+        """Summarise the posterior contact intensity
+        
+        Parameters
+        ----------
+        probs : tuple
+            The quantiles to compute
+        
+        Returns
+        -------
+        dict
+            A dictionary containing the quantiles of the posterior contact intensity
+        """
+        if not hasattr(self, 'post_cint'):
+            self.get_post_cint()
+            
+        if not hasattr(self, 'sum_post_cint'):
+            self.sum_post_cint = {name: np.quantile(value, probs, axis=0) for name, value in self.post_cint.items()
+            }
+            
+        return self.sum_post_cint
+            
+    def summarise_mcint(self, probs: tuple=(0.025, 0.5, 0.975)):
+        """Summarise the posterior marginal contact intensity
+        
+        Parameters
+        ----------
+        probs : tuple
+            The quantiles to compute
+        
+        Returns
+        -------
+        dict
+            A dictionary containing the quantiles of the posterior marginal contact intensity
+        """
+        if not hasattr(self, 'post_cint'):
+            self.get_post_cint()
+            
+        if not hasattr(self, 'sum_post_mcint'):
+            self.sum_post_mcint = {
+                var: {
+                    name: np.quantile(value.sum(axis=-1), probs, axis=0)
+                    for name, value in cat.items()
+                }
+                for var, cat in self.post_cint.items()
+            }
+        
+        return self.sum_post_mcint

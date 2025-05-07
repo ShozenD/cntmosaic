@@ -1,7 +1,6 @@
 import numpy as np
 from ._AgeBins import AgeBins
 
-
 def pixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = None):
     """
     Aggregate a contact matrix over specified age intervals.
@@ -24,10 +23,10 @@ def pixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = None)
                             Starting indices for each bin.
                     - bin_sizes : array-like
                             The sizes of each bin corresponding to the intervals.
+
     age_dist: numpy.ndarray, optional
             Sample or population age distribution (1D). If provided, it should have the same lenght as the first
             dimension of the input matrix. 
-
 
     Returns
     -------
@@ -61,7 +60,7 @@ def pixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = None)
 
     return result[0] if single_sample else result
 
-
+  
 def depixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = None):
     """Depixilate a matrix using age bin slicing.
 
@@ -85,7 +84,6 @@ def depixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = Non
     age_dist : np.ndarray, optional
         Sample or population age distribution. If provided, it should have the same length as the first
         dimension of the input matrix.
-
 
     Returns
     -------

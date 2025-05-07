@@ -52,6 +52,7 @@ def process_variable_metrics(var, data_eval, data_est):
 	y_est = np.vstack([values[1] for values in data_est[var].values()])
 	y_low = np.vstack([values[0] for values in data_est[var].values()])
 	y_high = np.vstack([values[2] for values in data_est[var].values()])
+  
 	mse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
  
 	metrics.append({
@@ -81,6 +82,7 @@ def aggregate_metrics(data_eval, data_est):
 	y_est = np.vstack([values[1] for var in data_est.keys() for values in data_est[var].values()])
 	y_low = np.vstack([values[0] for var in data_est.keys() for values in data_est[var].values()])
 	y_high = np.vstack([values[2] for var in data_est.keys() for values in data_est[var].values()])
+
 
 	mse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
 	all_metrics.append({

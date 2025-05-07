@@ -175,4 +175,21 @@ class ModelVisualiser:
           **self.default_config['title']
         )
       )
+      
+      
+    # Layout charts in a grid
+    # Determine number of rows and columns based on number of elements
+    # cols = 3
+    # rows = (len(charts) + cols - 1) // cols
+
+    # Build grid using Altair's concat operators
+    # chart_grid = None
+    #for r in range(rows):
+    #    row_charts = charts[r * cols:(r + 1) * cols]
+    #    row = row_charts[0]
+    #    for c in row_charts[1:]:
+    #        row |= c
+    #    chart_grid = row if chart_grid is None else chart_grid & row
+    #return chart_grid
+      
     return charts

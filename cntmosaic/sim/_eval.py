@@ -329,7 +329,7 @@ class ModelEvaluatorMCMC(ModelEvaluator):
                 var = name.split('/')[0]
                 cat = self.model.data[var].cat.categories
                 post_cint[var] = {
-                    cat[i]: np.exp(log_rate[:,None,:,:] + site + self.model.log_P[None,None,:,:])[:,i,:,:]
+                    cat[i]: np.exp(log_rate[:, None, :, :] + site + self.model.log_P[None, None, :, :])[:, i, :, :]
                     for i in range(len(cat))
                 }
         self.post_cint = post_cint

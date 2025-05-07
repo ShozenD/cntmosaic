@@ -324,7 +324,6 @@ def plot_mosaic_marginal(
     
   return chart.properties(width=width, height=height,
               title=alt.TitleParams(text=title, **config['title']))
-
 		
 def plot_mosaic_empirical(
 		data: pd.DataFrame,

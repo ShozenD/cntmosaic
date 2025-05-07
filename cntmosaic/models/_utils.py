@@ -195,7 +195,7 @@ def fine_coarse_matrix(x: pd.Series) -> NDArray:
 	"""
 	Create an indicator matrix mapping one-year ages to specified age intervals.
 
-	The function generates a binary matrix where each row corresponds to all one-year ages considered,
+	The function generfates a binary matrix where each row corresponds to all one-year ages considered,
 	and each column represents an age interval defined in the input series. The matrix entries
 	are set to 1 where the age falls into the corresponding interval, and 0 otherwise.
 
@@ -215,10 +215,10 @@ def fine_coarse_matrix(x: pd.Series) -> NDArray:
 
 	Examples
 	--------
-	>>> ages = pd.Series(pd.cut(np.arange(0,85), bins=[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85]))
+	>>> ages = pd.Series(pd.cut(np.arange(1,85), bins=[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85]))
 	>>> indicator_matrix = make_fine_coarse_matrix(ages)
 	>>> print(indicator_matrix.shape)
-	(85, 17)
+	(84, 17)
 	"""
 	if x.isnull().any():
 		raise ValueError("Input series contains NaN values. Check whether the intervals are defined correctly.")

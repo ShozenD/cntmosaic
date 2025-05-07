@@ -7,7 +7,7 @@ name = "cntmosaic"
 version = "0.1.0"
 authors = [
   { name="Shozen Dan", email="shozen.dan21@imperial.ac.uk" },
-  { name="Yiming Li"}
+  { name="Yiming Lin"}
 ]
 description = "A Python package for modelling, simulating, and visualising social contact data."
 readme = "README.md"

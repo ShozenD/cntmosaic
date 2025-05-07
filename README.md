@@ -1,5 +1,5 @@
-![CI](https://github.com/github/docs/actions/workflows/ci.yml/badge.svg)
-![codecov](https://codecov.io/gh/ShozenD/cntmosaic/graph/badge.svg?token=9U271V3D3H)](https://codecov.io/gh/ShozenD/cntmosaic)
+[![CI](https://github.com/ShozenD/cntmosaic/workflows/CI/badge.svg)](https://github.com/ShozenD/cntmosaic/actions)
+[![codecov](https://codecov.io/gh/ShozenD/cntmosaic/graph/badge.svg?token=9U271V3D3H)](https://codecov.io/gh/ShozenD/cntmosaic)
 
 # Contact Mosaic
 

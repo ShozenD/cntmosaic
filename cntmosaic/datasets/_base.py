@@ -1,8 +1,9 @@
 from importlib import resources
 import pickle
 import pandas as pd
-from numpy.typing import NDArray
+# from numpy.typing import NDArray
 from ..sim._utils import symmetrise_patterns, smooth_patterns
+
 
 def load_pickle_data(data_file_name):
 	"""Loads `data_file_name` from the package's data directory."""

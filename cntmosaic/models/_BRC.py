@@ -4,6 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 import jax
+import jaxlib
 from jax import random
 import pandas as pd
 import numpyro
@@ -16,28 +17,28 @@ from ._inference import (
   posterior_predictive_svi
 )
 
+
 class BRC(ABC):
   """Base class for the Bayesian Rate Consistency model.
- 
-    Parameters
-    ----------
-    data: DataFrame
-        DataFrame containing the contact data. Must contain the columns 'y', 'age_part', and 'age_cnt.
-        'y' is the number of contacts between 'age_part' and 'age_cnt'.
-        'age_part' is the age of the contactor.
-        'age_cnt' is the age of the contacted.
-    age_dist: NDArray
-        The population age distribution.
-    likelihood: str, default='negbin'
-        Likelihood function to use.
-    
-    References
-    ----------
-    Shozen Dan et al., "Estimating fine age structure and time trends in
-    human contact patterns from coarse contact data: The Bayesian rate consistency model",
-    PLoS Computational Biology. 2023
+
+  Parameters
+  ----------
+  data: DataFrame
+      DataFrame containing the contact data. Must contain the columns 'y', 'age_part', and 'age_cnt.
+      'y' is the number of contacts between 'age_part' and 'age_cnt'.
+      'age_part' is the age of the contactor.
+      'age_cnt' is the age of the contacted.
+  age_dist: NDArray
+      The population age distribution.
+  likelihood: str, default='negbin'
+      Likelihood function to use.
+
+  References
+  ----------
+  Shozen Dan et al., "Estimating fine age structure and time trends in
+  human contact patterns from coarse contact data: The Bayesian rate consistency model",
+  PLoS Computational Biology. 2023
   """
-  
   ALLOWED_LIKELIHOODS = ['negbin', 'poisson']
   
   def __init__(self,
@@ -49,10 +50,9 @@ class BRC(ABC):
     self.data = data.copy()
     self.age_dist = age_dist
     self.priors = priors
-    self.likelihood = likelihood
-    
+    self.likelihood = likelihood    
     self._validate_params()
-    
+
     if 'age_grp_cnt' in self.data.columns:
       age_part_min = self.data['age_part'].min()
       age_cnt_min = self.data['age_grp_cnt'].apply(lambda x: x.left).astype(int).min()
@@ -92,7 +92,7 @@ class BRC(ABC):
   
   def set_age_bounds(self, age_min: int, age_max: int):
     """Set the minimum and maximum age.
-    
+
     Parameters
     ----------
     min: int
@@ -105,34 +105,40 @@ class BRC(ABC):
     self.A = age_max - age_min + 1
     for _, prior in self.priors.items():
       prior.set_age_bounds(age_min, age_max)
-    
+
   def set_age_dist(self, age_dist: NDArray):
     """Set the population age distribution.
-    
+
     Parameters
     ----------
     age_dist: NDArray
       Population age distribution.
     """
     self.age_dist = age_dist
-  
+
+  def _compute_indices(self):
+    """Precompute the indices for symmetrizing and transposing the contact matrix."""
+    self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
+    self.tran_vec_idx = transpose_vector_indices(self.A, self.A)
+
   @abstractmethod
   def model(self):
     raise NotImplementedError
-  
+
   def print_model_shape(self):
     """Print the shapes of the model parameters."""
     tr = trace(seed(self.model, random.PRNGKey(0))).get_trace()
     print(numpyro.util.format_shapes(tr))
-    
-  def run_inference_mcmc(self,
-               rng_key,
-               num_samples: int=500,
-               num_warmup: int=500,
-               num_chains: int=2,
-               **kwargs):
+
+  def run_inference_mcmc(
+    self,
+    rng_key,
+    num_samples: int = 500,
+    num_warmup: int = 500,
+    num_chains: int = 2,
+    **kwargs):
     """Run full Bayesian inference using Hamiltonian Monte Carlo and NUT Sampler.
-    
+
     Parameters
     ----------
     rng_key:
@@ -146,7 +152,8 @@ class BRC(ABC):
     **kwargs
       Additional keyword arguments to pass to the MCMC
     """
-  
+    if not isinstance(rng_key, jaxlib.xla_extension.ArrayImpl):
+      rng_key = jax.random.PRNGKey(int(rng_key))
     self.mcmc = run_inference_mcmc(
       rng_key,
       self.model,
@@ -155,7 +162,7 @@ class BRC(ABC):
       num_chains=num_chains,
       **kwargs
     )
-  
+
   def run_inference_svi(
     self,
     prng_key,
@@ -165,7 +172,7 @@ class BRC(ABC):
     **model_kwargs,
   ):
     """Run stochastic variational inference.
-      
+
     Parameters
     ----------
     prng_key:
@@ -197,7 +204,7 @@ class BRC(ABC):
     **model_kwargs,
   ) -> dict[str, jax.Array]:
     """Generate posterior predictive samples using SVI.
-    
+
     Parameters
     ----------
     prng_key:
@@ -211,7 +218,7 @@ class BRC(ABC):
     """
     if hasattr(self, 'svi') is False:
       raise AttributeError('run_inferece_svi must be run first.')
-  
+
     return posterior_predictive_svi(
       prng_key,
       self.model,

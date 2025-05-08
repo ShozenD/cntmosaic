@@ -144,6 +144,7 @@ class SocialMix:
         age_bins: AgeBins,
         symmetric: bool = False,
         adaptive_merge: bool = False,
+        verbose: bool = True,
     ):
         self.df_part = df_part
         self.df_cnt = df_cnt
@@ -152,6 +153,7 @@ class SocialMix:
         self.age_bins = age_bins
         self.effective_age_bins = None
         self.adaptive_merge = adaptive_merge
+        self.verbose = verbose
         self.check_dataframes()
         self.check_age_bins()
         self.preprocess()
@@ -171,10 +173,11 @@ class SocialMix:
         )
         if np.min(ssizes["N"]) == 0:
             if self.adaptive_merge:
-                warnings.warn(
-                    "Some age groups have zero sample sizes. Merging age groups.",
-                    UserWarning,
-                )
+                if self.verbose:
+                    warnings.warn(
+                        "Some age groups have zero sample sizes. Merging age groups.",
+                        UserWarning,
+                    )
 
                 # Merge zero-count intervals with their nearest nonzero-count neighbor
                 merged_intervals = merge_zero_groups(
@@ -183,8 +186,8 @@ class SocialMix:
 
                 # Define new age_bins based on the merged intervals
                 self.effective_age_bins = AgeBins(
-                    min=merged_intervals[0].left,
-                    max=merged_intervals[-1].right,
+                    min=self.age_bins.min,
+                    max=self.age_bins.max,
                     cuts=[i.left for i in merged_intervals[1:-1]],
                 )
             else:
@@ -264,7 +267,9 @@ class SocialMix:
 
         if recover_bins:
             return pixilate(
-                depixilate(self.cint, self.effective_age_bins), self.age_bins
+                depixilate(self.cint, self.effective_age_bins, self.df_age_dist["P"].values),
+                self.age_bins,
+                self.df_age_dist["P"].values
             )
         else:
             return self.cint
@@ -278,7 +283,9 @@ class SocialMix:
 
         if recover_bins:
             return pixilate(
-                depixilate(self.rate, self.effective_age_bins), self.age_bins
+                depixilate(self.rate, self.effective_age_bins, self.df_age_dist["P"].values),
+                self.age_bins,
+                self.df_age_dist["P"].values,
             )
         else:
             return self.rate
@@ -293,9 +300,8 @@ class SocialMix:
             for i in tqdm(range(n_boot), desc="Bootstrapping"):
                 # Sample with replacement
                 df_part_sampled = self.df_part.sample(frac=1, replace=True)
-
-                # Create a new instance of the class
-                try:
+                
+                if self.adaptive_merge:
                     sm = SocialMix(
                         df_part_sampled,
                         self.df_cnt,
@@ -303,18 +309,32 @@ class SocialMix:
                         self.age_bins,
                         self.symmetric,
                         self.adaptive_merge,
+                        self.verbose
                     )
-
-                    # Ensures that every bootstrapped matrix has the same dimension
-                    boots_cint.append(sm.compute_cint())
-                    boots_rate.append(sm.compute_rate())
-                except:
-                    # Handle the case where the bootstrapped sample has zero counts
-                    warnings.warn(
-                        "Bootstrapped sample has zero counts for certain age group(s).Skipping this iteration.",
-                        UserWarning,
-                    )
-                    continue
+                    boots_cint.append(sm.compute_cint(recover_bins=True))
+                    boots_rate.append(sm.compute_rate(recover_bins=True))
+                    
+                else:
+                    try:
+                        sm = SocialMix(
+                            df_part_sampled,
+                            self.df_cnt,
+                            self.df_age_dist,
+                            self.age_bins,
+                            self.symmetric,
+                            self.adaptive_merge,
+                            self.verbose
+                        )
+                        boots_cint.append(sm.compute_cint())
+                        boots_rate.append(sm.compute_rate())
+                        
+                    except:
+                        if self.verbose:
+                            warnings.warn(
+                                "Bootstrapped sample has zero counts for certain age group(s). Skipping this iteration.",
+                                UserWarning,
+                            )
+                        continue
 
         self.boots_cint = np.asarray(boots_cint)
         self.boots_rate = np.asarray(boots_rate)

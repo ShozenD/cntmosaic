@@ -1,5 +1,5 @@
 from ._summariser import ModelSummariserSVI, ModelSummariserSocialMix, ModelSummariserMCMC
-from ._evaluator import ModelEvaluator
+from ._evaluator import ModelEvaluator, ModelEvaluatorSocialMix
 from ._visualiser import ModelVisualiser
 
 __all__ = [
@@ -7,5 +7,6 @@ __all__ = [
   'ModelSummariserMCMC',
   'ModelSummariserSocialMix',
   'ModelEvaluator',
+  'ModelEvaluatorSocialMix',
   'ModelVisualiser'
 ]

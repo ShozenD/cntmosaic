@@ -166,36 +166,49 @@ class ModelEvaluatorSocialMix:
 	
 	def evaluate_cint(self):
 		"""Evaluate the estimated contact intensity matrix"""
-		self.discretisation_error()
-		self.estimation_error()
-		self.total_error()
-		self.interval_score()
+		return pd.DataFrame({
+			'disc_err': [self.eval_cint_disc_err()],
+			'est_err': [self.eval_cint_est_err()],
+			'total_err': [self.eval_cint_total_err()],
+			'interval_score': [self.eval_cint_int_score()],
+			'coverage': [self.eval_cint_coverage()],
+		})
 
-	def discretisation_error(self):
+	def eval_cint_disc_err(self):
 		"""Compute the discretisation error"""
-		self.disc_err = np.mean(np.square(self.depix_m_true - self.m_true))
-		return self.disc_err
+		self.cint_disc_err = np.mean(np.square(self.depix_m_true - self.m_true))
+  
+		return self.cint_disc_err
 
-	def estimation_error(self):
+	def eval_cint_est_err(self):
 		"""Compute the estimation error"""
-		self.est_err = np.mean(np.square(self.m_hat - self.pix_m_true))
-		return self.est_err
+		self.cint_est_err = np.mean(np.square(self.m_hat - self.pix_m_true))
+		return self.cint_est_err
 
-	def total_error(self):
+	def eval_cint_total_err(self):
 		"""Compute the total error"""
-		self.total_err = self.discretisation_error() + self.estimation_error()
+		self.cint_total_err = self.eval_cint_disc_err() + self.eval_cint_est_err()
 		# The values i equavalent to np.mean(np.square(self.depix_m_hat - self.m_true))
-		return self.total_err
+		return self.cint_total_err
 
-	def interval_score(self):
+	def eval_cint_int_score(self):
 		"""Compute the negatively oriented interval score"""
 		if not hasattr(self, 'interval_score'):
 			u = self.summariser.depix_sum_cint[2]
 			l = self.summariser.depix_sum_cint[0]
-			self.interval_score = np.mean(
+			self.cint_int_score = np.mean(
 				(u - l) + 2/self.summariser.alpha * (l - self.m_true) * np.maximum(0, l - self.m_true) +
 				2/self.summariser.alpha * (u - self.m_true) * np.maximum(0, u - self.m_true)
 			)
   
-		return self.interval_score
+		return self.cint_int_score
+
+	def eval_cint_coverage(self):
+		"""Compute the coverage"""
+		if not hasattr(self, 'coverage'):
+			u = self.summariser.depix_sum_cint[2]
+			l = self.summariser.depix_sum_cint[0]
+			self.cint_coverage = np.mean((self.m_true >= l) & (self.m_true <= u)) * 100
+   
+		return self.cint_coverage
 		

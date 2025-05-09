@@ -50,20 +50,21 @@ class HSGP2D(Prior2D):
                  event_dim: int=1,
                  transform: str | None=None,
                  symmetric: bool=False):
-        super().__init__(grid_type, loc, event_dim, transform, symmetric)
+        super().__init__(grid_type, loc, event_dim, transform)
         self.C = C
         self.M = M
-                
+        self.symmetric = symmetric
+
     def set_age_bounds(self, min_age: int, max_age: int):
         self.min_age = min_age
         self.max_age = max_age
         self.A = max_age - min_age + 1
         
-        self._make_grid()
+        self._set_grid()
         self._make_eigenfunctions()
         self._set_loc()
     
-    def _make_grid(self):
+    def _set_grid(self):
         if self.grid_type == 'age-age':
             X = age_age_grid(self.A)
         elif self.grid_type == 'diff-age':
@@ -85,11 +86,11 @@ class HSGP2D(Prior2D):
         self.eig_func = eigenfunctions(x=self.X, ell=self.L, m=self.M)
         self.eig_func_transpose = self.eig_func.T
   
-    def sample(self):
+    def sample(self, alpha, rho):
         """Sample from the HSGP."""
         if self.event_dim == 1:
-            sigma = numpyro.sample('gp_scale', dist.HalfNormal(0.5))
-            lenscale = numpyro.sample('gp_lenscale', dist.InverseGamma(5., 5.).expand([2]))
+            sigma = numpyro.sample('gp_scale', alpha)
+            lenscale = numpyro.sample('gp_lenscale', rho)
             
             # Compute the spectral density
             diag_spd = diag_spectral_density_matern(
@@ -107,16 +108,16 @@ class HSGP2D(Prior2D):
             f = self.eig_func @ (diag_spd * beta)
             f = f[self.sym_tri_idx] if self.symmetric else f
             
-            return (self.loc + f).reshape((self.A, self.A), order='F')
+            return self.loc.reshape(self.A, self.A) + f.reshape((self.A, self.A), order='F')
             
         else:
             plate_event = numpyro.plate('event', self.event_dim, dim=-2)
             plate_coef = numpyro.plate('coef', self.eig_func.shape[-1], dim=-1)
             
             with plate_event:
-                sigma = numpyro.sample('gp_scale', dist.HalfNormal(0.5))
-                lenscale = numpyro.sample('gp_lenscale', dist.InverseGamma(5., 5.).expand([2]))
-                
+                sigma = numpyro.sample('gp_scale', alpha)
+                lenscale = numpyro.sample('gp_lenscale', rho)
+
             # Compute the spectral density
             diag_spd = jnp.vstack([
                 diag_spectral_density_matern(
@@ -135,7 +136,7 @@ class HSGP2D(Prior2D):
             
             f = (diag_spd * beta) @ self.eig_func_transpose
             f = f[self.sym_tri_idx] if self.symmetric else f
-            f = (self.loc + f).reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
             
             if self.transform == 'alr':
                 return inverse_alr(f, axis=0)
@@ -143,3 +144,5 @@ class HSGP2D(Prior2D):
                 return inverse_clr(f, axis=0)
             elif self.transform == 'ilr':
                 return inverse_ilr(f, axis=0)
+            else:
+                return f

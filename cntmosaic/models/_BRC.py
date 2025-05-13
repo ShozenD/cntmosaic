@@ -19,8 +19,8 @@ from ._inference import (
 
 
 class BRC(ABC):
+  # consider changing the base model? 
   """Base class for the Bayesian Rate Consistency model.
-
   Parameters
   ----------
   data: DataFrame
@@ -227,3 +227,32 @@ class BRC(ABC):
       num_samples=num_samples,
       **model_kwargs
     )
+  
+  def prior_sampler(self, para_name, num_samples=1, seed=0):
+    '''
+    Sample from the prior distribution of a given parameter.
+
+    Parameters
+    ----------
+    para_name : str
+        Name of the parameter to sample from. Must be a key in `self.params.prior`.
+    num_samples : int, optional
+        Number of samples to draw from the prior distribution. Default is 1.
+    seed : int, optional
+        Seed for random number generation to ensure reproducibility. Default is 0.
+
+    Returns
+    -------
+    Array
+        A NumPy or JAX array of shape `(num_samples, ...)` containing the sampled values.
+
+    Raises
+    ------
+    AssertionError
+        If `para_name` is not found in `self.params.prior`.
+    '''
+    assert(para_name in self.params.prior)
+    _, subkey = jrd.split(jrd.PRNGKey(seed))
+    samples = self.params.prior[para_name].sample(
+    subkey, sample_shape=(num_samples,))
+    return samples

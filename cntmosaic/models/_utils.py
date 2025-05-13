@@ -191,7 +191,7 @@ def gmrf_adjacency_matrix(n_rows, n_cols, neighborhood=4):
 	# Convert to CSR for efficient arithmetic and slicing
 	return adjacency.tocsr()
 
-def fine_coarse_matrix(x: pd.Series) -> NDArray:
+def fine_coarse_matrix(x: pd.Series, cats) -> NDArray:
 	"""
 	Create an indicator matrix mapping one-year ages to specified age intervals.
 
@@ -223,7 +223,6 @@ def fine_coarse_matrix(x: pd.Series) -> NDArray:
 	if x.isnull().any():
 		raise ValueError("Input series contains NaN values. Check whether the intervals are defined correctly.")
  
-	cats = x.cat.categories
 	cuts_left = list(cats.left)
 	cuts_right = list(cats.right)
 	cuts = [cuts_left[0]] + cuts_right # Include left endpoint

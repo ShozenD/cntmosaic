@@ -7,19 +7,19 @@ import numpyro
 from numpyro import distributions as dist
 from cntmosaic.dataloader.restru_loaders import GeneralLoader, HyperParams
 from dataclasses import dataclass
+from ._utils import fine_coarse_matrix
 
 from ._BRC import BRC
 from .priors import HSGP2D
 
     
-class restr_BRCfine(BRC):
-    """Bayesian Rate Consistency model with fine participant age, fine contact age inputs.
+class restr_BRCrefine(BRC):
+    """Bayesian Rate Consistency model with fine participant age, coarse contact age inputs.
 
     Parameter
     ----------
     data: GeneralLoader
         Loaded GeneralLoader object
-        
     References
 	----------
 	Shozen Dan et al., "Estimating fine age structure and time trends in 
@@ -27,12 +27,46 @@ class restr_BRCfine(BRC):
 	PLoS Computational Biology. 2023
     """
     def __init__(self, data: GeneralLoader):
+        '''
+        Get precomputes from data.precomputes
+        Calculate fine_coarse_matrix and cid for coarse age input
+        '''
         self.params = HyperParams()
         self._set_default_params()
         self._precompute = data.precomputes
-        assert(data.col_map.age_cnt)
+        assert(data.col_map.age_grp_cnt)
+        self._precompute.cid = self.interval_code_map(self._precompute.bid, data.min_age)
+        self._precompute.fine_coarse_matrix = fine_coarse_matrix(
+            pd.Series(self._precompute.bid), data.categories[data.col_map.age_grp_cnt])
         print('new model instantiated, please check default hyperparameters')
-   
+
+    @staticmethod
+    def interval_code_map(interval, min_age):
+        """
+        Maps intervals to integer codes based on their position relative to `min_age`.
+
+        Parameters
+        ----------
+        interval : list of intervals
+            A list of interval objects (e.g., from `pandas.Interval`) with `left` and `right` attributes.
+        min_age : int or float
+            The minimum age used as a reference point for calculating interval codes.
+
+        Returns
+        -------
+        jnp.ndarray
+            An array of integers where each value represents the index code of an interval,
+            calculated as the number of interval lengths from `min_age`.
+
+        Notes
+        -----
+        The function assumes all intervals are of equal length and uses the first interval
+        to determine the interval size.
+    """
+        
+        interval_len = interval[0].right - interval[0].left
+        return jnp.array([(i.left-min_age) // interval_len for i in interval], dtype=int)
+
     def _set_default_params(self):
         """
         Initialize default model parameters for the contact intensity prior.
@@ -166,11 +200,11 @@ class restr_BRCfine(BRC):
         
         with numpyro.plate('data', len(self._precompute.y)):
             if self.params.likelihood == 'poisson':
-                lam = jnp.exp(log_cint[self._precompute.aid, self._precompute.bid] + self._precompute.log_N)
+                lam = jnp.exp( (log_cint  @ self._precompute.fine_coarse_matrix)[self._precompute.aid, self._precompute.cid] + self._precompute.log_N)
                 numpyro.sample('obs', dist.Poisson(rate=lam), obs=self._precompute.y)
             elif self.params.likelihood == 'negbin':
                 inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
-                mu = jnp.exp(log_cint[self._precompute.aid, self._precompute.bid] + self._precompute.log_N)
+                mu = jnp.exp( (log_cint @ self._precompute.fine_coarse_matrix)[self._precompute.aid, self._precompute.cid]  + self._precompute.log_N) 
                 numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
                                                             concentration=inv_disp),
                                obs=self._precompute.y)

@@ -49,21 +49,23 @@ class HSGP2D(Prior2D):
                  loc: float=0,
                  event_dim: int=1,
                  transform: str | None=None,
+                 type: str='global',
                  symmetric: bool=False):
-        super().__init__(grid_type, loc, event_dim, transform, symmetric)
+        super().__init__(grid_type, loc, event_dim, transform, type)
         self.C = C
         self.M = M
+        self.symmetric = symmetric
                 
     def set_age_bounds(self, min_age: int, max_age: int):
         self.min_age = min_age
         self.max_age = max_age
         self.A = max_age - min_age + 1
         
-        self._make_grid()
+        self._set_grid()
         self._make_eigenfunctions()
         self._set_loc()
     
-    def _make_grid(self):
+    def _set_grid(self):
         if self.grid_type == 'age-age':
             X = age_age_grid(self.A)
         elif self.grid_type == 'diff-age':
@@ -74,10 +76,11 @@ class HSGP2D(Prior2D):
         Xn = (X - X.mean(axis=0)) / X.std(axis=0)
         self.L = list(np.abs(Xn).max(axis=0) * self.C)
         
-        if self.symmetric:
+        if self.type == 'global':
             ltri_idx = lower_tri_indices(self.A)
             self.X = Xn[ltri_idx]
             self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
+        # TODO: implement 'full' type
         else:
             self.X = Xn
     

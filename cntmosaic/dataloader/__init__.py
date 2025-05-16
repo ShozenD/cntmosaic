@@ -1,1 +1,6 @@
-from .restru_loaders import MergedLoader, RawLoader, CoordToColumns
+from ._dataloader import CoordToColumns, DataLoader
+
+__all__ = [
+  "CoordToColumns",
+  "DataLoader"
+]

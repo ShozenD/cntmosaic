@@ -80,7 +80,7 @@ class ModelVisualiser:
                         style_config=style_config)    
     return chart
   
-  def plot_cint(self, width=250, height=250, style_config=None):
+  def plot_cint(self, width=250, height=250, facet_columns=3, style_config=None):
     if style_config:
       for key, conf in style_config.items():
         self.default_config.setdefault(key, {}).update(conf)
@@ -107,7 +107,7 @@ class ModelVisualiser:
           title='intensity',
           legend=alt.Legend(**self.default_config['legend'])
         ),
-        facet=alt.Facet('label:N', title=None, columns=3)
+        facet=alt.Facet('label:N', title=None, columns=facet_columns),
       ).properties(
         width=width,
         height=height,

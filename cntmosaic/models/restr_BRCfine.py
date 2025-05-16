@@ -5,7 +5,8 @@ import jax.numpy as jnp
 import jax.random as jrd
 import numpyro
 from numpyro import distributions as dist
-from cntmosaic.dataloader.restru_loaders import GeneralLoader, HyperParams
+from ..dataloader import DataLoader
+from ..dataloader.restru_loaders import HyperParams
 from dataclasses import dataclass
 
 from ._BRC import BRC
@@ -34,7 +35,7 @@ class restr_BRCfine(BRC):
 	human contact patterns from coarse contact data: The Bayesian rate consistency model",
 	PLoS Computational Biology. 2023
     """
-    def __init__(self, data: GeneralLoader):
+    def __init__(self, data: DataLoader):
         self.params = HyperParams()
         self.set_default_params()
         self._precompute = data.precomputes

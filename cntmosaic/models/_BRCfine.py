@@ -1,11 +1,14 @@
 from numpy.typing import NDArray 
 import pandas as pd
 import jax.numpy as jnp
+from dataclasses import dataclass
+
 import numpyro
 from numpyro import distributions as dist
 from numpyro.handlers import scope
 
 from ._BRC import BRC
+from ..dataloader import DataLoader
 
 class BRCfine(BRC):
     """Bayesian Rate Consistency model with fine age inputs.
@@ -31,19 +34,34 @@ class BRCfine(BRC):
 	PLoS Computational Biology. 2023
     """
     def __init__(self,
-                 data: pd.DataFrame,
-                 age_dist: NDArray,
+                 dataloader: DataLoader,
                  priors: dict, 
                  likelihood: str='negbin'):
-        super().__init__(data, age_dist, priors, likelihood)
         
-        # Setup
-        self.aid = self.data['age_part'].values
-        self.bid = self.data['age_cnt'].values
-        self.y = self.data['y'].values
-        self.log_N = jnp.log(self.data['N'].values)
-        self.log_P = jnp.log(self.age_dist)[jnp.newaxis,:]
-        self.log_S = jnp.log(self.data['S'].values) if 'S' in self.data.columns else jnp.zeros_like(self.y)
+        super().__init__(dataloader, priors, likelihood)
+        
+        self._validate_inputs()
+        self.y = jnp.array(self.ds.y.values)
+        self.aid = jnp.array(self.ds.aid.values)
+        self.bid = jnp.array(self.ds.bid.values)
+        self.log_N = jnp.array(self.ds.log_N.values)
+        self.log_P = jnp.array(self.ds.log_P.values)[jnp.newaxis,:]
+        self.log_S = jnp.array(self.ds.log_S.values) if hasattr(self.ds, 'log_S') else jnp.zeros_like(self.y)
+        
+    def _validate_inputs(self):
+        """
+        This method validates the inputs which are specific to the BRCfine model.
+        Specifically, it checks if the data contains all the required ingredients:
+        aid, bid, log_N, and log_P
+        """
+        if not hasattr(self.ds, 'aid'):
+            raise ValueError("Participant age indexes (aid) are missing.")
+        if not hasattr(self.ds, 'bid'):
+            raise ValueError("Contact age indexes (bid) are missing.")
+        if not hasattr(self.ds, 'log_N'):
+            raise ValueError("Log of sample size (log_N) is missing.")
+        if not hasattr(self.ds, 'log_P'):
+            raise ValueError("Log of population age distribution (log_P) is missing.")
         
     def model(self):
         beta0 = numpyro.sample('baseline', dist.Normal(0., 10.))
@@ -59,5 +77,5 @@ class BRCfine(BRC):
             elif self.likelihood == 'negbin':
                 inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
                 numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
-                                                            concentration=inv_disp),
+                                                             concentration=1/inv_disp),
                                obs=self.y)

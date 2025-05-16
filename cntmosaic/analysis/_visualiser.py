@@ -14,6 +14,31 @@ def count_leaf_elements(d):
 
 def df_from_dict(d):
   dfs = []
+  # case with no sub-category
+  if not isinstance(d, dict):
+    if len(d.shape) == 3:
+      _, m, n = d.shape
+      i_idx, j_idx = np.indices((m, n))
+      df_matrix = pd.DataFrame({
+        'x': i_idx.flatten(order='F'),
+        'y': j_idx.flatten(order='F'),
+        'z': d[1].flatten(order='F')
+      })
+      df_matrix['label'] = 'general'
+      dfs.append(df_matrix)
+    elif len(d.shape) == 2: # Vector
+      _, n = d.shape
+      i_idx = np.arange(n)
+      df_vector = pd.DataFrame({
+        'x': i_idx,
+        'y': d[1],
+        'l': d[0],
+        'u': d[2]
+      })
+      df_vector['label'] = 'general'
+      dfs.append(df_vector)
+    return pd.concat(dfs, ignore_index=True)
+  
   for key, values in d.items():
     if values.ndim == 3: # Matrix
       _, m, n = values.shape

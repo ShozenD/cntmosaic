@@ -12,7 +12,7 @@ def test_initialisation():
         'age_part': [0, 1, 2],
         'age_grp_cnt': [
             pd.Interval(0, 1, closed='left'),
-            pd.Interval(1,5, closed='left'),
+            pd.Interval(1, 5, closed='left'),
             pd.Interval(5, 10, closed='left')
         ],
     })
@@ -30,8 +30,6 @@ def test_initialisation():
     
     # Dimensions and indices
     assert model.A == 10
-    assert hasattr(model, 'sym_tri_idx')
-    assert hasattr(model, 'tran_vec_idx')
     assert np.array_equal(model.aid, data['age_part'].values)
     assert np.array_equal(model.cid, data['age_grp_cnt'].cat.codes.values)
     

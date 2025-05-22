@@ -43,6 +43,7 @@ class PenalisedTensorSpline2D(TensorSpline2D):
     """
     
     ALLOWED_NEIGHBORHOODS = [4, 8]
+    pytree_aux_fields = ("self.PHI", "order",)
     
     def __init__(self,
                  M: int | list[int]=30,
@@ -84,7 +85,7 @@ class PenalisedTensorSpline2D(TensorSpline2D):
             
             f = beta @ self.PHI_T
             f = f[:,self.sym_tri_idx] if self.symmetric else f
-            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
         
         elif self.type == 'full':
             plate_diag = numpyro.plate('diag', self.event_dim_diag)
@@ -104,7 +105,7 @@ class PenalisedTensorSpline2D(TensorSpline2D):
             for i in range(self.event_dim_diag):
                 f = jnp.insert(f, (i+1)**2 - 1, f_diag[i,:], axis=0)
                 
-            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
         else:
             raise ValueError("Unknown prior type")
         

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from numpy.typing import NDArray
 import numpy as np
+import warnings
 import jax.numpy as jnp
 from .._math import (
   alr,
@@ -54,14 +55,14 @@ class Prior2D(ABC):
     """Sets the location parameter (prior mean), handling different input shapes and transformations."""
     
     if isinstance(self.loc, (int, float)): # If loc is a scalar
-      self.loc = jnp.full((self.event_dim, self.A, self.A), self.loc)
+      self.trans_loc = jnp.full((self.event_dim, self.A, self.A), self.loc)
     
     # If loc is a tensor that is the same shape as the prior samples then we are good
     elif self.loc.shape == (self.event_dim, self.A, self.A):
       if self.transform: # Check if transform is not None
         transform_func = {'alr': alr, 'clr': clr, 'ilr': ilr}.get(self.transform)
         if transform_func:
-          self.loc = transform_func(self.loc)
+          self.trans_loc = transform_func(self.loc)
         else: # Should never happen as we have already validated the transform
           raise ValueError(f"Unknown transform: {self.transform}")
     
@@ -70,12 +71,12 @@ class Prior2D(ABC):
         transform_func = {'alr': alr, 'clr': clr, 'ilr': ilr}.get(self.transform)
         if transform_func:
           transformed_loc = transform_func(self.loc)
-          self.loc = jnp.repeat(transformed_loc[:, :, None], self.A, axis=2)
+          self.trans_loc = jnp.repeat(transformed_loc[:, :, None], self.A, axis=2)
         else:
           raise ValueError(f"Unknown transform: {self.transform}")
     else:
-      raise ValueError(
-        f"loc must be a scaler, or have shape ({self.event_dim}, {self.A}, {self.A}) or ({self.event_dim}, {self.A} but got {self.loc.shape}"
+      warnings.warn(
+        f"loc must be a scalar, or have shape ({self.event_dim}, {self.A}, {self.A}) or ({self.event_dim}, {self.A}) but got {self.loc.shape}. Please check the input shape or manually set the age bounds."
       )
   
   def _set_event_dim_eff(self):

@@ -69,6 +69,8 @@ class TensorSpline2D(Prior2D):
     --------
     >>> priors = {'rate' = TensorSpline2D('global', symmetric=True)}
     """
+    pytree_aux_fields = ("self.PHI", "self.PHI_T", "self.ltri_idx", "self.sym_tri_idx")
+    
     def __init__(self,
                  M: int | list[int]=30,
                  degree: int | list[int]=3,
@@ -168,7 +170,7 @@ class TensorSpline2D(Prior2D):
 
             f = beta @ self.PHI_T
             f = f[:,self.sym_tri_idx] if self.symmetric else f
-            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
                 
         elif self.type == 'full':
             plate_diag = numpyro.plate('diag', self.event_dim_diag, dim=-2)
@@ -191,7 +193,7 @@ class TensorSpline2D(Prior2D):
             for i in range(self.event_dim_diag):
                 f = jnp.insert(f, (i+1)**2 - 1, f_diag[i,:], axis=0)
                 
-            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
         else:
             raise ValueError("Unknown prior type")
                 

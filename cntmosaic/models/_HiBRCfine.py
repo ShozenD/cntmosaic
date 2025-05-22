@@ -77,5 +77,5 @@ class HiBRCfine(BRCfine):
             if self.likelihood == 'negbin':
                 inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
                 numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
-                                                            concentration=inv_disp), 
+                                                             concentration=1/inv_disp), 
                                 obs=self.y)

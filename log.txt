@@ -1,0 +1,46 @@
+25/05/2025
+
+Added file:
+
+tutorial/HiBRCfine.ipynb
+    extracted code from cntmosaic_analysis repo
+    hard coded input
+
+tutorial/HiBRC folder
+    contains output of above notebook
+
+Temp changes:
+
+models/priors/_HiBRCfine.py
+    temporary changes to init function to work with super().__init__
+
+models/priors/__init__.py
+    temp deletion of IGMRF object
+
+Bug Fix:
+
+_dataloader.py BaseLoader:
+  _validate(): typo correct from grp_vars to grp_vars_part
+ load(): wrap age_part into list format
+	added observed=False to silence FutureWarning
+
+_dataloader.py CoordToColumns:
+change to dataclass to ensure post_init runs, delete custom __init__ 
+
+Proposal changes:
+
+models/priors/_PenalisedTensorSpline2D
+  for `full` case, change for loop insertion to prior allocation and masking
+models/priors/_HSGP2D
+  similar structure to PenalisedTensorSpline2D, with full/global/partial implementation
+  also, change `vstack` to `vmap` function in partial case
+
+Doubts:
+
+1. Is the logic for N correct? Currently different from preprocessing file
+   It used to be nunique for id, now it is just counting (grp_vars) occurrence
+2. Is the output image for HiBRC.ipynb the same as the output on your end?
+
+
+
+

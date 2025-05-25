@@ -100,11 +100,27 @@ class PenalisedTensorSpline2D(TensorSpline2D):
             f_diag = beta_diag @ self.PHI_diag_T
             f_diag = f_diag[:,self.sym_tri_idx] # Must be symmetric
             
-            f = beta_non_diag @ self.PHI_non_diag_T
+            f_non_diag = beta_non_diag @ self.PHI_non_diag_T
             
-            for i in range(self.event_dim_diag):
-                f = jnp.insert(f, (i+1)**2 - 1, f_diag[i,:], axis=0)
-                
+            # Preallocate full tensor flattened as vector
+
+            f = jnp.zeros((self.event_dim_eff, self.A * self.A))
+
+            # Compute flat indices for diagonals
+            diag_idx = jnp.array([(i * self.A + i) for i in range(self.A)])  # Flat index of (i,i) in row-major
+            diag_idx = jnp.tile(diag_idx, (self.event_dim_diag, 1))  # Broadcast for batch dim
+
+            # Assign diagonal
+            f = f.at[:, diag_idx[0]].set(f_diag)
+
+            # Create mask for non-diagonal elements
+            all_idx = jnp.arange(self.A * self.A)
+            non_diag_idx = jnp.setdiff1d(all_idx, diag_idx[0])
+
+            # Assign non-diagonal
+            f = f.at[:, non_diag_idx].set(f_non_diag)
+
+            # Reshape to (event_dim_eff, A, A)
             f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
         else:
             raise ValueError("Unknown prior type")

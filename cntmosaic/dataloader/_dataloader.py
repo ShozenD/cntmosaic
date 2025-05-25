@@ -13,6 +13,7 @@ import jax.numpy as jnp
 
 from ._utils import make_idarrs_for_intervals
 
+@dataclass
 class CoordToColumns:
 	"""
 	This class is used to specify the mapping of columns in input dataframes to the
@@ -41,29 +42,16 @@ class CoordToColumns:
 	size_pop: Optional[str]
 		Column name for the population size. This is used for population size calculations.
 	"""
- 
-	def __init__(self,
-               age_part: str,
-							 age_cnt: Optional[str] = None,
-							 age_grp_cnt: Optional[str] = None,
-							 id_var: str = 'id',
-							 y: Optional[str] = 'y',
-							 grp_vars_part: Optional[list[str] | str] = None,
-							 grp_vars_cnt: Optional[list[str] | str] = None,
-							 age_pop: Optional[str] = None,
-							 size_pop: Optional[str] = None):
-		"""
-		Initializer for the CoordToColumns class.
-		"""
-		self.age_part = age_part
-		self.age_cnt = age_cnt
-		self.age_grp_cnt = age_grp_cnt
-		self.id_var = id_var
-		self.y = y
-		self.grp_vars_part = grp_vars_part
-		self.grp_vars_cnt = grp_vars_cnt
-		self.age_pop = age_pop
-		self.size_pop = size_pop
+    
+	age_part: str
+	age_cnt: Optional[str] = None
+	age_grp_cnt: Optional[str] = None
+	id_var: str = 'id'
+	y: Optional[str] = 'y'
+	grp_vars_part: Optional[list[str] | str] = None
+	grp_vars_cnt: Optional[list[str] | str] = None
+	age_pop: Optional[str] = None
+	size_pop: Optional[str] = None
 
 	def age_vars(self):
 		if self.age_cnt:
@@ -86,7 +74,8 @@ class CoordToColumns:
   
 		if (self.age_pop is None) != (self.size_pop is None):
 			raise ValueError("Both 'age_pop' and 'size_pop' must be set together or both left as None.")
- 
+
+
 class BaseLoader(ABC):
 	def __init__(self,
                data: pd.DataFrame,
@@ -119,7 +108,7 @@ class BaseLoader(ABC):
 		# [Check] Ensure all necessary columns are present
 		cols_needed = [col_map.y, col_map.id_var] + col_map.age_vars()
 		if col_map.grp_vars_part:
-			cols_needed.extend(col_map.grp_vars)
+			cols_needed.extend(col_map.grp_vars_part)
 		if col_map.grp_vars_cnt:
 			cols_needed.extend(col_map.grp_vars_cnt)
 		missing = [col for col in cols_needed if col not in data.columns]
@@ -185,10 +174,10 @@ class BaseLoader(ABC):
 		Loads the data into an xarray dataset.
 		"""
 		# [Do] Calculate the number of participants stratified by age and oter grouping variables
-		grp_vars_n = self.col_map.age_part
+		grp_vars_n = [self.col_map.age_part]
 		if self.col_map.grp_vars_part:
 			grp_vars_n += self.col_map.grp_vars_part
-		df_n = self.data.groupby(grp_vars_n).size().reset_index(name='N')
+		df_n = self.data.groupby(grp_vars_n, observed=False).size().reset_index(name='N')
   
 		# [Do] Calculate the number of contacts stratified by age and other grouping variables
 		grp_vars = self.col_map.age_vars()
@@ -197,7 +186,7 @@ class BaseLoader(ABC):
 		if self.col_map.grp_vars_cnt:
 			grp_vars += self.col_map.grp_vars_cnt
    
-		df_y = self.data.groupby(grp_vars).agg({self.col_map.y: 'sum'}).reset_index()
+		df_y = self.data.groupby(grp_vars, observed=False).agg({self.col_map.y: 'sum'}).reset_index()
 		
 		# [Do] Create a full grid of all combinations of the grouping variables via a cartesian product
 		unique_coords = {var: self.data[var].unique() for var in grp_vars}
@@ -227,6 +216,7 @@ class BaseLoader(ABC):
 		df_full['y'] = df_full['y'].fillna(0)
   
 		# [Do] Create a xarray dataset
+		self.raw_df = df_full
 		self.ds = xr.Dataset(
 			{
 				'y': ('index', df_full['y'].astype(int).to_numpy()),

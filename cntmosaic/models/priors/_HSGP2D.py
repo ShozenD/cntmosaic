@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.typing import NDArray
 import jax.numpy as jnp
-
+from jax import vmap
 import numpyro
 from numpyro import distributions as dist
 from numpyro.contrib.hsgp.laplacian import eigenfunctions
@@ -89,62 +89,97 @@ class HSGP2D(Prior2D):
         self.eig_func_transpose = self.eig_func.T
   
     def sample(self, alpha, rho):
-        """Sample from the HSGP."""
-        if self.event_dim == 1:
-            sigma = numpyro.sample('gp_scale', alpha)
-            lenscale = numpyro.sample('gp_lenscale', rho)
-            
-            # Compute the spectral density
-            diag_spd = diag_spectral_density_matern(
+        """Sample from the HSGP prior."""
+    
+        def compute_diag_spd(alpha, length):
+            return diag_spectral_density_matern(
                 nu=5/2,
-                alpha=sigma,
-                length=lenscale,
+                alpha=alpha,
+                length=length,
                 ell=self.L,
                 m=self.M,
                 dim=2
             )
+
+        if self.type == 'global':
+            sigma = numpyro.sample('gp_scale', alpha)
+            lenscale = numpyro.sample('gp_lenscale', rho)
+            spd = compute_diag_spd(sigma, lenscale)
             
             with numpyro.plate('coef', self.eig_func.shape[-1]):
                 beta = numpyro.sample('gp_beta', dist.Normal(0, 1))
             
-            f = self.eig_func @ (diag_spd * beta)
+            f = self.eig_func @ (spd * beta)
             f = f[self.sym_tri_idx] if self.symmetric else f
-            
-            return self.loc.reshape(self.A, self.A) + f.reshape((self.A, self.A), order='F')
-            
-        else:
-            plate_event = numpyro.plate('event', self.event_dim, dim=-2)
+            return self.loc.reshape((self.A, self.A)) + f.reshape((self.A, self.A), order='F')
+        
+        elif self.type == 'partial':
+            plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)
             plate_coef = numpyro.plate('coef', self.eig_func.shape[-1], dim=-1)
             
             with plate_event:
                 sigma = numpyro.sample('gp_scale', alpha)
                 lenscale = numpyro.sample('gp_lenscale', rho)
 
-            # Compute the spectral density
-            diag_spd = jnp.vstack([
-                diag_spectral_density_matern(
-                    nu=5/2,
-                    alpha=s,
-                    length=l,
-                    ell=self.L,
-                    m=self.M,
-                    dim=2
-                )[np.newaxis] for s, l in zip(sigma, lenscale)
-            ])
-            diag_spd = jnp.squeeze(diag_spd, axis=-1)
+            # Vectorized SPD (shape: [event_dim_eff, num_basis])
+            spd = vmap(compute_diag_spd)(sigma, lenscale)
             
-            with plate_coef:
+            with plate_event, plate_coef:
                 beta = numpyro.sample('gp_beta', dist.Normal(0, 1))
-            
-            f = (diag_spd * beta) @ self.eig_func_transpose
-            f = f[self.sym_tri_idx] if self.symmetric else f
+
+            f = (spd * beta) @ self.eig_func.T
+            f = f[:, self.sym_tri_idx] if self.symmetric else f
             f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
-            
-            if self.transform == 'alr':
-                return inverse_alr(f, axis=0)
-            elif self.transform == 'clr':
-                return inverse_clr(f, axis=0)
-            elif self.transform == 'ilr':
-                return inverse_ilr(f, axis=0)
-            else:
-                return f
+        
+        elif self.type == 'full':
+            plate_diag = numpyro.plate('diag', self.event_dim_diag, dim=-2)
+            plate_non_diag = numpyro.plate('non_diag', self.event_dim_non_diag, dim=-2)
+            plate_coef = numpyro.plate('coef', self.eig_func.shape[-1], dim=-1)
+
+            with plate_diag:
+                sigma_diag = numpyro.sample('gp_scale_diag', alpha)
+                lenscale_diag = numpyro.sample('gp_lenscale_diag', rho)
+
+            with plate_non_diag:
+                sigma_non_diag = numpyro.sample('gp_scale_non_diag', alpha)
+                lenscale_non_diag = numpyro.sample('gp_lenscale_non_diag', rho)
+
+            spd_diag = vmap(compute_diag_spd)(sigma_diag, lenscale_diag)
+            spd_non_diag = vmap(compute_diag_spd)(sigma_non_diag, lenscale_non_diag)
+
+            with plate_diag, plate_coef:
+                beta_diag = numpyro.sample('gp_beta_diag', dist.Normal(0, 1))
+            with plate_non_diag, plate_coef:
+                beta_non_diag = numpyro.sample('gp_beta_non_diag', dist.Normal(0, 1))
+
+            f_diag = (spd_diag * beta_diag) @ self.eig_func.T
+            f_diag = f_diag[:, self.sym_tri_idx]
+
+            f_non_diag = (spd_non_diag * beta_non_diag) @ self.eig_func.T
+
+            # Preallocate flat output: (event_dim_eff, A*A)
+            f = jnp.zeros((self.event_dim_eff, self.A * self.A))
+
+            diag_idx = jnp.array([i * self.A + i for i in range(self.A)])
+            all_idx = jnp.arange(self.A * self.A)
+            non_diag_idx = jnp.setdiff1d(all_idx, diag_idx)
+
+            # Insert values
+            f = f.at[:, diag_idx].set(f_diag)
+            f = f.at[:, non_diag_idx].set(f_non_diag)
+
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+
+        else:
+            raise ValueError(f"Unknown type '{self.type}'. Must be one of 'global', 'partial', or 'full'.")
+
+        # Optional transformations
+        if self.transform == 'alr':
+            return inverse_alr(f, axis=0)
+        elif self.transform == 'clr':
+            return inverse_clr(f, axis=0)
+        elif self.transform == 'ilr':
+            return inverse_ilr(f, axis=0)
+        else:
+            return f
+

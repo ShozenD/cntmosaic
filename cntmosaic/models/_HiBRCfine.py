@@ -28,14 +28,14 @@ class HiBRCfine(BRCfine):
         Likelihood function to use. Options are 'poisson' and 'negbin'.
     """
     def __init__(self,
-                 data: pd.DataFrame,
-                 age_dist: NDArray,
+                 ds,
+                 data,
                  age_dist_props: dict,
                  priors: dict,
                  likelihood: str='negbin'):
         
-        super().__init__(data, age_dist, priors, likelihood)
-        
+        super().__init__(ds, priors, likelihood)
+        self.data = data
         self.X_vars = [key for key in priors.keys() if key != 'rate']
         for c in self.X_vars: # Convert stratification variables to integer codes
             self.data[c] = pd.Categorical(self.data[c], categories=self.data[c].unique(), ordered=True)

@@ -27,3 +27,8 @@ def test_stride():
     age_bins = AgeBins(min=0, max=10, step=3)
     assert age_bins.left == [0, 3, 6, 9]
     assert age_bins.right == [2, 5, 8, 10]
+    
+def test_cuts():
+    age_bins = AgeBins(0, 11, 5)
+    
+    assert age_bins.get_cuts() == [0, 5, 12]

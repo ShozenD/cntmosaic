@@ -1,6 +1,6 @@
 import pytest
 import jax.numpy as jnp
-from .._IGMRF2D import IGMRF
+from .._IGMRF import IGMRF
 
 # language: python
 

@@ -97,3 +97,6 @@ class AgeBins:
 		if not hasattr(self, 'cell_sizes'):
 			self.cell_sizes = np.outer(self.bin_sizes, self.bin_sizes)
 		return self.cell_sizes
+
+	def get_cuts(self):
+		return self.left + [self.right[-1]]

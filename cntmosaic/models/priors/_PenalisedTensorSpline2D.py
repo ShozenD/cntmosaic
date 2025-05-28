@@ -103,7 +103,6 @@ class PenalisedTensorSpline2D(TensorSpline2D):
             f_non_diag = beta_non_diag @ self.PHI_non_diag_T
             
             # Preallocate full tensor flattened as vector
-
             f = jnp.zeros((self.event_dim_eff, self.A * self.A))
 
             # Compute flat indices for diagonals

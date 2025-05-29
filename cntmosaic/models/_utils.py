@@ -52,11 +52,11 @@ def symmetrize_from_lower_tri(N: int) -> NDArray:
 	Parameters
 	----------
 	N: int
-		size of the square matrix
+		Dimension of one side of the squared matrix.
 		
 	Returns
 	-------
-	An array of indices to symmetrize the vector
+	An array of indices of length N^2 to symmetrize the vector
 	"""
 	idx = np.empty(shape=(N**2,), dtype=int)
 	n = 1

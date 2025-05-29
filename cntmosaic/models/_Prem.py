@@ -14,7 +14,7 @@ from ._inference import (
   posterior_predictive_svi
 )
 
-from .func import igmrf2d
+from .funcs import igmrf2d
 
 class Prem:
   def __init__(self,

@@ -1,46 +1,31 @@
-25/05/2025
+31/5/25
 
-Added file:
+Currently implementation is verified with 1 grp_vars
+2+ grp_vars is untested but should work
 
-tutorial/HiBRCfine.ipynb
-    extracted code from cntmosaic_analysis repo
-    hard coded input
+update summarizer to work with model.ds instead of model.data 
+update HiBRC interface to work with model.ds, using attrs to keep track of grp_vars
+update HiBRCfine notebook to new workflow
 
-tutorial/HiBRC folder
-    contains output of above notebook
+add new file sample_prop.csv, the form of data to be used
 
-Temp changes:
+Major change to _dataloader
+    fix N 
+    add grp_vars_part to final ds
 
-models/priors/_HiBRCfine.py
-    temporary changes to init function to work with super().__init__
+    For duplicated grp_vars, keep participants side
 
-models/priors/__init__.py
-    temp deletion of IGMRF object
+    added validate_pop_proportions
+        ensure the proportions sum to 1
+    added warnings and guides to pop_proportions
 
-Bug Fix:
+    The implementation assumes a quadruple format of input
 
-_dataloader.py BaseLoader:
-  _validate(): typo correct from grp_vars to grp_vars_part
- load(): wrap age_part into list format
-	added observed=False to silence FutureWarning
-
-_dataloader.py CoordToColumns:
-change to dataclass to ensure post_init runs, delete custom __init__ 
-
-Proposal changes:
-
-models/priors/_PenalisedTensorSpline2D
-  for `full` case, change for loop insertion to prior allocation and masking
-models/priors/_HSGP2D
-  similar structure to PenalisedTensorSpline2D, with full/global/partial implementation
-  also, change `vstack` to `vmap` function in partial case
-
-Doubts:
-
-1. Is the logic for N correct? Currently different from preprocessing file
-   It used to be nunique for id, now it is just counting (grp_vars) occurrence
-2. Is the output image for HiBRC.ipynb the same as the output on your end?
+        a DataFrame containing data, the column name for pop age, the column name for category, the column name for population proportions
+        For example, a valid input quadruple for the pandas dataframe `data` below would be [data, "age", "category", "proportions"]
+        sample = pd.DataFrame({'age':[1,2,1,2],
+            'category':['A', 'A', 'B', 'B'], 
+            'proportions':[0.2, 0.3, 0.8, 0.7]})
 
 
-
-
+Maybe clean up the __init__ function, currently it is chunky

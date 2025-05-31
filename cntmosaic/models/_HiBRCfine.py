@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpyro
 from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
-
+import numpy as np
 from ._BRCfine import BRCfine
 
 class HiBRCfine(BRCfine):
@@ -12,16 +12,7 @@ class HiBRCfine(BRCfine):
     
     Parameters
     ----------
-    data: DataFrame
-        DataFrame containing the contact data.
-        Must contain the columns 'y', 'age_part', 'age_cnt', and additional stratification variables.
-        'y' is the number of contacts between 'age_part' and 'age_cnt'.
-        'age_part' is the age of the contactor.
-        'age_cnt' is the age of the contacted.
-    age_dist: NDArray
-        The population level age distribution.
-    age_dist_props: dict
-        Dictionary containing the ratios of the population age distribution for each stratification variable.
+    ds: xarray dataset containing necessary input
     priors: dict, optional
         Dictionary containing the priors for the components of the model.
     likelihood: str, default='negbin'
@@ -29,25 +20,23 @@ class HiBRCfine(BRCfine):
     """
     def __init__(self,
                  ds,
-                 data,
-                 age_dist_props: dict,
                  priors: dict,
                  likelihood: str='negbin'):
         
         super().__init__(ds, priors, likelihood)
-        self.data = data
         self.X_vars = [key for key in priors.keys() if key != 'rate']
-        for c in self.X_vars: # Convert stratification variables to integer codes
-            self.data[c] = pd.Categorical(self.data[c], categories=self.data[c].unique(), ordered=True)
-        self.X_ids = {c: self.data[c].cat.codes.values for c in self.X_vars}        
-        self.set_log_age_dist_props(age_dist_props)
+        for c in self.X_vars: # Convert stratificationraise ValueError(f"Invalid shape for age_dist_props[{k}].") variables to integer codes
+            self.X_ids = {c: pd.Categorical(self.ds[c].values, categories=sorted(set(self.ds[c].values))).codes for c in self.X_vars} 
+    
+        self.set_log_age_dist_props()
         
-    def set_log_age_dist_props(self, age_dist_props):
+    def set_log_age_dist_props(self):
         self.log_age_dist_props = {}
-        for k, v in age_dist_props.items():
-            if age_dist_props[k].shape == (self.priors[k].event_dim, self.A):
+        for k in self.ds.attrs['grp_vars'].keys():
+            v = self.ds['pop_prop_' + k].to_numpy()
+            if v.shape == (self.priors[k].event_dim, self.A):
                 self.log_age_dist_props[k] = jnp.log(v)[:,:,jnp.newaxis]
-            elif age_dist_props[k].shape == (self.priors[k].event_dim, self.A, self.A):
+            elif v.shape == (self.priors[k].event_dim, self.A, self.A):
                 self.log_age_dist_props[k] = jnp.log(v)
             else:
                 raise ValueError(f"Invalid shape for age_dist_props[{k}].")

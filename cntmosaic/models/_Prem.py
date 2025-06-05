@@ -14,7 +14,7 @@ from ._inference import (
   posterior_predictive_svi
 )
 
-from .funcs import igmrf2d
+from .funcs import igmrf2d_operators, igmrf
 
 class Prem:
   def __init__(self,
@@ -79,6 +79,8 @@ class Prem:
     self.cid = jnp.array(self.data["age_grp_part"].cat.codes)
     self.did = jnp.array(self.data["age_grp_cnt"].cat.codes)
     
+    self.Q, self.L = igmrf2d_operators((self.C, self.D), (2, 2), cov_struct="additive")
+    
   def model(self):
     beta0 = numpyro.sample("baseline", dist.Exponential(0.0001))
     theta = numpyro.sample("theta", dist.Exponential(0.0001))
@@ -86,10 +88,11 @@ class Prem:
       sigma = numpyro.sample("sigma", dist.Gamma(theta, theta))
     
     z = numpyro.sample("z", dist.Normal(0., 1.), sample_shape=(self.C * self.D,))
+    Q, L = igmrf2d_operators((self.C, self.D), (2, 2), cov_struct="additive")
     log_cint = numpyro.deterministic(
       "log_cint",
       jnp.log(beta0)
-      + igmrf2d(z, [self.C, self.D], [1, 1], 1.0).reshape(self.C, self.D, order="F")
+      + igmrf(z, Q, L).reshape(self.C, self.D, order="F")
     )[self.cid, self.did]
     
     mu = jnp.exp(log_cint) * sigma[self.iid]

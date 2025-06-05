@@ -25,7 +25,7 @@ class ModelSummariserSVI:
 		for name, site in self.post_pred.items():
 			if 'log_delta' in name:
 				var = name.split('/')[0]
-				cat = self.model.data[var].cat.categories
+				cat = self.model.ds.attrs['grp_vars'][var]
 				post_pred_cint[var] = {
 					cat[i]: np.exp(log_rate[:, None, :, :] + site + self.model.log_P[None, None, :, :])[:, i, :, :]
 					for i in range(len(cat))

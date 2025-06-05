@@ -177,7 +177,9 @@ class BaseLoader(ABC):
 		grp_vars_n = [self.col_map.age_part]
 		if self.col_map.grp_vars_part:
 			grp_vars_n += self.col_map.grp_vars_part
-		df_n = self.data.groupby(grp_vars_n, observed=False).size().reset_index(name='N')
+		df_n = self.data.groupby(grp_vars_n, observed=False).agg(
+			N=(self.col_map.id_var, 'nunique')
+    ).reset_index()
   
 		# [Do] Calculate the number of contacts stratified by age and other grouping variables
 		grp_vars = self.col_map.age_vars()

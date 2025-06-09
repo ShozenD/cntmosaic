@@ -45,9 +45,10 @@ def diff_age_age_grid(A: int) -> NDArray:
 
 def symmetrize_from_lower_tri(N: int) -> NDArray:
 	"""
-	Indices to symmetrize a vector containing the elements of a 
-	lower triangular matrix in column-major order to a vector containing
-	the elements of a symmetric matrix in column-major order
+	Indices to augment a vector containing the elements of a 
+	lower triangular matrix arranged in column-major order to a vector containing
+	the elements of a symmetric matrix arragned in column-major order. Assumes that the
+	diagonal elements are included in the lower triangular part.
 	
 	Parameters
 	----------
@@ -101,6 +102,50 @@ def lower_tri_indices(N: int, inc_diag=True) -> NDArray:
 					idx[n] = i + j*N
 					n += 1
 	return idx
+
+import numpy as np
+from numpy.typing import NDArray
+
+def rw_drop_indices(n: int, order: int = 2) -> tuple[NDArray, NDArray, NDArray]:
+    """
+    Indices to *keep* in the difference operators D1 (horizontal) and D2 (vertical)
+    for a k-th-order random-walk (RWk) prior on a **lower-triangular** n×n grid.
+
+    Parameters
+    ----------
+    n      : int   - number of age groups (matrix dimension)
+    order  : int   - order k of the finite difference (1 = RW1, 2 = RW2, …)
+
+    Returns
+    -------
+    ci  : 1-D array of length n(n+1)//2
+          Column indices that correspond to the unique (i ≥ j) nodes.
+    ri1 : 1-D array
+          Row indices to keep in D1  (horizontal differences).
+    ri2 : 1-D array
+          Row indices to keep in D2  (vertical   differences).
+    """
+    if not (1 <= order < n):
+        raise ValueError("`order` must satisfy 1 ≤ order < n")
+
+    # --- columns: keep lower triangle incl. diagonal ------------------------
+    ci_mat = np.arange(n**2, dtype=int).reshape(n, n, order='F')
+    mask_ci = np.greater_equal.outer(np.arange(n), np.arange(n))
+    ci = np.sort(ci_mat[mask_ci])
+
+    # --- rows for D1: horizontal RWk ----------------------------------------
+    # ri1.mat has (n-k) rows and n columns
+    ri1_mat = np.arange((n - order) * n, dtype=int).reshape(n - order, n, order='F')
+    mask_ri1 = np.greater_equal.outer(np.arange(n - order), np.arange(n))
+    ri1 = ri1_mat[mask_ri1]
+
+    # --- rows for D2: vertical RWk ------------------------------------------
+    # ri2.mat has n rows and (n-k) columns
+    ri2_mat = np.arange(n * (n - order), dtype=int).reshape(n, n - order, order='F')
+    mask_ri2 = (np.arange(n)[:, None] >= np.arange(n - order)[None, :] + order)
+    ri2 = ri2_mat[mask_ri2]
+
+    return ci, ri1, ri2
 
 def transpose_vector_indices(rows: int, cols: int) -> NDArray:
 	"""

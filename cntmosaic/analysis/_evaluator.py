@@ -5,8 +5,8 @@ from sklearn.metrics import (
 	mean_absolute_error,
 	mean_absolute_percentage_error
 )
-from ..utils import pixilate, depixilate
-from ._summariser import ModelSummariserSocialMix
+from ..utils import pixilate, depixilate, AgeBins
+from ._summariser import ModelSummariserSocialMix, ModelSummariserPrem
 
 def interval_score(y_true, y_low, y_high, alpha):
 	"""
@@ -214,14 +214,21 @@ class ModelEvaluatorSocialMix:
 		
 class ModelEvaluatorPrem:
 	def __init__(self,
-							summariser,
-							cint_matrix_true: np.ndarray):
+               summariser: ModelSummariserPrem,
+               cint_matrix_true: np.ndarray):
+   
 		self.summariser = summariser
 		self.age_bins = summariser.age_bins
+		self.age_dist = summariser.age_dist
 		self.m_true = cint_matrix_true 		# True contact intensity matrix (1-year age)
+  
+		# Precompute
 		self.pix_m_true = pixilate(self.m_true, self.age_bins, summariser.age_dist)   # True contact intensity matrix (prespecified age bins)
 		self.depix_m_true = depixilate(self.pix_m_true, self.age_bins, summariser.age_dist)
-		self.m_hat = summariser.post_cint			# Estimated contact intensity matrix (prespecified age bins)
+  
+		self.m_hat = summariser.summarise_cint()[1]
+		self.depix_m_hat_sum = summariser.summarise_cint(depix=True)
+  
 		self.evaluate_cint()
 	
 	def evaluate_cint(self):
@@ -254,11 +261,12 @@ class ModelEvaluatorPrem:
 	def eval_cint_int_score(self):
 		"""Compute the negatively oriented interval score"""
 		if not hasattr(self, 'interval_score'):
-			u = self.summariser.depix_sum_cint[2]
-			l = self.summariser.depix_sum_cint[0]
+			u = self.depix_m_hat_sum[2]
+			l = self.depix_m_hat_sum[0]
+			alpha = self.summariser.alpha
 			self.cint_int_score = np.mean(
-				(u - l) + 2/self.summariser.alpha * (l - self.m_true) * np.maximum(0, l - self.m_true) +
-				2/self.summariser.alpha * (u - self.m_true) * np.maximum(0, u - self.m_true)
+				(u - l) + 2/alpha * (l - self.m_true) * np.maximum(0, l - self.m_true) +
+				2/alpha * (u - self.m_true) * np.maximum(0, u - self.m_true)
 			)
   
 		return self.cint_int_score
@@ -266,8 +274,8 @@ class ModelEvaluatorPrem:
 	def eval_cint_coverage(self):
 		"""Compute the coverage"""
 		if not hasattr(self, 'coverage'):
-			u = self.summariser.depix_sum_cint[2]
-			l = self.summariser.depix_sum_cint[0]
+			u = self.depix_m_hat_sum[2]
+			l = self.depix_m_hat_sum[0]
 			self.cint_coverage = np.mean((self.m_true >= l) & (self.m_true <= u)) * 100
    
 		return self.cint_coverage

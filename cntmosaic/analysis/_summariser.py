@@ -1,7 +1,7 @@
 import numpy as np
 import jax
 from ..models import SocialMix
-from ..utils import pixilate, depixilate
+from ..utils import pixilate, depixilate, AgeBins
 
 class ModelSummariserSVI:
 	def __init__(self, model):
@@ -233,7 +233,12 @@ class ModelSummariserMCMC:
         return self.sum_post_mcint
       
 class ModelSummariserPrem:
-	def __init__(self, model, age_bins, age_dist, alpha=0.05):
+	def __init__(self,
+               model,
+               age_bins: AgeBins=None,
+               age_dist: np.ndarray=None,
+               alpha=0.05):
+   
 		self.model = model
 		self.age_bins = age_bins
 		self.age_dist = age_dist
@@ -246,37 +251,58 @@ class ModelSummariserPrem:
 			self.post = model.posterior_predictive_svi(self.prng_key, model.guide)
 		else:
 			raise ValueError("Model must have either mcmc or svi attributes.")
-  
 		self.post_cint = np.exp(self.post['log_cint'])
-		self.sum_cint = self.summarise_cint((alpha/2, 0.5, 1 - alpha/2))
-		self.sum_mcint = self.summarise_mcint((alpha/2, 0.5, 1 - alpha/2))
 
-	def summarise_cint(self, probs: tuple = (0.025, 0.5, 0.975)):
+	def summarise_cint(self,
+                     depix: bool = False,
+                     probs: tuple = None,
+                     alpha: float = 0.05):
 		"""
 		Summarise the contact intensity matrix of the model.
 		It uses the model's posterior predictive distribution to compute the summary statistics.
 		"""
+		if probs is None:
+			probs = (alpha/2, 0.5, 1-alpha/2)
+  
 		if not hasattr(self, 'sum_cint'):
 			self.sum_cint = np.quantile(self.post_cint, probs, axis=0)
-			self.depix_sum_cint = np.array([
-				depixilate(self.sum_cint[i,:,:], self.age_bins, self.age_dist)
-				for i in range(self.sum_cint.shape[0])
-			])
-			
-		return self.sum_cint
   
-	def summarise_mcint(self, probs: tuple = (0.025, 0.5, 0.975)):
+		if depix and self.age_bins is not None and self.age_dist is not None:
+			# Depixilate the summed contact intensity
+			if not hasattr(self, 'depix_sum_cint'):
+				self.depix_sum_cint = np.array([
+					depixilate(self.sum_cint[i,:,:], self.age_bins, self.age_dist)
+					for i in range(self.sum_cint.shape[0])
+				])
+    
+			return self.depix_sum_cint
+		else:
+			return self.sum_cint
+  
+	def summarise_mcint(self,
+                     	depix: bool = False,
+                     	probs: tuple = None,
+										 	alpha: float = 0.05):
 		"""
 		Summarise the marginal contact intensity of the model.
 		"""
+		if probs is None:
+			probs = (alpha/2, 0.5, 1-alpha/2)
+   
 		if not hasattr(self, 'sum_mcint'):
 			mcint = self.post_cint.sum(axis=1)
-			depix_boots_cint = np.array([
-				depixilate(self.post_cint[i,:,:], self.age_bins, self.age_dist)
-				for i in range(self.post_cint.shape[0])
-			])
-			depix_mcint = depix_boots_cint.sum(axis=1)
 			self.sum_mcint = np.quantile(mcint, probs, axis=0)
-			self.depix_sum_mcint = np.quantile(depix_mcint, probs, axis=0)
-
-		return self.sum_mcint
+		
+		if depixilate and self.age_bins is not None and self.age_dist is not None:
+			if not hasattr(self, 'depix_sum_mcint'):
+				# Depixilate the summed marginal contact intensity
+				depix_cint = np.array([
+					depixilate(self.post_cint[i,:,:], self.age_bins, self.age_dist)
+					for i in range(self.post_cint.shape[0])
+				])
+				depix_mcint = depix_cint.sum(axis=1)
+				self.depix_sum_mcint = np.quantile(depix_mcint, probs, axis=0)
+   
+			return self.depix_sum_mcint
+		else:
+			return self.sum_mcint

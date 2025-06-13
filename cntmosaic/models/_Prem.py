@@ -19,10 +19,12 @@ from .funcs import gmrf2d_operators, gmrf
 class Prem:
   def __init__(self,
                part: pd.DataFrame,
-               cnt: pd.DataFrame):
+               cnt: pd.DataFrame,
+               random_effects: bool = False):
     self._validate_inputs(part, cnt)
     self.part = part.copy()
     self.cnt = cnt.copy()
+    self.random_effects = random_effects
     self._load()
     
   def _validate_inputs(self, part: pd.DataFrame, cnt: pd.DataFrame):
@@ -79,22 +81,25 @@ class Prem:
     self.cid = jnp.array(self.data["age_grp_part"].cat.codes)
     self.did = jnp.array(self.data["age_grp_cnt"].cat.codes)
     
-    self.L = gmrf2d_operators((self.C, self.D), (2, 2), cov_struct="additive")
+    self.L = gmrf2d_operators((self.C, self.D), (1, 1), cov_struct="additive")
     
   def model(self):
     beta0 = numpyro.sample("baseline", dist.Exponential(0.0001))
-    theta = numpyro.sample("theta", dist.Exponential(0.0001))
-    with numpyro.plate('random_effects', self.N):
-      sigma = numpyro.sample("sigma", dist.Gamma(theta, theta))
-    
     z = numpyro.sample("z", dist.Normal(0., 1.), sample_shape=(self.C * self.D,))
     log_cint = numpyro.deterministic(
       "log_cint",
       jnp.log(beta0)
-      + gmrf(z, self.L, scale=0.1).reshape(self.C, self.D, order="F")
+      + gmrf(z, self.L, scale=1).reshape(self.C, self.D, order="F")
     )[self.cid, self.did]
     
-    mu = jnp.exp(log_cint) * sigma[self.iid]
+    if self.random_effects:
+      theta = numpyro.sample("theta", dist.Exponential(0.0001))
+      with numpyro.plate('random_effects', self.N):
+        sigma = numpyro.sample("sigma", dist.Gamma(theta, theta))
+      
+      mu = jnp.exp(log_cint) * sigma[self.iid]
+    else:
+      mu = jnp.exp(log_cint)
     
     with numpyro.plate("data", len(self.y)):
       numpyro.sample("obs", dist.Poisson(rate=mu), obs=self.y)
@@ -201,4 +206,33 @@ class Prem:
       num_samples=num_samples,
       **model_kwargs
     )
+
+
+class Prem2(Prem):
+  def __init__(self,
+               part: pd.DataFrame,
+               cnt: pd.DataFrame,
+               random_effects: bool = False):
+    super().__init__(part, cnt, random_effects)
     
+  def model(self):
+    beta0 = numpyro.sample("baseline", dist.Normal(0, 3))
+    
+    z = numpyro.sample("z", dist.Normal(0., 1.), sample_shape=(self.C * self.D,))
+    log_cint = numpyro.deterministic(
+      "log_cint",
+      beta0
+      + gmrf(z, self.L, scale=1).reshape(self.C, self.D, order="F")
+    )[self.cid, self.did]
+    
+    if self.random_effects:
+      tau = numpyro.sample("tau", dist.HalfCauchy(1))
+      with numpyro.plate('random_effects', self.N):
+        sigma = numpyro.sample("sigma", dist.Normal(0, tau))
+        
+      mu = jnp.exp(log_cint + sigma[self.iid]) 
+    else:
+      mu = jnp.exp(log_cint) 
+    
+    with numpyro.plate("data", len(self.y)):
+      numpyro.sample("obs", dist.Poisson(rate=mu), obs=self.y)

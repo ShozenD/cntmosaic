@@ -4,7 +4,7 @@ from ._BRCrefine import BRCrefine
 from ._HiBRCfine import HiBRCfine
 from ._HiBRCrefine import HiBRCrefine
 from ._SocialMix import SocialMix
-from ._Prem import Prem
+from ._Prem import Prem, Prem2
 from .restr_BRCfine import restr_BRCfine
 
 __all__ = [
@@ -15,6 +15,7 @@ __all__ = [
     'HiBRCrefine'
     'SocialMix',
     'Prem',
+    'Prem2',
     'HiBRCrefine',
     'restr_BRCfine'
 ]

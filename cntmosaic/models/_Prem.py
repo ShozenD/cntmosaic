@@ -76,8 +76,8 @@ class Prem:
     self.y = jnp.array(self.data["y"].values)
     
     self.iid = jnp.array(self.data["iid"].values)
-    self.C = self.data["age_grp_cnt"].nunique()
-    self.D = self.data["age_grp_part"].nunique()
+    self.C = self.data["age_grp_cnt"].cat.categories.size
+    self.D = self.data["age_grp_part"].cat.categories.size
     self.cid = jnp.array(self.data["age_grp_part"].cat.codes)
     self.did = jnp.array(self.data["age_grp_cnt"].cat.codes)
     

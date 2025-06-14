@@ -20,7 +20,7 @@ from .._math import (
 		inverse_ilr,
 )
 
-class GMRF2D(Prior2D):
+class vdKassteele(Prior2D):
 		"""Class for sampling from a 2 dimensional intrinsic Gaussian Markov random field (gmrf).
 		
 		Parameters
@@ -35,14 +35,9 @@ class GMRF2D(Prior2D):
 				The transformation to apply to the HSGP. Options are 'alr', 'clr', and 'ilr'.
 		"""
 		def __init__(self,
-								 grid_type: str='age-age',
 								 transform: str | None=None,
-								 prior_type: str='global',
-         				 scale: float=1,
-            		 order: tuple[int, int]=(2, 2)):
-				self.scale = scale
-				self.order = order
-				super().__init__(grid_type, transform, prior_type)
+								 prior_type: str='global'):
+				super().__init__('age-age', transform, prior_type)
 								
 		def set_age_bounds(self, min_age: int, max_age: int):
 				self.min_age = min_age
@@ -55,24 +50,27 @@ class GMRF2D(Prior2D):
 				self.sym_idx = symmetrize_from_lower_tri(self.A)
 
 				if self.type == 'global':
-					self.L, self.sym_idx = gmrf2d_sym_operators(self.A, self.order, cov_struct='additive')
+					self.L, self.sym_idx = gmrf2d_sym_operators(self.A, (2, 2), cov_struct='additive')
 				elif self.type == 'partial':
-					self.L = gmrf2d_operators((self.A, self.A), self.order, cov_struct='additive')
+					self.L = gmrf2d_operators((self.A, self.A), (2, 2), cov_struct='additive')
 				elif self.type == 'full':
-					self.L_diag, self.sym_idx = gmrf2d_sym_operators((self.A, self.A), self.order, cov_struct='additive')
-					self.L_non_diag = gmrf2d_operators(self.A, self.order, cov_struct='additive')
+					self.L_diag, self.sym_idx = gmrf2d_sym_operators((self.A, self.A), (2, 2), cov_struct='additive')
+					self.L_non_diag = gmrf2d_operators(self.A, (2, 2), cov_struct='additive')
 	
 		def sample(self):
 				"""Sample from the HSGP prior."""
+				tau = numpyro.sample('tau', dist.InverseGamma(1, 0.0001))
+    
 				if self.type == 'global':
 						N = self.A * (self.A + 1) // 2
+						
 						z = numpyro.sample('z', dist.Normal(0, 1).expand((N,)).to_event(1))
-						f = gmrf_sym(z, self.L, self.sym_idx, self.scale)
+						f = gmrf_sym(z, self.L, self.sym_idx, tau)
       
 						return f.reshape((self.A, self.A), order='F')
 				
-				elif self.type == 'partial':
-						def map_gmrf(x): return gmrf(x, self.L, self.scale)
+				elif self.type == 'partial':      
+						def map_gmrf(x): return gmrf(x, self.L, tau)
       
 						plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)
 						with plate_event:
@@ -81,8 +79,8 @@ class GMRF2D(Prior2D):
 						f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
 				
 				elif self.type == 'full':
-						def map_gmrf_sym(x): return gmrf_sym(x, self.L_diag, self.sym_idx, self.scale)
-						def map_gmrf(x): return gmrf(x, self.L_non_diag, self.scale)
+						def map_gmrf_sym(x): return gmrf_sym(x, self.L_diag, self.sym_idx, tau)
+						def map_gmrf(x): return gmrf(x, self.L_non_diag, tau)
   
 						plate_diag = numpyro.plate('diag', self.event_dim_diag, dim=-2)
 						plate_non_diag = numpyro.plate('non_diag', self.event_dim_non_diag, dim=-2)

@@ -4,6 +4,7 @@ from ._TensorSpline2D import TensorSpline2D
 from ._PenalisedTensorSpline2D import PenalisedTensorSpline2D
 from ._IGMRF2D import IGMRF2D
 from ._GMRF2D import GMRF2D
+from ._vdKassteele import vdKassteele
 
 __all__ = [
     'Prior2D',

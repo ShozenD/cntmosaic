@@ -46,12 +46,10 @@ class HSGP2D(Prior2D):
                  C: float | list[float] = [1.5, 1.5],
                  M: int | list[int] = [30, 30],
                  grid_type: str='age-age',
-                 loc: float=0,
-                 event_dim: int=1,
                  transform: str | None=None,
-                 type: str='global',
+                 prior_type: str='global',
                  symmetric: bool=False):
-        super().__init__(grid_type, loc, event_dim, transform, type)
+        super().__init__(grid_type, transform, prior_type)
         self.C = C
         self.M = M
         self.symmetric = symmetric
@@ -63,7 +61,6 @@ class HSGP2D(Prior2D):
         
         self._set_grid()
         self._make_eigenfunctions()
-        self._set_loc()
     
     def _set_grid(self):
         if self.grid_type == 'age-age':

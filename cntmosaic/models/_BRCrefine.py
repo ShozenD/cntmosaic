@@ -35,7 +35,7 @@ class BRCrefine(BRC):
   default_priors = {
     'rate': HSGP2D(
       grid_type='diff-age',
-      type='global',
+      prior_type='global',
       symmetric=True
     )
   }

@@ -49,12 +49,8 @@ class TensorSpline2D(Prior2D):
         The degree of the B-splines for each dimension.
     grid_type: str, default='age-age'
         The type of grid to use. Either 'age-age' or 'diff-age'.
-    loc: float | NDArray, default=0
-        The prior mean of the tensor spline.
     coef_scale: float | NDArray, default=1
         The scale of the spline coefficients.
-    event_dim: int, optional
-        The size of the leading dimension of the output tensor. Default is 1.
     transform: str, optional
         The transformation to apply to the output tensor. Either 'alr', 'clr', or 'ilr'.
     symmetric: bool, default=False
@@ -75,15 +71,13 @@ class TensorSpline2D(Prior2D):
                  M: int | list[int]=30,
                  degree: int | list[int]=3,
                  grid_type: str='age-age',
-                 loc: float | NDArray=0,
                  coef_scale: float | NDArray=1,
-                 event_dim: int=1,
                  transform: str | None=None,
-                 type: str='global',
+                 prior_type: str='global',
                  symmetric: bool=False):
         
         validate_init_params(M, degree, coef_scale)
-        super().__init__(grid_type, loc, event_dim, transform, type)
+        super().__init__(grid_type, transform, prior_type)
         
         self.coef_scale = coef_scale
         self.M = np.array([M]*2) if isinstance(M, int) else np.array(M)
@@ -97,7 +91,6 @@ class TensorSpline2D(Prior2D):
         self.max_age = max_age
         self.A = max_age - min_age + 1
         
-        self._set_loc()
         self._set_grid()
         self._set_basis()
         

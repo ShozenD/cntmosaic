@@ -1,11 +1,12 @@
-from numpy.typing import NDArray
 import pandas as pd
 import jax.numpy as jnp
+import xarray
+
 import numpyro
 from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
-import numpy as np
 from ._BRCfine import BRCfine
+from .priors import Prior2D
 
 class HiBRCfine(BRCfine):
     """High-resolution Bayesian Rate Consistency model with fine age inputs.
@@ -19,15 +20,18 @@ class HiBRCfine(BRCfine):
         Likelihood function to use. Options are 'poisson' and 'negbin'.
     """
     def __init__(self,
-                 ds,
-                 priors: dict,
+                 ds: xarray.Dataset,
+                 priors: dict[Prior2D],
                  likelihood: str='negbin'):
         
         super().__init__(ds, priors, likelihood)
         self.X_vars = [key for key in priors.keys() if key != 'rate']
-        for c in self.X_vars: # Convert stratificationraise ValueError(f"Invalid shape for age_dist_props[{k}].") variables to integer codes
-            self.X_ids = {c: pd.Categorical(self.ds[c].values, categories=sorted(set(self.ds[c].values))).codes for c in self.X_vars} 
-    
+        self.X_ids = {
+            c: pd.Categorical(self.ds[c].values, categories=sorted(set(self.ds[c].values))).codes
+            for c in self.X_vars
+        }
+        self.set_prior_event_dim()
+        self.set_prior_loc()
         self.set_log_age_dist_props()
         
     def set_log_age_dist_props(self):
@@ -40,6 +44,24 @@ class HiBRCfine(BRCfine):
                 self.log_age_dist_props[k] = jnp.log(v)
             else:
                 raise ValueError(f"Invalid shape for age_dist_props[{k}].")
+            
+    def set_prior_event_dim(self):
+        """
+        Sets the event dimension for each prior based on the dataset.
+        """
+        for var, prior in self.priors.items():
+            if var == 'rate':
+                prior.set_event_dim(1)
+            else:
+                prior.set_event_dim(len(self.ds.grp_vars[var]))
+    
+    def set_prior_loc(self):
+        """
+        Sets the location of the priors around the transformed population age proportions.
+        """
+        for var, prior in self.priors.items():
+            if var != 'rate':
+                prior.set_loc(self.ds['pop_prop_' + var].to_numpy())
             
     def sample_log_delta(self, var):
         log_delta = numpyro.deterministic(

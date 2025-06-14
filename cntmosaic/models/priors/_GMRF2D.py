@@ -36,13 +36,11 @@ class GMRF2D(Prior2D):
 		"""
 		def __init__(self,
 								 grid_type: str='age-age',
-								 loc: float=0,
 								 scale: float=1,
-								 event_dim: int=1,
 								 transform: str | None=None,
-								 type: str='global'):
+								 prior_type: str='global'):
 				self.scale = scale
-				super().__init__(grid_type, loc, event_dim, transform, type)
+				super().__init__(grid_type, transform, prior_type)
 								
 		def set_age_bounds(self, min_age: int, max_age: int):
 				self.min_age = min_age
@@ -50,7 +48,6 @@ class GMRF2D(Prior2D):
 				self.A = max_age - min_age + 1
 				
 				self._set_grid()
-				self._set_loc()
 		
 		def _set_grid(self):
 				self.sym_idx = symmetrize_from_lower_tri(self.A)
@@ -65,26 +62,26 @@ class GMRF2D(Prior2D):
 	
 		def sample(self):
 				"""Sample from the HSGP prior."""
-				def map_gmrf(x, Q, L): return gmrf(x, Q, L, self.scale)
-				def map_gmrf_sym(x, Q, L, sym_idx): return gmrf_sym(x, Q, L, sym_idx, self.scale)
+				def map_gmrf(x, L): return gmrf(x, L, self.scale)
+				def map_gmrf_sym(x, L, sym_idx): return gmrf_sym(x, L, sym_idx, self.scale)
 
 				if self.type == 'global':
 						N = self.A * (self.A + 1) // 2
 						z = numpyro.sample('z', dist.Normal(0, 1).expand((N,)).to_event(1))
 						f = gmrf_sym(z, self.L, self.sym_idx, self.scale)
       
-						return self.loc + f.reshape((self.A, self.A), order='F')
+						return f.reshape((self.A, self.A), order='F')
 				
 				elif self.type == 'partial':
-						plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)
+						plate_event = numpyro.plate('event', self.event_dim_eff)
 						with plate_event:
 								z = numpyro.sample('z', dist.Normal(0, 1), sample_shape=(self.A**2,))
-						f = vmap(gmrf)(z, self.Q, self.L)
-						f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+						f = vmap(map_gmrf)(z, self.L[jnp.newaxis, ...])
+						f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
 				
 				elif self.type == 'full':
-						plate_diag = numpyro.plate('diag', self.event_dim_diag, dim=-2)
-						plate_non_diag = numpyro.plate('non_diag', self.event_dim_non_diag, dim=-2)
+						plate_diag = numpyro.plate('diag', self.event_dim_diag)
+						plate_non_diag = numpyro.plate('non_diag', self.event_dim_non_diag)
 
 						with plate_diag:
 								N = self.A * (self.A - 1) // 2

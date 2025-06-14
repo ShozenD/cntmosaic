@@ -25,12 +25,8 @@ class PenalisedTensorSpline2D(TensorSpline2D):
         The number of neighbors to consider in the Gaussian Markov random field.
     grid_type: str, default='age-age'
         The type of grid to use. Options are 'age-age' and 'diff-age'.
-    loc: float | NDArray, default=0
-        The prior mean of the tensor spline.
     coef_scale: float, default=1
         The prior scale of parameters in the GMRF.
-    event_dim: int, default=1
-        The size of the leading dimension of the output tensor. If 1 the output is a matrix, if >1 the output is a tensor.
     transform: str, default=None
         The transformation to apply to the output tensor. Options are 'alr', 'clr', and 'ilr'.
     symmetric: bool, default=False
@@ -50,14 +46,12 @@ class PenalisedTensorSpline2D(TensorSpline2D):
                  degree: int | list[int]=3,
                  neighborhood: int=4,
                  grid_type: str='age-age',
-                 loc: float | NDArray=0,
                  coef_scale: float | NDArray=1,
-                 event_dim: int=1,
                  transform: str | None=None,
-                 type: str='global',
+                 prior_type: str='global',
                  symmetric: bool=False):
         
-        super().__init__(M, degree, grid_type, loc, coef_scale, event_dim, transform, type, symmetric)
+        super().__init__(M, degree, grid_type, coef_scale, transform, prior_type, symmetric)
         
         if neighborhood not in self.ALLOWED_NEIGHBORHOODS:
             raise ValueError(f"neighborhood must be one of: {self.ALLOWED_NEIGHBORHOODS}")

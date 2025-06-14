@@ -36,13 +36,11 @@ class IGMRF2D(Prior2D):
 		"""
 		def __init__(self,
 								 grid_type: str='age-age',
-								 loc: float=0,
 								 scale: float=1,
-								 event_dim: int=1,
 								 transform: str | None=None,
-								 type: str='global'):
+								 prior_type: str='global'):
 				self.scale = scale
-				super().__init__(grid_type, loc, event_dim, transform, type)
+				super().__init__(grid_type, transform, prior_type)
 								
 		def set_age_bounds(self, min_age: int, max_age: int):
 				self.min_age = min_age

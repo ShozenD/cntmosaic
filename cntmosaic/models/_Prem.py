@@ -84,7 +84,7 @@ class Prem:
     self.L = gmrf2d_operators((self.C, self.D), (1, 1), cov_struct="additive")
     
   def model(self):
-    beta0 = numpyro.sample("baseline", dist.Exponential(0.0001))
+    beta0 = numpyro.sample("baseline", dist.Exponential(0.001))
     z = numpyro.sample("z", dist.Normal(0., 1.), sample_shape=(self.C * self.D,))
     log_cint = numpyro.deterministic(
       "log_cint",

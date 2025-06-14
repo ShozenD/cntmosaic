@@ -36,10 +36,12 @@ class GMRF2D(Prior2D):
 		"""
 		def __init__(self,
 								 grid_type: str='age-age',
-								 scale: float=1,
 								 transform: str | None=None,
-								 prior_type: str='global'):
+								 prior_type: str='global',
+         				 scale: float=1,
+            		 order: tuple[int, int]=(2, 2)):
 				self.scale = scale
+				self.order = order
 				super().__init__(grid_type, transform, prior_type)
 								
 		def set_age_bounds(self, min_age: int, max_age: int):
@@ -53,12 +55,12 @@ class GMRF2D(Prior2D):
 				self.sym_idx = symmetrize_from_lower_tri(self.A)
 
 				if self.type == 'global':
-					self.L, self.sym_idx = gmrf2d_sym_operators(self.A, (2, 2), cov_struct='additive')
+					self.L, self.sym_idx = gmrf2d_sym_operators(self.A, self.order, cov_struct='additive')
 				elif self.type == 'partial':
-					self.L = gmrf2d_operators((self.A, self.A), (2, 2), cov_struct='additive')
+					self.L = gmrf2d_operators((self.A, self.A), self.order, cov_struct='additive')
 				elif self.type == 'full':
-					self.L_diag, self.sym_idx = gmrf2d_sym_operators((self.A, self.A), (2, 2), cov_struct='additive')
-					self.L_non_diag = gmrf2d_operators(self.A, (2, 2), cov_struct='additive')
+					self.L_diag, self.sym_idx = gmrf2d_sym_operators((self.A, self.A), self.order, cov_struct='additive')
+					self.L_non_diag = gmrf2d_operators(self.A, self.order, cov_struct='additive')
 	
 		def sample(self):
 				"""Sample from the HSGP prior."""

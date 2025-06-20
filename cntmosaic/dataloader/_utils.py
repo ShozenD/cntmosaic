@@ -1,6 +1,54 @@
 import numpy as np
 import pandas as pd
 
+def fine_coarse_matrix(x: pd.Series):
+	"""
+	Create an indicator matrix mapping one-year ages to specified age intervals.
+
+	The function generfates a binary matrix where each row corresponds to all one-year ages considered,
+	and each column represents an age interval defined in the input series. The matrix entries
+	are set to 1 where the age falls into the corresponding interval, and 0 otherwise.
+
+	Parameters
+	----------
+	x : pd.Series
+		A pandas Series with a categorical dtype that includes intervals (pd.IntervalIndex).
+		The intervals are expected to define the coarser age grid with the left endpoint included
+		and the right endpoint excluded. For example, the intervals [0, 5), [5, 10), [10, 15), ... 
+
+	Returns
+	-------
+	NDArray
+		A NumPy array of shape (A, number of intervals) containing the indicator matrix.
+		Each row corresponds to an age, and each column corresponds to an interval from the
+		input series. Entries are 1 where the age falls into the interval, and 0 otherwise.
+
+	Examples
+	--------
+	>>> ages = pd.Series(pd.cut(np.arange(1,85), bins=[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85]))
+	>>> indicator_matrix = make_fine_coarse_matrix(ages)
+	>>> print(indicator_matrix.shape)
+	(84, 17)
+	"""
+	if x.isnull().any():
+		raise ValueError("Input series contains NaN values. Check whether the intervals are defined correctly.")
+ 
+	cuts_left = list(x.cat.categories.left)
+	cuts_right = list(x.cat.categories.right)
+	cuts = [cuts_left[0]] + cuts_right # Include left endpoint
+	age_min, age_max = int(cuts_left[0]), int(cuts_right[-1]-1)
+	
+	# Create an empty matrix with zeros
+	indicator_matrix = np.zeros((age_max - age_min + 1, len(cuts) - 1), dtype=int)
+	
+	# Iterate over each age and each cut interval
+	for age in range(age_max + 1):
+		for i, (left, right) in enumerate(zip(cuts[:-1], cuts[1:])):
+			if left <= age < right:
+				indicator_matrix[age - age_min, i] = 1
+	
+	return indicator_matrix
+
 def make_idarrs_for_intervals(
 		data: pd.DataFrame,
 		interval_col: str,

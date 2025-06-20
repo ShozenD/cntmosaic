@@ -236,57 +236,6 @@ def gmrf_adjacency_matrix(n_rows, n_cols, neighborhood=4):
 	# Convert to CSR for efficient arithmetic and slicing
 	return adjacency.tocsr()
 
-def fine_coarse_matrix(x: pd.Series, cats) -> NDArray:
-	"""
-	Create an indicator matrix mapping one-year ages to specified age intervals.
-
-	The function generfates a binary matrix where each row corresponds to all one-year ages considered,
-	and each column represents an age interval defined in the input series. The matrix entries
-	are set to 1 where the age falls into the corresponding interval, and 0 otherwise.
-
-	Parameters
-	----------
-	x : pd.Series
-		A pandas Series with a categorical dtype that includes intervals (pd.IntervalIndex).
-		The intervals are expected to define the coarser age grid with the left endpoint included
-		and the right endpoint excluded. For example, the intervals [0, 5), [5, 10), [10, 15), ... 
-
-	Returns
-	-------
-	NDArray
-		A NumPy array of shape (A, number of intervals) containing the indicator matrix.
-		Each row corresponds to an age, and each column corresponds to an interval from the
-		input series. Entries are 1 where the age falls into the interval, and 0 otherwise.
-
-	Examples
-	--------
-	>>> ages = pd.Series(pd.cut(np.arange(1,85), bins=[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85]))
-	>>> indicator_matrix = make_fine_coarse_matrix(ages)
-	>>> print(indicator_matrix.shape)
-	(84, 17)
-	"""
-	if x.isnull().any():
-		raise ValueError("Input series contains NaN values. Check whether the intervals are defined correctly.")
- 
-	cuts_left = list(cats.left)
-	cuts_right = list(cats.right)
-	cuts = [cuts_left[0]] + cuts_right # Include left endpoint
-	age_min, age_max = int(cuts_left[0]), int(cuts_right[-1]-1)
-	
-	# Create an empty matrix with zeros
-	indicator_matrix = np.zeros((age_max - age_min + 1, len(cuts) - 1), dtype=int)
-	
-	# Iterate over each age and each cut interval
-	for age in range(85):
-		for i, (left, right) in enumerate(zip(cuts[:-1], cuts[1:])):
-			if left <= age < right:
-				indicator_matrix[age - age_min, i] = 1
-	
-	return indicator_matrix
-
-import numpy as np
-import pandas as pd
-
 @jax.jit
 def index_mask_logsumexp(
 		x: NDArray,
@@ -336,5 +285,7 @@ def index_mask_logsumexp(
 				y = x[xid_exp, aid_exp, bid_pad]
 		else:
 				y = x[aid_exp, bid_pad]
-		z = jnp.where(y, y, -jnp.inf)
-		return jax.scipy.special.logsumexp(z, axis=-1)
+    
+		valid_mask = jnp.logical_and(aid_exp >= 0, bid_pad >= 0)
+		z = jnp.where(valid_mask, y, -jnp.inf)
+		return jsp.special.logsumexp(z, axis=-1)

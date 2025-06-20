@@ -47,12 +47,10 @@ class HSGP2D(Prior2D):
                  M: int | list[int] = [30, 30],
                  grid_type: str='age-age',
                  transform: str | None=None,
-                 prior_type: str='global',
-                 symmetric: bool=False):
+                 prior_type: str='global'):
         super().__init__(grid_type, transform, prior_type)
         self.C = C
         self.M = M
-        self.symmetric = symmetric
                 
     def set_age_bounds(self, min_age: int, max_age: int):
         self.min_age = min_age
@@ -85,7 +83,7 @@ class HSGP2D(Prior2D):
         self.eig_func = eigenfunctions(x=self.X, ell=self.L, m=self.M)
         self.eig_func_transpose = self.eig_func.T
   
-    def sample(self, alpha, rho):
+    def sample(self):
         """Sample from the HSGP prior."""
     
         def compute_diag_spd(alpha, length):
@@ -99,34 +97,33 @@ class HSGP2D(Prior2D):
             )
 
         if self.type == 'global':
-            sigma = numpyro.sample('gp_scale', alpha)
-            lenscale = numpyro.sample('gp_lenscale', rho)
+            sigma = numpyro.sample('gp_scale', dist.InverseGamma(5, 5))
+            lenscale = numpyro.sample('gp_lenscale', dist.InverseGamma(5, 5))
             spd = compute_diag_spd(sigma, lenscale)
             
             with numpyro.plate('coef', self.eig_func.shape[-1]):
                 beta = numpyro.sample('gp_beta', dist.Normal(0, 1))
             
             f = self.eig_func @ (spd * beta)
-            f = f[self.sym_tri_idx] if self.symmetric else f
-            return self.loc.reshape((self.A, self.A)) + f.reshape((self.A, self.A), order='F')
+            f = f[self.sym_tri_idx]
+            return f.reshape((self.A, self.A), order='F')
         
         elif self.type == 'partial':
             plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)
             plate_coef = numpyro.plate('coef', self.eig_func.shape[-1], dim=-1)
             
             with plate_event:
-                sigma = numpyro.sample('gp_scale', alpha)
-                lenscale = numpyro.sample('gp_lenscale', rho)
+                sigma = numpyro.sample('gp_scale', dist.InverseGamma(5, 5))
+                lenscale = numpyro.sample('gp_lenscale', dist.InverseGamma(5, 5))
 
             # Vectorized SPD (shape: [event_dim_eff, num_basis])
-            spd = vmap(compute_diag_spd)(sigma, lenscale)
+            spd = jnp.squeeze(vmap(compute_diag_spd)(sigma, lenscale))
             
             with plate_event, plate_coef:
                 beta = numpyro.sample('gp_beta', dist.Normal(0, 1))
 
             f = (spd * beta) @ self.eig_func.T
-            f = f[:, self.sym_tri_idx] if self.symmetric else f
-            f = self.loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
         
         elif self.type == 'full':
             plate_diag = numpyro.plate('diag', self.event_dim_diag, dim=-2)
@@ -134,12 +131,12 @@ class HSGP2D(Prior2D):
             plate_coef = numpyro.plate('coef', self.eig_func.shape[-1], dim=-1)
 
             with plate_diag:
-                sigma_diag = numpyro.sample('gp_scale_diag', alpha)
-                lenscale_diag = numpyro.sample('gp_lenscale_diag', rho)
+                sigma_diag = numpyro.sample('gp_scale_diag', dist.InverseGamma(5, 5))
+                lenscale_diag = numpyro.sample('gp_lenscale_diag', dist.InverseGamma(5, 5))
 
             with plate_non_diag:
-                sigma_non_diag = numpyro.sample('gp_scale_non_diag', alpha)
-                lenscale_non_diag = numpyro.sample('gp_lenscale_non_diag', rho)
+                sigma_non_diag = numpyro.sample('gp_scale_non_diag', dist.InverseGamma(5, 5))
+                lenscale_non_diag = numpyro.sample('gp_lenscale_non_diag', dist.InverseGamma(5, 5))
 
             spd_diag = vmap(compute_diag_spd)(sigma_diag, lenscale_diag)
             spd_non_diag = vmap(compute_diag_spd)(sigma_non_diag, lenscale_non_diag)

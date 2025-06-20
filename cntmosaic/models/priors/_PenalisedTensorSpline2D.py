@@ -70,7 +70,7 @@ class PenalisedTensorSpline2D(TensorSpline2D):
             beta = numpyro.sample('spline_coef', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
             
             f = self.PHI @ beta
-            f = f[self.sym_tri_idx] if self.symmetric else f
+            f = f[self.sym_tri_idx]
             return f.reshape((self.A, self.A), order='F')
         
         elif self.type == 'partial':
@@ -78,7 +78,6 @@ class PenalisedTensorSpline2D(TensorSpline2D):
                 beta = numpyro.sample('spline_coef', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
             
             f = beta @ self.PHI_T
-            f = f[:,self.sym_tri_idx] if self.symmetric else f
             f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
         
         elif self.type == 'full':

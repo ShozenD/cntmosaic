@@ -1,11 +1,11 @@
 import numpy as np
-from numpy.typing import NDArray
 import pandas as pd
 import jax.numpy as jnp
 import numpyro
 from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
 
+from ..dataloader import DataLoader
 from ._BRCrefine import BRCrefine
 from ._utils import index_mask_logsumexp
   
@@ -13,60 +13,77 @@ def expand_idarr(id, length):
     return np.repeat(id[:,np.newaxis], length, axis=1)
 
 class HiBRCrefine(BRCrefine):
-    """High-resolution Bayesian Rate Consistency model with fine age inputs.
+    """High-resolution Bayesian Rate Consistency model with fine participant age but coarse contacted age.
     
     Parameters
     ----------
-    data: DataFrame
-        DataFrame containing the contact data.
-        Must contain the columns 'y', 'age_part', 'age_cnt', and additional stratification variables.
-        'y' is the number of contacts between 'age_part' and 'age_cnt'.
-        'age_part' is the age of the contacting individual.
-        'age_cnt' is the age of the contacted individual.
-    age_dist: NDArray
-        The population level age distribution.
-    age_dist_props: dict
-        Dictionary of NDArrays which containing the ratios of the population age distribution for each stratification variable.
-        The NDArrays must be of shape (event_dim, A) or (event_dim, A, A).
+    data: DataLoader
+        DataLoader object containing the contact data.
     priors: dict, optional
-        Dictionary containing the priors for the components of the model. If None, default priors are used.
-    offset: NDArray, optional
-        Additional offset to be multiplied to the contact intensity.
+        Dictionary containing the priors for the components of the model.
+        If None, default priors are used.
     likelihood: str, default='negbin'
         Likelihood function to use. Options are 'poisson' and 'negbin'.
     """
     
     def __init__(self,
-                 data: pd.DataFrame,
-                 age_dist: NDArray,
-                 age_dist_props: dict,
+                 dataloader: DataLoader,
                  priors: dict,
                  likelihood: str='negbin'):
         
-        super().__init__(data, age_dist, priors, likelihood)
-            
-        self.log_N = jnp.log(self.N)
-        self.log_S = jnp.log(self.S)
-        self.X_vars = [key for key in priors.keys() if key != 'rate']
-        self.set_log_age_dist_props(age_dist_props)
+        super().__init__(dataloader, priors, likelihood)
         
-        # --- Setup indices ---        
-        self.aid_exp, self.bid_pad = make_idarrs_for_intervals(self.data, 'age_grp_cnt', self.aid)
+        self.y = jnp.array(self.ds.y.values)
+        self.log_N = jnp.array(self.ds.log_N.values)
+        self.log_P = jnp.array(self.ds.log_P.values)[jnp.newaxis,:]
+        self.log_S = jnp.array(self.ds.log_S.values) if hasattr(self.ds, 'log_S') else jnp.zeros_like(self.y)
+            
+        self.aid = jnp.array(self.ds.aid.values)
+        self.aid_exp = jnp.array(self.ds.aid_exp.values)
+        self.bid_pad = jnp.array(self.ds.bid_pad.values)
+        self.X_vars = [key for key in priors.keys() if key != 'rate']
+        self.X_ids = {
+            c: pd.Categorical(self.ds[c].values, categories=sorted(set(self.ds[c].values))).codes
+            for c in self.X_vars
+        }
         self.X_ids_exp = {
-          c: expand_idarr(self.data[c].cat.codes.values, self.bid_pad.shape[1])
+          c: expand_idarr(self.X_ids[c], self.bid_pad.shape[1])
           for c in self.X_vars
         }
+        self.set_prior_event_dim()
+        self.set_prior_loc()
+        self.set_log_age_dist_props()       
+        
         
     # Compute the log of the age distribution proportions
-    def set_log_age_dist_props(self, age_dist_props):
+    def set_log_age_dist_props(self):
         self.log_age_dist_props = {}
-        for k, v in age_dist_props.items():
-            if age_dist_props[k].shape == (self.priors[k].event_dim, self.A):
+        for k in self.ds.attrs['grp_vars'].keys():
+            v = self.ds['pop_prop_' + k].to_numpy()
+            if v.shape == (self.priors[k].event_dim, self.A):
                 self.log_age_dist_props[k] = jnp.log(v)[:,:,jnp.newaxis]
-            elif age_dist_props[k].shape == (self.priors[k].event_dim, self.A, self.A):
+            elif v.shape == (self.priors[k].event_dim, self.A, self.A):
                 self.log_age_dist_props[k] = jnp.log(v)
             else:
                 raise ValueError(f"Invalid shape for age_dist_props[{k}].")
+            
+    def set_prior_event_dim(self):
+        """
+        Sets the event dimension for each prior based on the dataset.
+        """
+        for var, prior in self.priors.items():
+            if var == 'rate':
+                prior.set_event_dim(1)
+            else:
+                prior.set_event_dim(len(self.ds.grp_vars[var]))
+    
+    def set_prior_loc(self):
+        """
+        Sets the location of the priors around the transformed population age proportions.
+        """
+        for var, prior in self.priors.items():
+            if var != 'rate':
+                prior.set_loc(self.ds['pop_prop_' + var].to_numpy())
     
     def sample_log_delta(self, var):
         log_delta = numpyro.deterministic(

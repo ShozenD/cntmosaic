@@ -5,6 +5,7 @@ import xarray
 import numpyro
 from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
+from ..dataloader import DataLoader
 from ._BRCfine import BRCfine
 from .priors import Prior2D
 
@@ -13,18 +14,19 @@ class HiBRCfine(BRCfine):
     
     Parameters
     ----------
-    ds: xarray dataset containing necessary input
+    dataloader: DataLoader
+        An instance of the DataLoader class.
     priors: dict, optional
         Dictionary containing the priors for the components of the model.
     likelihood: str, default='negbin'
         Likelihood function to use. Options are 'poisson' and 'negbin'.
     """
     def __init__(self,
-                 ds: xarray.Dataset,
+                 dataloader: DataLoader,
                  priors: dict[Prior2D],
                  likelihood: str='negbin'):
         
-        super().__init__(ds, priors, likelihood)
+        super().__init__(dataloader, priors, likelihood)
         self.X_vars = [key for key in priors.keys() if key != 'rate']
         self.X_ids = {
             c: pd.Categorical(self.ds[c].values, categories=sorted(set(self.ds[c].values))).codes

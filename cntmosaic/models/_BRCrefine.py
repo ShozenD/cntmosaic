@@ -1,10 +1,11 @@
-from numpy.typing import NDArray 
 import pandas as pd
 import numpy as np
 import jax.numpy as jnp
 import numpyro
 from numpyro import distributions as dist
+from numpyro.handlers import plate, scope
 
+from ..dataloader import DataLoader
 from ._BRC import BRC
 from ._utils import index_mask_logsumexp
 from .priors import HSGP2D
@@ -14,13 +15,11 @@ class BRCrefine(BRC):
 
   Parameters
   ----------
-  data: DataFrame
-      DataFrame containing the contact data. Must contain the columns 'y', 'age_part', and 'age_grp_cnt.
-      'y' is the number of contacts between 'age_part' and 'age_grp_cnt'.
-      'age_part' is the age of the contactor.
-      'age_grp_cnt' is the age group of the contacted.
-  age_dist: NDArray
-      The population age distribution.
+  dataloader: DataLoader
+      DataLoader object containing the contact data.
+  priors: dict, optional
+      Dictionary containing the priors for the components of the model.
+      If None, default priors are used.
   likelihood: str, default='negbin'
       Likelihood function to use.
       
@@ -35,13 +34,12 @@ class BRCrefine(BRC):
   default_priors = {
     'rate': HSGP2D(
       grid_type='diff-age',
-      prior_type='global',
-      symmetric=True
+      prior_type='global'
     )
   }
   
   def __init__(self,
-               dataloader: pd.DataFrame,
+               dataloader: DataLoader,
                priors: dict=None,
                likelihood: str='negbin'):
     
@@ -55,7 +53,7 @@ class BRCrefine(BRC):
     self.y = jnp.array(self.ds.y.values)
     self.log_N = jnp.array(self.ds.log_N.values)
     self.log_P = jnp.array(self.ds.log_P.values)[jnp.newaxis,:]
-    self.log_S = jnp.array(self.ds.log_S) if hasattr(self.ds, 'log_S') else np.ones_like(self.y)
+    self.log_S = jnp.array(self.ds.log_S) if hasattr(self.ds, 'log_S') else np.zeros_like(self.y)
     
     self.aid = jnp.array(self.ds.aid.values)
     self.aid_exp = jnp.array(self.ds.aid_exp.values)
@@ -78,13 +76,17 @@ class BRCrefine(BRC):
     
   def model(self):
     beta0 = numpyro.sample('baseline', dist.Normal(0., 10.))
-    f = self.priors['rate'].sample()
+    with scope(prefix='rate'):
+      f = self.priors['rate'].sample()
     log_rate = numpyro.deterministic('log_rate', beta0 + f)
     log_cint = numpyro.deterministic('log_cint', log_rate + self.log_P)
-    log_cint = index_mask_logsumexp(log_cint, self.aid_exp, self.bid_pad) # [Do] sum across contact age groups
     
-    mu = jnp.exp(log_cint + self.log_N + self.log_S)
-    with numpyro.plate('data', len(self.y)):
+    mu = jnp.exp(
+      index_mask_logsumexp(log_cint, self.aid_exp, self.bid_pad)
+      + self.log_N
+      + self.log_S
+    )
+    with plate('data', len(self.y)):
       if self.likelihood == 'poisson':
         numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y)
         

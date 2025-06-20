@@ -6,7 +6,17 @@ from sklearn.metrics import (
 	mean_absolute_percentage_error
 )
 from ..utils import pixilate, depixilate, AgeBins
-from ._summariser import ModelSummariserSocialMix, ModelSummariserPrem
+from ..models import (
+	BRCfine,
+	BRCrefine,
+	HiBRCfine,
+	HiBRCrefine,
+)
+from ._summariser import (
+  ModelSummariserSocialMix,
+  ModelSummariserPrem,
+  ModelSummariserSVI
+)
 
 def interval_score(y_true, y_low, y_high, alpha):
 	"""
@@ -19,14 +29,14 @@ def interval_score(y_true, y_low, y_high, alpha):
 
 def compute_metrics(y_true, y_est, y_low, y_high):
 	"""
-	Compute MSE, MAE, and coverage for given true values, estimates, and interval bounds.
+	Compute RMSE, MAE, and coverage for given true values, estimates, and interval bounds.
 	"""
-	mse = root_mean_squared_error(y_true, y_est)**2
+	rmse = root_mean_squared_error(y_true, y_est)
 	mae = mean_absolute_error(y_true, y_est)
 	mape = mean_absolute_percentage_error(y_true, y_est) * 100
 	int_score = interval_score(y_true, y_low, y_high, alpha=0.05)
 	coverage = np.mean((y_true >= y_low) & (y_true <= y_high)) * 100
-	return mse, mae, mape, int_score, coverage
+	return rmse, mae, mape, int_score, coverage
 
 def process_variable_metrics(var, data_eval, data_est):
 	"""
@@ -34,13 +44,13 @@ def process_variable_metrics(var, data_eval, data_est):
 	"""
 	metrics = []
 	for cat, values in data_est[var].items():
-			mse, mae, mape, int_score, coverage = compute_metrics(
+			rmse, mae, mape, int_score, coverage = compute_metrics(
 					data_eval[var][cat], values[1], values[0], values[2]
 			)
 			metrics.append({
 					'var': var,
 					'cat': cat,
-					'mse': mse,
+					'rrmse': rmse,
 					'mae': mae,
 					'mape': mape,
 					'interval_score': int_score,
@@ -53,12 +63,12 @@ def process_variable_metrics(var, data_eval, data_est):
 	y_low = np.vstack([values[0] for values in data_est[var].values()])
 	y_high = np.vstack([values[2] for values in data_est[var].values()])
   
-	mse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
+	rmse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
  
 	metrics.append({
 			'var': var,
 			'cat': 'all',
-			'mse':	mse,
+			'rmse':	rmse,
 			'mae': mae,
 			'mape': mape,
 			'interval_score': int_score,
@@ -84,11 +94,11 @@ def aggregate_metrics(data_eval, data_est):
 	y_high = np.vstack([values[2] for var in data_est.keys() for values in data_est[var].values()])
 
 
-	mse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
+	rmse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
 	all_metrics.append({
 			'var': 'all',
 			'cat': 'all',
-			'mse': mse,
+			'rmse': rmse,
 			'mae': mae,
 			'mape': mape,
 			'interval_score': int_score,
@@ -109,20 +119,22 @@ class ModelEvaluator:
 	data_eval : tuple
 			A tuple containing the dictionaries of true contact intensity and marginal contact intensity values
 	""" 
-	def __init__(self, summariser, cint_matrices_true: dict):
+	def __init__(self,
+              summariser: ModelSummariserSVI,
+              cint_matrices_true: np.ndarray | dict):
+   
 		self.summariser = summariser
 		self.cint_matrices_true = cint_matrices_true
-		# Calculate true marginal contact intensity
-		self.mcint_true = {}
-		for v in cint_matrices_true.keys():
-			self.mcint_true[v] = {
-    		w: cint_matrices_true[v][w].sum(axis=1)
-				for w in cint_matrices_true[v].keys()
-      }
-   
-		# Evaluate accuracy of inferred contact quantities
-		self.evaluate_cint()
-		self.evaluate_mcint()
+  
+		if isinstance(cint_matrices_true, dict):
+			self.mcint_true = {}
+			for v in cint_matrices_true.keys():
+				self.mcint_true[v] = {
+					w: cint_matrices_true[v][w].sum(axis=1)
+					for w in cint_matrices_true[v].keys()
+				}
+		else:
+			self.mcint_true = cint_matrices_true.sum(axis=1)
 	
 	def evaluate_cint(self):
 		"""Evaluate the posterior contact intensity.
@@ -134,7 +146,25 @@ class ModelEvaluator:
 				A DataFrame containing the metrics summary
 		"""
 		if not hasattr(self, 'eval_cint'):
-			self.eval_cint = aggregate_metrics(self.cint_matrices_true, self.summariser.summarise_cint())
+			if type(self.summariser.model) in (BRCfine, BRCrefine):
+				sum_cint = self.summariser.summarise_cint()
+				rmse, mae, mape, int_score, coverage = compute_metrics(
+					self.cint_matrices_true,
+					sum_cint[1],
+					sum_cint[0],
+					sum_cint[2]
+				)
+				self.eval_cint = pd.DataFrame({
+					'rmse': rmse,
+					'mae': mae,
+					'mape': mape,
+					'interval_score': int_score,
+					'coverage': coverage
+				}, index=[0])
+    
+			elif type(self.summariser.model) in (HiBRCfine, HiBRCrefine):
+				self.eval_cint = aggregate_metrics(self.cint_matrices_true,
+                                       		 self.summariser.summarise_cint())
    
 		return self.eval_cint
 	
@@ -148,8 +178,26 @@ class ModelEvaluator:
 				A DataFrame containing the metrics summary
 		"""
 		if not hasattr(self, 'eval_mcint'):
-			self.eval_mcint = aggregate_metrics(self.mcint_true, self.summariser.summarise_mcint())
-   
+			if type(self.summariser.model) in (BRCfine, BRCrefine):
+				sum_mcint = self.summariser.summarise_mcint()
+				rmse, mae, mape, int_score, coverage = compute_metrics(
+					self.mcint_true,
+					sum_mcint[1],
+					sum_mcint[0],
+					sum_mcint[2]
+				)
+				self.eval_mcint = pd.DataFrame({
+					'rmse': rmse,
+					'mae': mae,
+					'mape': mape,
+					'interval_score': int_score,
+					'coverage': coverage
+				}, index=[0])
+    
+			elif type(self.summariser.model) in (HiBRCfine, HiBRCrefine):
+				self.eval_mcint = aggregate_metrics(self.mcint_true,
+                                        		self.summariser.summarise_mcint())
+  
 		return self.eval_mcint
 
 class ModelEvaluatorSocialMix:

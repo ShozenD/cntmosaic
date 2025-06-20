@@ -11,7 +11,7 @@ import xarray as xr
 
 import jax.numpy as jnp
 
-from ._utils import make_idarrs_for_intervals
+from ._utils import make_idarrs_for_intervals, fine_coarse_matrix
 
 
 @dataclass
@@ -95,7 +95,7 @@ class BaseLoader(ABC):
         data: pd.DataFrame,
         pop: pd.DataFrame,
         col_map: CoordToColumns,
-        pop_prop_quads=[],
+        pop_prop_quads: list | None =None,
     ):
         """
         Base class initializer.
@@ -113,31 +113,32 @@ class BaseLoader(ABC):
         self.col_map = col_map
         self.pop = pop
         self.ds = None
-
-        try:
-            for t in pop_prop_quads:
-                self._validate_quads(t)
-            self.pop_prop = pop_prop_quads
-        # maybe move this to documentation page, provide a link
-        except:
-            warnings.warn(
-                "\n pop_prop_quads argument takes a list of quadruple\n"
-                + "a DataFrame containing data, the column name for pop age, the column name for category, the column name for population proportions\n"
-                + 'For example, a valid input quadruple for the pandas dataframe `data` below would be [data, "age", "category", "proportions"]\n'
-            )
-            sample = pd.DataFrame(
-                {
-                    "age": [1, 2, 1, 2],
-                    "category": ["A", "A", "B", "B"],
-                    "proportions": [0.2, 0.3, 0.8, 0.7],
-                }
-            )
-            warnings.warn("\n" + str(sample))
-            warnings.warn(
-                "\n The default behaviour assumes multiple quadruples\n"
-                + "In the case where only 1 quadruple is passed, please warp them in a nested list\n"
-            )
-            raise NotImplementedError
+        
+        if pop_prop_quads is not None:
+            try:
+                for t in pop_prop_quads:
+                    self._validate_quads(t)
+                self.pop_prop = pop_prop_quads
+            # maybe move this to documentation page, provide a link
+            except:
+                warnings.warn(
+                    "\n pop_prop_quads argument takes a list of quadruple\n"
+                    + "a DataFrame containing data, the column name for pop age, the column name for category, the column name for population proportions\n"
+                    + 'For example, a valid input quadruple for the pandas dataframe `data` below would be [data, "age", "category", "proportions"]\n'
+                )
+                sample = pd.DataFrame(
+                    {
+                        "age": [1, 2, 1, 2],
+                        "category": ["A", "A", "B", "B"],
+                        "proportions": [0.2, 0.3, 0.8, 0.7],
+                    }
+                )
+                warnings.warn("\n" + str(sample))
+                warnings.warn(
+                    "\n The default behaviour assumes multiple quadruples\n"
+                    + "In the case where only 1 quadruple is passed, please warp them in a nested list\n"
+                )
+                raise NotImplementedError
 
     @staticmethod
     def _validate_quads(t):
@@ -352,8 +353,10 @@ class BaseLoader(ABC):
             aid_exp, bid_pad = make_idarrs_for_intervals(
                 df_full, self.col_map.age_grp_cnt, self.ds["aid"].to_numpy()
             )
+            # self.ds.coords["age_grps"] = df_full[self.col_map.age_grp_cnt].cat.codes.unique()
             self.ds["aid_exp"] = (["index", "max_int_length"], aid_exp)
             self.ds["bid_pad"] = (["index", "max_int_length"], bid_pad)
+            # self.ds["fc_map"] = (["age", "age_grps"], fine_coarse_matrix(df_full[self.col_map.age_grp_cnt]))
 
         for var in self.col_map.grp_vars_part:
             self.raw_df[var] = self.raw_df[var].astype("category")
@@ -363,7 +366,7 @@ class BaseLoader(ABC):
                 coords={"index": self.ds.coords["index"]},
             )
 
-        if len(self.pop_prop):
+        if hasattr(self, "pop_prop"):
             self._load_pop_proportions()
         return self.ds
 
@@ -401,7 +404,7 @@ class DataLoader(BaseLoader):
         cnt: pd.DataFrame,
         pop: pd.DataFrame,
         col_map: CoordToColumns,
-        pop_prop_quads= list,
+        pop_prop_quads: list | None = None,
     ):
         self._validate_part(part, col_map)
         self._validate_cnt(cnt, col_map)

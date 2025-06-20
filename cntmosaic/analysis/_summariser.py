@@ -1,6 +1,12 @@
 import numpy as np
 import jax
-from ..models import SocialMix
+from ..models import (
+  SocialMix,
+  BRCfine,
+  BRCrefine,
+  HiBRCfine,
+  HiBRCrefine
+)
 from ..utils import pixilate, depixilate, AgeBins
 
 class ModelSummariserSVI:
@@ -19,19 +25,23 @@ class ModelSummariserSVI:
 		"""
 		self.post_pred = self.model.posterior_predictive_svi(self.prng_key, self.model.guide)
 	
-	def get_post_predictive_cint(self):
-		log_rate = self.post_pred['log_rate']
-		post_pred_cint = {}
-		for name, site in self.post_pred.items():
-			if 'log_delta' in name:
-				var = name.split('/')[0]
-				cat = self.model.ds.attrs['grp_vars'][var]
-				post_pred_cint[var] = {
-					cat[i]: np.exp(log_rate[:, None, :, :] + site + self.model.log_P[None, None, :, :])[:, i, :, :]
-					for i in range(len(cat))
-				}
-	
-		self.post_pred_cint = post_pred_cint
+	def get_post_predictive_cint(self):		
+		if isinstance(self.model, (HiBRCfine, HiBRCrefine)): 
+			# For HiBRC models, the contact intensity needs to be computed
+			log_rate = self.post_pred['log_rate']
+			post_pred_cint = {}
+			for name, site in self.post_pred.items():
+				if 'log_delta' in name:
+					var = name.split('/')[0]
+					cat = self.model.ds.attrs['grp_vars'][var]
+					post_pred_cint[var] = {
+						cat[i]: np.exp(log_rate[:, None, :, :] + site + self.model.log_P[None, None, :, :])[:, i, :, :]
+						for i in range(len(cat))
+					}
+		
+			self.post_pred_cint = post_pred_cint
+		elif isinstance(self.model, (BRCfine, BRCrefine)):
+			pass
 		
 	def summarise_rate(self, probs: tuple = (0.025, 0.5, 0.975)):
 		"""
@@ -50,12 +60,18 @@ class ModelSummariserSVI:
 		It uses the model's posterior predictive distribution to compute the summary statistics.
 		"""
 		if 'sum_cint' not in self.__dict__:
-			self.sum_cint = {
-				var: {
-						name: np.quantile(value, probs, axis=0)
-				 		for name, value in cat.items()
-			 		}
-				for var, cat in self.post_pred_cint.items()
+			if type(self.model) in (BRCfine, BRCrefine):
+				# For BRC models, the contact intensity is stored in 'log_cint'
+				self.sum_cint = np.quantile(self.post_pred['log_cint'], probs, axis=0)
+				self.sum_cint = np.exp(self.sum_cint)
+    
+			elif type(self.model) in (HiBRCfine, HiBRCrefine):
+				self.sum_cint = {
+					var: {
+							name: np.quantile(value, probs, axis=0)
+							for name, value in cat.items()
+						}
+					for var, cat in self.post_pred_cint.items()
 			}
 						
 		return self.sum_cint
@@ -66,13 +82,18 @@ class ModelSummariserSVI:
 		It uses the model's posterior predictive distribution to compute the summary statistics.
 		"""
 		if 'sum_mcint' not in self.__dict__:
-			self.sum_mcint = {
-				var: {
-						name: np.quantile(value.sum(axis=2), probs, axis=0)
-				 		for name, value in cat.items()
-			 		}
-				for var, cat in self.post_pred_cint.items()
-			}
+			if type(self.model) in (BRCfine, BRCrefine):
+				mcint = np.exp(self.post_pred['log_cint']).sum(axis=2)
+				self.sum_mcint = np.quantile(mcint, probs, axis=0)
+    
+			elif type(self.model) in (HiBRCfine, HiBRCrefine):
+				self.sum_mcint = {
+					var: {
+							name: np.quantile(value.sum(axis=2), probs, axis=0)
+							for name, value in cat.items()
+						}
+					for var, cat in self.post_pred_cint.items()
+				}
 						
 		return self.sum_mcint
 

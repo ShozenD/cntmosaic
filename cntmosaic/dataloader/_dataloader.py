@@ -324,6 +324,7 @@ class BaseLoader(ABC):
 
         # [Do] Finalise the data
         df_full = df_full.dropna(subset=["N"])
+        df_full = df_full[df_full["N"] > 0]
         df_full["y"] = df_full["y"].fillna(0)
 
         # [Do] Create a xarray dataset
@@ -461,7 +462,7 @@ class DataLoader(BaseLoader):
 
         # [Check] If the column y is present is in cnt. If not, add it as a column with value 1
         if col_map.y not in cnt.columns:
-            cnt[col_map.y] = 1
+            cnt.loc[:,col_map.y] = 1
 
         self.cnt = cnt.copy()
 

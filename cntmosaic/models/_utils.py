@@ -1,7 +1,6 @@
-import pandas as pd
 import numpy as np
 from numpy.typing import NDArray
-import scipy.sparse as sp
+from scipy.sparse import csr_matrix
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
@@ -167,74 +166,50 @@ def transpose_vector_indices(rows: int, cols: int) -> NDArray:
 	transposed_indices = original_indices.T.flatten(order='F')
 	return transposed_indices
 
-def gmrf_adjacency_matrix(n_rows, n_cols, neighborhood=4):
-	"""
-	Create the adjacency matrix for a 2D Gaussian Markov Random Field (GMRF) prior.
+def lattice_adj(rows: int, cols: int, order: int = 1):
+  """
+  Open-boundary 2-D lattice adjacency (≤ given graph distance) returned
+  as a SciPy CSR matrix.  All intermediate work is done with dense NumPy.
 
-	Parameters
-	----------
-	n_rows : int
-		Number of rows in the 2D grid.
-	n_cols : int
-		Number of columns in the 2D grid.
-	neighborhood : int, optional
-		Neighborhood type: 4 (default) or 8.
-		- 4: Connects each node to its 4 immediate neighbors (left, right, top, bottom).
-		- 8: Additionally connects to diagonal neighbors.
+  Parameters
+  ----------
+  rows, cols : int
+    Grid dimensions.
+  order : int, default 1
+    Maximum shortest-path distance considered a neighbour.
 
-	Returns
-	-------
-	scipy.sparse.csr_matrix
-		Sparse adjacency matrix of shape (n_rows * n_cols, n_rows * n_cols).
-	"""
-	n_nodes = n_rows * n_cols  # Total number of nodes in the grid
-	adjacency = sp.lil_matrix((n_nodes, n_nodes))  # Use LIL for efficient construction
+  Returns
+  -------
+  scipy.sparse.csr_matrix
+    Symmetric 0-1 adjacency in CSR form.
+  """
+  if order < 1:
+      raise ValueError("order must be a positive integer")
 
-	for row in range(n_rows):
-		for col in range(n_cols):
-			node = row * n_cols + col  # Current node index in 1D
+  # ---- 1. Base grid (order = 1) using Kronecker products --------------
+  def chain(n: int) -> np.ndarray:
+      B = np.eye(n, k=1, dtype=int)      # ones on the +1 diagonal
+      return B + B.T                     # add transpose → ±1 diagonals
 
-			# 4-neighborhood
-			if row > 0:  # Top neighbor
-				top = (row - 1) * n_cols + col
-				adjacency[node, top] = 1
-				adjacency[top, node] = 1
-			if row < n_rows - 1:  # Bottom neighbor
-				bottom = (row + 1) * n_cols + col
-				adjacency[node, bottom] = 1
-				adjacency[bottom, node] = 1
-			if col > 0:  # Left neighbor
-				left = row * n_cols + (col - 1)
-				adjacency[node, left] = 1
-				adjacency[left, node] = 1
-			if col < n_cols - 1:  # Right neighbor
-				right = row * n_cols + (col + 1)
-				adjacency[node, right] = 1
-				adjacency[right, node] = 1
+  B_r = chain(rows)                      # vertical 1-D chain
+  B_c = chain(cols)                      # horizontal 1-D chain
 
-			# 8-neighborhood (optional)
-			if neighborhood == 8:
-				if row > 0 and col > 0:  # Top-left neighbor
-					top_left = (row - 1) * n_cols + (col - 1)
-					adjacency[node, top_left] = 1
-					adjacency[top_left, node] = 1
-				if row > 0 and col < n_cols - 1:  # Top-right neighbor
-					top_right = (row - 1) * n_cols + (col + 1)
-					adjacency[node, top_right] = 1
-					adjacency[top_right, node] = 1
-				if row < n_rows - 1 and col > 0:  # Bottom-left neighbor
-					bottom_left = (row + 1) * n_cols + (col - 1)
-					adjacency[node, bottom_left] = 1
-					adjacency[bottom_left, node] = 1
-				if row < n_rows - 1 and col < n_cols - 1:  # Bottom-right neighbor
-					bottom_right = (row + 1) * n_cols + (col + 1)
-					adjacency[node, bottom_right] = 1
-					adjacency[bottom_right, node] = 1
-     
-	adjacency = adjacency.tocsr()
+  A = (np.kron(np.eye(rows, dtype=int), B_c) +     # row edges
+       np.kron(B_r, np.eye(cols, dtype=int)))      # column edges
 
-	# Convert to CSR for efficient arithmetic and slicing
-	return adjacency.tocsr()
+  # ---- 2. Expand to higher-order neighbourhoods -----------------------
+  if order > 1:
+    reach = A.copy().astype(bool)      # cumulative reachability
+    A_pow = A.copy()                   # A¹
+
+    for _ in range(2, order + 1):
+      A_pow = A_pow @ A              # Aᵏ
+      reach |= A_pow > 0             # logical OR with previous
+    np.fill_diagonal(reach, 0)         # remove self-loops
+    A = reach.astype(int)              # final dense 0-1 array
+
+    # ---- 3. Final step: dense → CSR sparse ------------------------------
+  return csr_matrix(A).tocsr()
 
 @jax.jit
 def index_mask_logsumexp(

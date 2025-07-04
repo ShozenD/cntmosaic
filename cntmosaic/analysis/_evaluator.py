@@ -50,7 +50,7 @@ def process_variable_metrics(var, data_eval, data_est):
 			metrics.append({
 					'var': var,
 					'cat': cat,
-					'rrmse': rmse,
+					'rmse': rmse,
 					'mae': mae,
 					'mape': mape,
 					'interval_score': int_score,

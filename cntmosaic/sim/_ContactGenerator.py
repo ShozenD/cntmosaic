@@ -2,14 +2,35 @@ import numpy as np
 import pandas as pd
 
 class ContactGenerator:
-  def __init__(self, df_part: pd.DataFrame, cint_matrix: np.ndarray | list):
+  allowed_models = ['poisson', 'negbin']
+  
+  def __init__(self,
+               df_part: pd.DataFrame,
+               cint_matrix: np.ndarray | list,
+               model: str='poisson',
+               odisp: float | None = None):
+    assert model in self.allowed_models, f"Model '{model}' is not supported. Allowed models: {self.allowed_models}"
+    
     self.df_part = df_part
     self.cint_matrix = cint_matrix # Note: If cint_matrix is a list, it must match the number of subgroups in df_part
+    self.model = model
+    self.odisp = odisp
     
   def _generate(self, df_part: pd.DataFrame, cint_matrix: np.ndarray, label: str = None):
     age = df_part['age_part'].astype(int).values
     lambda_ = cint_matrix[age, :]
-    samples = np.random.poisson(lambda_, size=(len(age), lambda_.shape[1]))
+    
+    if self.model == 'poisson':
+      samples = np.random.poisson(lambda_, size=(len(age), lambda_.shape[1]))
+    elif self.model == 'negbin':
+      if self.odisp is None:
+        raise ValueError("Overdispersion parameter 'odisp' must be provided for negative binomial model.")
+      n_success = 1 / self.odisp
+      p_success = n_success / (n_success + lambda_*self.odisp)
+      samples = np.random.negative_binomial(n_success,
+                                            p_success,
+                                            size=(len(age), lambda_.shape[1]))
+      
     positions = [np.where(row > 0)[0] for row in samples]
     
     data = []

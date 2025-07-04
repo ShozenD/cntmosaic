@@ -70,12 +70,13 @@ class BRCfine(BRC):
         log_rate = numpyro.deterministic('log_rate', beta0 + f)
         log_cint = numpyro.deterministic('log_cint', log_rate + self.log_P)
         
-        mu = jnp.exp(log_cint[self.aid, self.bid] + self.log_N + self.log_S)        
-        with numpyro.plate('data', len(self.y)):
-            if self.likelihood == 'poisson':
+        mu = jnp.exp(log_cint[self.aid, self.bid] + self.log_N + self.log_S)
+        if self.likelihood == 'poisson':
+            with numpyro.plate('data', len(self.y)):
                 numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y)
-            elif self.likelihood == 'negbin':
-                inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
+        elif self.likelihood == 'negbin':
+            inv_sqrt_disp = numpyro.sample('inv_sqrt_disp', dist.Exponential(1))
+            with numpyro.plate('data', len(self.y)):
                 numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
-                                                             concentration=1/inv_disp),
-                               obs=self.y)
+                                                            concentration=1/inv_sqrt_disp**2),
+                                obs=self.y)

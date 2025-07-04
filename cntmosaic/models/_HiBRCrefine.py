@@ -111,12 +111,13 @@ class HiBRCrefine(BRCrefine):
                 log_cint += contribution
         
         mu = jnp.exp(log_cint + self.log_N + self.log_S)
-        with plate('data', len(self.y)):
-            if self.likelihood == 'poisson':
+        if self.likelihood == 'poisson':
+            with plate('data', len(self.y)):
                 numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y) 
-                
-            if self.likelihood == 'negbin':
-                inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
+            
+        if self.likelihood == 'negbin':
+            inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
+            with plate('data', len(self.y)):
                 numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
-                                                             concentration=1/inv_disp), 
+                                                            concentration=1/inv_disp), 
                                 obs=self.y)

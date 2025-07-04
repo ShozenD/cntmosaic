@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpyro
 from numpyro import distributions as dist
 
-from .._utils import gmrf_adjacency_matrix
+from .._utils import lattice_adj
 from ._TensorSpline2D import TensorSpline2D
 
 from .._math import (
@@ -21,8 +21,8 @@ class PenalisedTensorSpline2D(TensorSpline2D):
         The number of basis functions to use in each dimension.
     degree: int | list[int], default=3
         The degree of the B-splines.
-    neighborhood: int, default=4
-        The number of neighbors to consider in the Gaussian Markov random field.
+    order: int, default=1
+        The number of neighborhood orders to consider in the Gaussian Markov random field.
     grid_type: str, default='age-age'
         The type of grid to use. Options are 'age-age' and 'diff-age'.
     coef_scale: float, default=1
@@ -38,13 +38,12 @@ class PenalisedTensorSpline2D(TensorSpline2D):
     >>> priors = {'rate': PenalisedTensorSpline2D()}
     """
     
-    ALLOWED_NEIGHBORHOODS = [4, 8]
     pytree_aux_fields = ("self.PHI", "order",)
     
     def __init__(self,
                  M: int | list[int]=30,
                  degree: int | list[int]=3,
-                 neighborhood: int=4,
+                 order: int=1,
                  grid_type: str='age-age',
                  coef_scale: float | NDArray=1,
                  transform: str | None=None,
@@ -52,10 +51,7 @@ class PenalisedTensorSpline2D(TensorSpline2D):
                  symmetric: bool=False):
         
         super().__init__(M, degree, grid_type, coef_scale, transform, prior_type, symmetric)
-        
-        if neighborhood not in self.ALLOWED_NEIGHBORHOODS:
-            raise ValueError(f"neighborhood must be one of: {self.ALLOWED_NEIGHBORHOODS}")
-        self.adj_matrix = gmrf_adjacency_matrix(M, M, neighborhood)
+        self.adj_matrix = lattice_adj(M, M, order)
         
     def set_age_bounds(self, min_age, max_age):
         return super().set_age_bounds(min_age, max_age)

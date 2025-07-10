@@ -12,6 +12,7 @@ from ._Prior2D import Prior2D
 from .._utils import (
     age_age_grid,
     diff_age_age_grid,
+    diff_age_age_index,
     lower_tri_indices,
     symmetrize_from_lower_tri
 )
@@ -95,7 +96,13 @@ class TensorSpline2D(Prior2D):
         self._set_basis()
         
     def _set_grid(self):
-        X = age_age_grid(self.A) if self.grid_type == 'age-age' else diff_age_age_grid(self.A)
+        if self.grid_type == 'age-age':
+            X = age_age_grid(self.A)
+        elif self.grid_type == 'diff-age':
+            X = diff_age_age_grid(self.A)
+        else:
+            raise ValueError("grid_type must be 'age-age' or 'diff-age'")
+
         self.x = np.sort(np.unique(X[:, 0]))
         self.y = np.sort(np.unique(X[:, 1]))
         
@@ -111,18 +118,21 @@ class TensorSpline2D(Prior2D):
         ])
     
     def tensor_spline_basis(self,
-                      x: NDArray,
-                      y: NDArray,
-                      n_knots: list[int],
-                      degree: list[int]) -> NDArray:
-        
+                            x: np.ndarray,
+                            y: np.ndarray,
+                            n_knots: list[int],
+                            degree: list[int]) -> np.ndarray:
         x_knots = self._define_knots(x, n_knots[0], degree[0])
         y_knots = self._define_knots(y, n_knots[1], degree[1])
         
         PHI1 = BSpline(x_knots, np.eye(len(x_knots) - degree[0] - 1), degree[0])(x)[:, 1:]
         PHI2 = BSpline(y_knots, np.eye(len(y_knots) - degree[1] - 1), degree[1])(y)[:, 1:]
         
-        return np.kron(PHI1, PHI2)
+        if self.grid_type == 'age-age':
+            return np.kron(PHI1, PHI2)
+        elif self.grid_type == 'diff-age':
+            diff_age_idx = diff_age_age_index(self.A)
+            return np.kron(PHI1, PHI2)[diff_age_idx]
     
     def _set_basis(self):
         """Sets the basis matrices based on the prior type."""

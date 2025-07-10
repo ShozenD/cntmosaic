@@ -23,7 +23,7 @@ def age_age_grid(A: int) -> NDArray:
 def diff_age_age_grid(A: int) -> NDArray:
 	"""
 	Returns the coordinates of the non-nuisance entries of a 
-	difference-in-age by age matrix of size (2A - 1 x A) in column-major order.
+	difference-in-age by age matrix of size (2A - 1) x A) in column-major order.
 	
 	Parameters
 	----------
@@ -39,7 +39,15 @@ def diff_age_age_grid(A: int) -> NDArray:
 	Vendendijck et al., "Cohort-based smoothing methods for age-specific contact rates",
 	BioRxiv. 2022
 	"""
-	return np.array([[A - i + j, i + 1] for i in range(A) for j in range(A)])
+	return np.array([[i - j, i] for i in range(A) for j in range(A)])
+
+def diff_age_age_index(A: int) -> np.ndarray:
+  """
+  Returns the indices of the non-nuisance entries of a difference-in-age by age matrix
+  arranged in column-major order.
+  """
+
+  return np.array([A + i - j - 1 for j in range(A) for i in range(A)])
 
 
 def symmetrize_from_lower_tri(N: int) -> NDArray:

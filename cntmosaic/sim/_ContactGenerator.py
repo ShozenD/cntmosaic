@@ -26,7 +26,7 @@ class ContactGenerator:
       if self.odisp is None:
         raise ValueError("Overdispersion parameter 'odisp' must be provided for negative binomial model.")
       n_success = 1 / self.odisp
-      p_success = n_success / (n_success + lambda_*self.odisp)
+      p_success = n_success / (n_success + lambda_)
       samples = np.random.negative_binomial(n_success,
                                             p_success,
                                             size=(len(age), lambda_.shape[1]))

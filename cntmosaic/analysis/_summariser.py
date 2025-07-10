@@ -34,11 +34,20 @@ class ModelSummariserSVI:
 				if 'log_delta' in name:
 					var = name.split('/')[0]
 					cat = self.model.ds.attrs['grp_vars'][var]
+					
 					post_pred_cint[var] = {
-						cat[i]: np.exp(log_rate[:, None, :, :] + site + self.model.log_P[None, None, :, :])[:, i, :, :]
+						cat[i]: np.exp(log_rate[:, None, :, :] + site + self.model.log_P[None, None, :, :]).astype(np.float32)[:, i, :, :]
 						for i in range(len(cat))
 					}
-		
+					'''
+					post_pred_cint[var] = {}
+					for i, c in enumerate(cat):
+						# only compute for this category
+						cint = np.exp(
+							log_rate + site[:, i, :, :] + self.model.log_P
+						).astype(np.float32)
+						post_pred_cint[var][c] = cint
+					'''
 			self.post_pred_cint = post_pred_cint
 		elif isinstance(self.model, (BRCfine, BRCrefine)):
 			pass

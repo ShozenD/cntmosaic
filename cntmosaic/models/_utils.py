@@ -41,14 +41,26 @@ def diff_age_age_grid(A: int) -> NDArray:
 	"""
 	return np.array([[i - j, i] for i in range(A) for j in range(A)])
 
+
 def diff_age_age_index(A: int) -> np.ndarray:
   """
   Returns the indices of the non-nuisance entries of a difference-in-age by age matrix
-  arranged in column-major order.
+  arranged in row-major order.
   """
-
-  return np.array([A + i - j - 1 for j in range(A) for i in range(A)])
-
+  idx = np.arange((2*A -1) * A)
+  idx_matrix = idx.reshape((2*A - 1, A))
+  
+  r = np.empty(A**2, dtype=int)
+  c = np.empty(A**2, dtype=int)
+  
+  n = 0
+  for j in range(A):
+    for i in range(A):
+      r[n] = A - 1 + i - j
+      c[n] = j
+      n += 1
+      
+  return idx_matrix[r, c]
 
 def symmetrize_from_lower_tri(N: int) -> NDArray:
 	"""
@@ -78,6 +90,45 @@ def symmetrize_from_lower_tri(N: int) -> NDArray:
 			n += 1
 
 	return idx
+
+def symm_from_tril_indices_row(N):
+    """
+    Return an index array that maps a 1-D array containing the **lower-triangle
+    (including the diagonal) of an N x N matrix, stored row-wise** onto the
+    flattened (row-major) symmetric matrix.
+
+    After calling
+        idx = symmetrisation_indices_from_lower(lower_tri)
+    you can obtain the full symmetric matrix, flattened, via
+        flat_sym = lower_tri[idx]
+
+    Parameters
+    ----------
+    N: int
+				Dimension of the square matrix.
+
+    Returns
+    -------
+    idx : 1-D `np.ndarray` of `int`
+        Length `N*N` index array such that `lower_tri[idx]` yields
+        the symmetric matrix in row-major order.
+
+    Raises
+    ------
+    ValueError
+        If the input length is not a triangular number.
+    """
+    # Build the index matrix
+    idx_mat = np.empty((N, N), dtype=int)
+
+    # Fill the lower triangle with 0..m-1
+    r, c = np.tril_indices(N)
+    idx_mat[r, c] = np.arange(int((N * (N + 1)) / 2), dtype=int)
+
+    # Mirror to the upper triangle to ensure symmetry
+    idx_mat[c, r] = idx_mat[r, c]
+
+    return idx_mat.ravel()
 
 
 def lower_tri_indices(N: int, inc_diag=True) -> NDArray:
@@ -111,7 +162,43 @@ def lower_tri_indices(N: int, inc_diag=True) -> NDArray:
 	return idx
 
 import numpy as np
-from numpy.typing import NDArray
+
+def tril_indices_row(N: int) -> np.ndarray:
+    """
+    Return the linear (row-major) indices of the **lower-triangular part
+    (including the main diagonal)** of an N × N matrix, in row-wise order.
+
+    The indices refer to the array obtained with `matrix.ravel()` or
+    `matrix.flatten()`, i.e. C-order / row-major storage.
+
+    Parameters
+    ----------
+    N : int
+        Size of the square matrix (must be non-negative).
+
+    Returns
+    -------
+    idx : 1-D `np.ndarray` of `int`
+        Length `N*(N+1)//2` array.  
+        Accessing `matrix.ravel()[idx]` yields the lower triangle
+        `[a₀₀, a₁₀, a₁₁, a₂₀, a₂₁, a₂₂, …]`.
+
+    Examples
+    --------
+    >>> N = 3
+    >>> idx = lower_tri_flat_indices(N)
+    >>> idx
+    array([0, 3, 4, 6, 7, 8])
+    >>> A = np.arange(1, 10).reshape(3, 3)
+    >>> A
+    array([[1, 2, 3],
+           [4, 5, 6],
+           [7, 8, 9]])
+    >>> A.ravel()[idx]          # lower triangle in row-wise order
+    array([1, 4, 5, 7, 8, 9])
+    """
+    r, c = np.tril_indices(N)
+    return r * N + c
 
 def rw_drop_indices(n: int, order: int = 2) -> tuple[NDArray, NDArray, NDArray]:
     """

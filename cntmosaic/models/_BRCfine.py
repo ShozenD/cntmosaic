@@ -9,6 +9,7 @@ from numpyro.handlers import scope
 
 from ._BRC import BRC
 from ..dataloader import DataLoader
+from ..distributions import QuasiPoisson, QuasiNegBin
 
 class BRCfine(BRC):
     """Bayesian Rate Consistency model with fine age inputs.
@@ -26,6 +27,8 @@ class BRCfine(BRC):
         Additional offset to be multiplied to the contact intensity.
     likelihood: str, default='negbin'
         Likelihood function to use.
+    psi: float, default=0.1
+        Dispersion parameter for the QuasiPoisson likelihood.
         
     References
 	----------
@@ -36,8 +39,11 @@ class BRCfine(BRC):
     def __init__(self,
                  dataloader: DataLoader,
                  priors: dict, 
-                 likelihood: str='negbin'):
-        
+                 likelihood: str='negbin',
+                 inv_odist: float=1.0,
+                 psi: float=1.0):
+        self.psi = psi
+        self.inv_odist = inv_odist
         super().__init__(dataloader, priors, likelihood)
         
         self._validate_inputs()
@@ -70,13 +76,23 @@ class BRCfine(BRC):
         log_rate = numpyro.deterministic('log_rate', beta0 + f)
         log_cint = numpyro.deterministic('log_cint', log_rate + self.log_P)
         
-        mu = jnp.exp(log_cint[self.aid, self.bid] + self.log_N + self.log_S)
+        mu = numpyro.deterministic(
+            'mu',
+            jnp.exp(log_cint[self.aid, self.bid] + self.log_N + self.log_S)
+        )
         if self.likelihood == 'poisson':
             with numpyro.plate('data', len(self.y)):
                 numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y)
         elif self.likelihood == 'negbin':
-            inv_sqrt_disp = numpyro.sample('inv_sqrt_disp', dist.Exponential(1))
+            inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
             with numpyro.plate('data', len(self.y)):
                 numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
-                                                            concentration=1/inv_sqrt_disp**2),
+                                                            concentration=1/inv_disp),
                                 obs=self.y)
+        elif self.likelihood == 'quasipoisson':
+            with numpyro.plate('data', len(self.y)):
+                numpyro.sample('obs', QuasiPoisson(mu=mu, psi = self.psi), obs=self.y)
+        elif self.likelihood == 'quasinegbin':
+            with numpyro.plate('data', len(self.y)):
+                numpyro.sample('obs', QuasiNegBin(mu=mu, inv_odist=self.inv_odist, psi=self.psi), obs=self.y)
+            

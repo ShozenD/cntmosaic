@@ -66,15 +66,15 @@ class PenalisedTensorSpline2D(TensorSpline2D):
             beta = numpyro.sample('spline_coef', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
             
             f = self.PHI @ beta
-            f = f[self.sym_tri_idx]
-            return f.reshape((self.A, self.A), order='F')
+            f = f[self.symm_tril_idx]
+            return f.reshape((self.A, self.A))
         
         elif self.type == 'partial':
             with numpyro.plate('event', self.event_dim_eff):
                 beta = numpyro.sample('spline_coef', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
             
             f = beta @ self.PHI_T
-            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A))
         
         elif self.type == 'full':
             plate_diag = numpyro.plate('diag', self.event_dim_diag)
@@ -87,8 +87,8 @@ class PenalisedTensorSpline2D(TensorSpline2D):
                 beta_non_diag = numpyro.sample('spline_coef_non_diag', dist.CAR(0, 0.999, 1/self.coef_scale, self.adj_matrix, is_sparse=True))
             
             f_diag = beta_diag @ self.PHI_diag_T
-            f_diag = f_diag[:,self.sym_tri_idx] # Must be symmetric
-            
+            f_diag = f_diag[:,self.symm_tril_idx] # Must be symmetric
+
             f_non_diag = beta_non_diag @ self.PHI_non_diag_T
             
             # Preallocate full tensor flattened as vector
@@ -109,7 +109,7 @@ class PenalisedTensorSpline2D(TensorSpline2D):
             f = f.at[:, non_diag_idx].set(f_non_diag)
 
             # Reshape to (event_dim_eff, A, A)
-            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A))
         else:
             raise ValueError("Unknown prior type")
         

@@ -13,8 +13,8 @@ from .._utils import (
     age_age_grid,
     diff_age_age_grid,
     diff_age_age_index,
-    lower_tri_indices,
-    symmetrize_from_lower_tri
+    tril_indices_row,
+    symm_from_tril_indices_row
 )
 
 from .._math import (
@@ -66,7 +66,7 @@ class TensorSpline2D(Prior2D):
     --------
     >>> priors = {'rate' = TensorSpline2D('global', symmetric=True)}
     """
-    pytree_aux_fields = ("self.PHI", "self.PHI_T", "self.ltri_idx", "self.sym_tri_idx")
+    pytree_aux_fields = ("self.PHI", "self.PHI_T", "self.tril_idx", "self.symm_tril_idx")
     
     def __init__(self,
                  M: int | list[int]=30,
@@ -103,10 +103,14 @@ class TensorSpline2D(Prior2D):
         else:
             raise ValueError("grid_type must be 'age-age' or 'diff-age'")
 
-        self.x = np.sort(np.unique(X[:, 0]))
-        self.y = np.sort(np.unique(X[:, 1]))
+        x = np.sort(np.unique(X[:, 0]))
+        y = np.sort(np.unique(X[:, 1]))
         
-        self.sym_tri_idx = symmetrize_from_lower_tri(self.A) if self.symmetric else None
+        # Scale x and y to [0, 1]
+        self.x = (x - self.min_age) / (self.max_age - self.min_age)
+        self.y = (y - self.min_age) / (self.max_age - self.min_age)
+        
+        self.symm_tril_idx = symm_from_tril_indices_row(self.A) if self.symmetric else None
         
     def _define_knots(self, x: NDArray, n_knots: int, degree: int) -> NDArray:
         boundary_extension = (x.max() - x.min()) * 0.05
@@ -140,14 +144,14 @@ class TensorSpline2D(Prior2D):
         self.PHI = self.tensor_spline_basis(self.x, self.y, n_basis_functions, self.degree)
         
         if self.type == 'global':
-            self.ltri_idx = lower_tri_indices(self.A)
-            self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
-            self.PHI = self.PHI[self.ltri_idx]
+            self.tril_idx = tril_indices_row(self.A)
+            self.symm_tril_idx = symm_from_tril_indices_row(self.A)
+            self.PHI = self.PHI[self.tril_idx]
             self.PHI_T = self.PHI.T
         elif self.type == 'full': # Full case
-            self.ltri_idx = lower_tri_indices(self.A)
-            self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
-            self.PHI_diag = self.PHI[self.ltri_idx]
+            self.tril_idx = tril_indices_row(self.A)
+            self.symm_tril_idx = symm_from_tril_indices_row(self.A)
+            self.PHI_diag = self.PHI[self.tril_idx]
             self.PHI_non_diag = self.PHI
             self.PHI_diag_T = self.PHI_diag.T
             self.PHI_non_diag_T = self.PHI_non_diag.T
@@ -162,8 +166,8 @@ class TensorSpline2D(Prior2D):
                 beta = numpyro.sample('spline_coef', dist.Normal(0, self.coef_scale))
             
             f = beta @ self.PHI_T
-            f = f[self.sym_tri_idx] if self.symmetric else f
-            return f.reshape((self.A, self.A), order='F')
+            f = f[self.symm_tril_idx] if self.symmetric else f
+            return f.reshape((self.A, self.A))
         
         elif self.type == 'partial':
             plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)
@@ -172,8 +176,8 @@ class TensorSpline2D(Prior2D):
                 beta = numpyro.sample('coef', dist.Normal(0, self.coef_scale))
 
             f = beta @ self.PHI_T
-            f = f[:,self.sym_tri_idx] if self.symmetric else f
-            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = f[:,self.symm_tril_idx] if self.symmetric else f
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A))
                 
         elif self.type == 'full':
             plate_diag = numpyro.plate('diag', self.event_dim_diag, dim=-2)
@@ -187,7 +191,7 @@ class TensorSpline2D(Prior2D):
                 beta_non_diag = numpyro.sample('coef_non_diag', dist.Normal(0, self.coef_scale))
             
             f_diag = beta_diag @ self.PHI_diag_T
-            f_diag = f_diag[:,self.sym_tri_idx] # Must be symmetric
+            f_diag = f_diag[:,self.symm_tril_idx] # Must be symmetric
             
             f = beta_non_diag @ self.PHI_non_diag_T
             
@@ -196,7 +200,7 @@ class TensorSpline2D(Prior2D):
             for i in range(self.event_dim_diag):
                 f = jnp.insert(f, (i+1)**2 - 1, f_diag[i,:], axis=0)
                 
-            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A))
         else:
             raise ValueError("Unknown prior type")
                 

@@ -11,7 +11,7 @@ import xarray as xr
 
 import jax.numpy as jnp
 
-from ._utils import make_idarrs_for_intervals, fine_coarse_matrix
+from ._utils import make_idarrs_for_intervals
 
 
 @dataclass
@@ -56,9 +56,9 @@ class CoordToColumns:
 
     def age_vars(self):
         if self.age_cnt:
-            return [self.age_part, self.age_cnt]
+            return [self.age_cnt, self.age_part]
         elif self.age_grp_cnt:
-            return [self.age_part, self.age_grp_cnt]
+            return [self.age_grp_cnt, self.age_part]
         else:
             raise ValueError("One of age_cnt or age_grp_cnt must be provided")
 
@@ -268,7 +268,7 @@ class BaseLoader(ABC):
         """
         Loads the data into an xarray dataset.
         """
-        # [Do] Calculate the number of participants stratified by age and oter grouping variables
+        # [Do] Calculate the number of participants stratified by age and other grouping variables
         grp_vars_n = [self.col_map.age_part]
         if self.col_map.grp_vars_part:
             grp_vars_n += self.col_map.grp_vars_part
@@ -354,10 +354,8 @@ class BaseLoader(ABC):
             aid_exp, bid_pad = make_idarrs_for_intervals(
                 df_full, self.col_map.age_grp_cnt, self.ds["aid"].to_numpy()
             )
-            # self.ds.coords["age_grps"] = df_full[self.col_map.age_grp_cnt].cat.codes.unique()
             self.ds["aid_exp"] = (["index", "max_int_length"], aid_exp)
             self.ds["bid_pad"] = (["index", "max_int_length"], bid_pad)
-            # self.ds["fc_map"] = (["age", "age_grps"], fine_coarse_matrix(df_full[self.col_map.age_grp_cnt]))
 
         for var in self.col_map.grp_vars_part:
             self.raw_df[var] = self.raw_df[var].astype("category")

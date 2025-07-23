@@ -37,7 +37,7 @@ class BRC(ABC):
   human contact patterns from coarse contact data: The Bayesian rate consistency model",
   PLoS Computational Biology. 2023
   """
-  ALLOWED_LIKELIHOODS = ['negbin', 'poisson']
+  ALLOWED_LIKELIHOODS = ['negbin', 'poisson', 'quasipoisson', 'quasinegbin']
   
   def __init__(self, dataloader: DataLoader, priors: dict, likelihood: str='negbin'):
     self._validate_common_inputs(dataloader, priors, likelihood)

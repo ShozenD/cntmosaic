@@ -12,6 +12,9 @@ from ._Prior2D import Prior2D
 from .._utils import (
     age_age_grid,
     diff_age_age_grid,
+    diff_age_age_index,
+    tril_indices_row,
+    symm_from_tril_indices_row,
     lower_tri_indices,
     symmetrize_from_lower_tri
 )
@@ -72,10 +75,9 @@ class HSGP2D(Prior2D):
         self.L = list(np.abs(Xn).max(axis=0) * self.C)
         
         if self.type == 'global':
-            ltri_idx = lower_tri_indices(self.A)
-            self.X = Xn[ltri_idx]
-            self.sym_tri_idx = symmetrize_from_lower_tri(self.A)
-        # TODO: implement 'full' type
+            tril_idx = tril_indices_row(self.A)
+            self.X = Xn[tril_idx]
+            self.sym_tril_idx = symm_from_tril_indices_row(self.A)
         else:
             self.X = Xn
     
@@ -105,8 +107,8 @@ class HSGP2D(Prior2D):
                 beta = numpyro.sample('gp_beta', dist.Normal(0, 1))
             
             f = self.eig_func @ (spd * beta)
-            f = f[self.sym_tri_idx]
-            return f.reshape((self.A, self.A), order='F')
+            f = f[self.sym_tril_idx]
+            return f.reshape((self.A, self.A))
         
         elif self.type == 'partial':
             plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)
@@ -123,7 +125,7 @@ class HSGP2D(Prior2D):
                 beta = numpyro.sample('gp_beta', dist.Normal(0, 1))
 
             f = (spd * beta) @ self.eig_func.T
-            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
+            f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A))
         
         elif self.type == 'full':
             plate_diag = numpyro.plate('diag', self.event_dim_diag, dim=-2)
@@ -147,7 +149,7 @@ class HSGP2D(Prior2D):
                 beta_non_diag = numpyro.sample('gp_beta_non_diag', dist.Normal(0, 1))
 
             f_diag = (spd_diag * beta_diag) @ self.eig_func.T
-            f_diag = f_diag[:, self.sym_tri_idx]
+            f_diag = f_diag[:, self.sym_tril_idx]
 
             f_non_diag = (spd_non_diag * beta_non_diag) @ self.eig_func.T
 

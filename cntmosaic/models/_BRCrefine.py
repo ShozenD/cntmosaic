@@ -8,7 +8,7 @@ from numpyro.handlers import plate, scope
 from ..dataloader import DataLoader
 from ._BRC import BRC
 from ._utils import index_mask_logsumexp
-from .priors import HSGP2D
+from .priors import HSGP2D, Hill
 
 class BRCrefine(BRC):
   """Bayesian Rate Consistency model with fine participant age but coarse contacted age.
@@ -58,7 +58,11 @@ class BRCrefine(BRC):
     self.aid = jnp.array(self.ds.aid.values)
     self.aid_exp = jnp.array(self.ds.aid_exp.values)
     self.bid_pad = jnp.array(self.ds.bid_pad.values)
-    
+
+    if hasattr(self.ds, 'rid'): # Repeat effects are specified
+      self.rid = jnp.array(self.ds.rid.values)
+      self.hill = Hill(max_value=self.ds.rid.max())
+
   def _validate_inputs(self):
     """
     This method validates the inputs which are specific to the BRCrefine model.
@@ -81,8 +85,11 @@ class BRCrefine(BRC):
     log_rate = numpyro.deterministic('log_rate', beta0 + f)
     log_cint = numpyro.deterministic('log_cint', log_rate + self.log_P)
     
+    repeat_effect = self.hill.sample()[self.rid] if hasattr(self, 'rid') else 0.0
+    
     mu = jnp.exp(
       index_mask_logsumexp(log_cint, self.aid_exp, self.bid_pad)
+      + repeat_effect
       + self.log_N
       + self.log_S
     )

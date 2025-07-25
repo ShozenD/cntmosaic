@@ -5,6 +5,7 @@ from ._PenalisedTensorSpline2D import PenalisedTensorSpline2D
 from ._IGMRF2D import IGMRF2D
 from ._GMRF2D import GMRF2D
 from ._vdKassteele import vdKassteele
+from ._Hill import Hill
 
 __all__ = [
     'Prior2D',
@@ -12,5 +13,6 @@ __all__ = [
     'TensorSpline2D',
     'PenalisedTensorSpline2D'
     'IGMRF2D',
-    'GMRF2D'
+    'GMRF2D',
+    'Hill'
 ]

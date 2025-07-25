@@ -38,6 +38,8 @@ class CoordToColumns:
     grp_vars_cnt: Optional[list[str] | str]
         Column names for the stratification variables in the contact data.
         It can be a list of strings or a single string.
+    repeat_part: Optional[str]
+        Column name giving the number of times a participant participated in the study.
     age_pop: Optional[str]
         Column name for the population age. This is used for population size calculations.
     size_pop: Optional[str]
@@ -51,6 +53,7 @@ class CoordToColumns:
     y: Optional[str] = "y"
     grp_vars_part: Optional[list[str] | str] = None
     grp_vars_cnt: Optional[list[str] | str] = None
+    repeat_part: Optional[str] = None 
     age_pop: Optional[str] = None
     size_pop: Optional[str] = None
 
@@ -87,6 +90,10 @@ class CoordToColumns:
             )
             for v in var:
                 self.grp_vars_cnt.remove(v)
+        
+        # If repeat_part is specified, append it to the participant grouping variables
+        if self.repeat_part is not None:
+            self.grp_vars_part.append(self.repeat_part)
 
 
 class BaseLoader(ABC):
@@ -358,9 +365,18 @@ class BaseLoader(ABC):
             self.ds["bid_pad"] = (["index", "max_int_length"], bid_pad)
 
         for var in self.col_map.grp_vars_part:
-            self.raw_df[var] = self.raw_df[var].astype("category")
-            self.ds[var] = xr.DataArray(
-                data=self.raw_df[var],
+            if var != self.col_map.repeat_part: # Exclude repeat_part from stratification variables
+                self.raw_df[var] = self.raw_df[var].astype("category")
+                self.ds[var] = xr.DataArray(
+                    data=self.raw_df[var],
+                    dims="index",
+                    coords={"index": self.ds.coords["index"]},
+                )
+        
+        # If repeat effects are specified
+        if self.col_map.repeat_part is not None:
+            self.ds["rid"] = xr.DataArray(
+                data=self.raw_df[self.col_map.repeat_part].astype(int).to_numpy(),
                 dims="index",
                 coords={"index": self.ds.coords["index"]},
             )

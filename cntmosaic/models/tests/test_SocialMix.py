@@ -11,7 +11,7 @@ df_age_dist = load_age_distribution('United_States')
 patterns = load_template_patterns('United_States')
 
 def test_basic_functionality():
-		df_part = ParticipantGenerator(1000, df_age_dist['P'].values).generate()
+		df_part = ParticipantGenerator(df_age_dist['P'].values).generate(n=1000)
 		cint_matrix = ContactMatrixGenerator(patterns, df_age_dist['P'].values).generate()
 		df_cnt = ContactGenerator(df_part, cint_matrix).generate()
   
@@ -29,7 +29,7 @@ def test_basic_functionality():
 		assert sm.boots_rate.shape == (10, 16, 16)
   
 def test_only_one_participant():	
-		df_part = ParticipantGenerator(1, df_age_dist['P'].values).generate()
+		df_part = ParticipantGenerator(df_age_dist['P'].values).generate(n=1)
 		cint_matrix = ContactMatrixGenerator(patterns, df_age_dist['P'].values).generate()
 		df_cnt = ContactGenerator(df_part, cint_matrix).generate()
   

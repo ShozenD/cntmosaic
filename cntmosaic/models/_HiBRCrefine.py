@@ -8,6 +8,7 @@ from numpyro.handlers import plate, scope
 from ..dataloader import DataLoader
 from ._BRCrefine import BRCrefine
 from ._utils import index_mask_logsumexp
+from .priors import HSGP2D, Hill
   
 def expand_idarr(id, length):
     return np.repeat(id[:,np.newaxis], length, axis=1)
@@ -52,8 +53,14 @@ class HiBRCrefine(BRCrefine):
         }
         self.set_prior_event_dim()
         self.set_prior_loc()
-        self.set_log_age_dist_props()       
+        self.set_log_age_dist_props()
         
+        if hasattr(self.ds, 'rid'):
+            self.rid = jnp.array(self.ds.rid.values)
+            self.hill = Hill(
+                event_dim=self.ds.attrs['grp_vars']['repeat'].shape[0],
+                prior_type='global'
+            )
         
     # Compute the log of the age distribution proportions
     def set_log_age_dist_props(self):
@@ -110,7 +117,9 @@ class HiBRCrefine(BRCrefine):
                 )
                 log_cint += contribution
         
-        mu = jnp.exp(log_cint + self.log_N + self.log_S)
+        repeat_effect = self.hill.sample()[self.rid] if hasattr(self, 'rid') else 0.0
+
+        mu = jnp.exp(log_cint + self.log_N + self.log_S + repeat_effect)
         if self.likelihood == 'poisson':
             with plate('data', len(self.y)):
                 numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y) 

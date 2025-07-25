@@ -7,7 +7,7 @@ from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
 from ..dataloader import DataLoader
 from ._BRCfine import BRCfine
-from .priors import Prior2D
+from .priors import Prior2D, HSGP2D, Hill
 
 class HiBRCfine(BRCfine):
     """High-resolution Bayesian Rate Consistency model with fine age inputs.
@@ -35,6 +35,10 @@ class HiBRCfine(BRCfine):
         self.set_prior_event_dim()
         self.set_prior_loc()
         self.set_log_age_dist_props()
+        
+        if hasattr(self.ds, 'rid'):
+            self.rid = jnp.array(self.ds.rid.values)
+            self.hill = Hill(max_value=self.ds.rid.max())
         
     def set_log_age_dist_props(self):
         self.log_age_dist_props = {}
@@ -82,10 +86,11 @@ class HiBRCfine(BRCfine):
             with scope(prefix=var):
                 log_cint += self.sample_log_delta(var)[self.X_ids[var], self.aid, self.bid]
         
-        mu = jnp.exp(log_cint + self.log_N + self.log_S)
+        repeat_effect = self.hill.sample()[self.rid] if hasattr(self, 'rid') else 0.0
+
+        mu = jnp.exp(log_cint + self.log_N + self.log_S + repeat_effect)
         if self.likelihood == 'poisson':
-            
-                numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y) 
+            numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y) 
             
         if self.likelihood == 'negbin':
             inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))

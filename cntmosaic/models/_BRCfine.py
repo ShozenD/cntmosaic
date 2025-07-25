@@ -10,6 +10,7 @@ from numpyro.handlers import scope
 from ._BRC import BRC
 from ..dataloader import DataLoader
 from ..distributions import QuasiPoisson, QuasiNegBin
+from .priors import HSGP2D, Hill
 
 class BRCfine(BRC):
     """Bayesian Rate Consistency model with fine age inputs.
@@ -54,6 +55,10 @@ class BRCfine(BRC):
         self.log_P = jnp.array(self.ds.log_P.values)[jnp.newaxis,:]
         self.log_S = jnp.array(self.ds.log_S.values) if hasattr(self.ds, 'log_S') else jnp.zeros_like(self.y)
         
+        if hasattr(self.ds, 'rid'):
+            self.rid = jnp.array(self.ds.rid.values)
+            self.hill = Hill(max_value=self.ds.rid.max())
+
     def _validate_inputs(self):
         """
         This method validates the inputs which are specific to the BRCfine model.
@@ -76,9 +81,11 @@ class BRCfine(BRC):
         log_rate = numpyro.deterministic('log_rate', beta0 + f)
         log_cint = numpyro.deterministic('log_cint', log_rate + self.log_P)
         
+        repeat_effect = self.hill.sample()[self.rid] if hasattr(self, 'rid') else 0.0
+        
         mu = numpyro.deterministic(
             'mu',
-            jnp.exp(log_cint[self.aid, self.bid] + self.log_N + self.log_S)
+            jnp.exp(log_cint[self.aid, self.bid] + self.log_N + self.log_S + repeat_effect)
         )
         if self.likelihood == 'poisson':
             with numpyro.plate('data', len(self.y)):

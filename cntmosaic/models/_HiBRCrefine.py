@@ -57,10 +57,7 @@ class HiBRCrefine(BRCrefine):
         
         if hasattr(self.ds, 'rid'):
             self.rid = jnp.array(self.ds.rid.values)
-            self.hill = Hill(
-                event_dim=self.ds.attrs['grp_vars']['repeat'].shape[0],
-                prior_type='global'
-            )
+            self.hill = Hill(max_value=self.ds.rid.max())
         
     # Compute the log of the age distribution proportions
     def set_log_age_dist_props(self):

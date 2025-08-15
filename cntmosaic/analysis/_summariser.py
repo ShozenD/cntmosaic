@@ -28,26 +28,37 @@ class ModelSummariserSVI:
 	def get_post_predictive_cint(self):		
 		if isinstance(self.model, (HiBRCfine, HiBRCrefine)): 
 			# For HiBRC models, the contact intensity needs to be computed
-			log_rate = self.post_pred['log_rate']
+			log_rate = self.post_pred['log_rate'].astype(np.float32)  # Convert early to save memory
+			log_P = self.model.log_P.astype(np.float32)  # Convert early to save memory
 			post_pred_cint = {}
+			
 			for name, site in self.post_pred.items():
 				if 'log_delta' in name:
 					var = name.split('/')[0]
 					cat = self.model.ds.attrs['grp_vars'][var]
+					site = site.astype(np.float32)  # Convert early to save memory
 					
-					post_pred_cint[var] = {
-						cat[i]: np.exp(log_rate[:, None, :, :] + site + self.model.log_P[None, None, :, :]).astype(np.float32)[:, i, :, :]
-						for i in range(len(cat))
-					}
-					'''
+					# Initialize dict for this variable
 					post_pred_cint[var] = {}
+					
+					# Process each category separately to avoid memory explosion
 					for i, c in enumerate(cat):
-						# only compute for this category
-						cint = np.exp(
-							log_rate + site[:, i, :, :] + self.model.log_P
-						).astype(np.float32)
+						# Compute contact intensity for this category only
+						# Add dimensions efficiently without creating large intermediate arrays
+						log_rate_expanded = log_rate[:, np.newaxis, :, :]  # shape: (n_samples, 1, A, A)
+						site_cat = site[:, i:i+1, :, :]  # shape: (n_samples, 1, A, A) - slice to keep dims
+						log_P_expanded = log_P[np.newaxis, np.newaxis, :, :]  # shape: (1, 1, A, A)
+						
+						# Compute log sum and exp in one operation to minimize memory
+						log_sum = log_rate_expanded + site_cat + log_P_expanded
+						
+						# Use np.exp with out parameter to avoid creating intermediate arrays
+						cint = np.exp(log_sum, dtype=np.float32).squeeze(axis=1)  # Remove singleton dimension
 						post_pred_cint[var][c] = cint
-					'''
+						
+						# Clean up intermediate arrays to free memory immediately
+						del log_rate_expanded, site_cat, log_sum, cint
+			
 			self.post_pred_cint = post_pred_cint
 		elif isinstance(self.model, (BRCfine, BRCrefine)):
 			pass

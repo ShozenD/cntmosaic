@@ -1,14 +1,22 @@
 import os
 
+import numpy as np
 import jax
 from jax import random
 import jax.numpy as jnp
 from optax import linear_onecycle_schedule
 
+import numpyro
+from numpyro.handlers import substitute
+from numpyro.infer.util import _predictive
+from numpyro.infer.util import log_likelihood
 from numpyro.infer import MCMC, NUTS, SVI, Predictive
 from numpyro.infer.elbo import Trace_ELBO
 from numpyro.infer.initialization import init_to_median, init_to_uniform
 from numpyro.optim import Adam
+
+from arviz.data.base import dict_to_dataset
+from arviz.data.inference_data import InferenceData
 
 def run_inference_mcmc(
     prng_key,
@@ -71,3 +79,108 @@ def posterior_predictive_svi(
 ) -> dict[str, jax.Array]:
     predictive = Predictive(model, guide=guide, params=params, num_samples=num_samples)
     return predictive(prng_key, **model_kwargs)
+  
+class NumPyroSVIConverter:
+	def __init__(
+		self,
+		model: callable,
+		guide: callable,
+		svi: SVI,
+		**model_kwargs
+	):
+		"""Convert NumPyro SVI data into an InferenceData object.
+
+		Parameters
+		----------
+		model: callable
+			The generative model.
+		guide: callable
+			The variational guide.
+		svi: SVI
+			The SVI object.
+		num_samples: int
+			The number of posterior samples to draw.
+		**model_kwargs
+			Additional keyword arguments for the model.
+		"""
+		self.model = model
+		self.svi = svi
+		self.guide = guide
+		self.num_samples = int(svi.state.optim_state[0])
+		self.model_kwargs = model_kwargs
+		self.inference_dict = {}
+
+		posterior_samples = {}
+		batch_size = (self.num_samples,)
+		sub_guide = substitute(self.guide, self.svi.params)
+		self.posterior = _predictive(
+			random.PRNGKey(0),
+			sub_guide,
+			posterior_samples,
+			batch_size,
+			return_sites="",
+			parallel=True,
+			model_args=(),
+			model_kwargs=model_kwargs,
+			exclude_deterministic=True,
+		)
+  
+	def posterior_to_xarray(self):
+		# Remove items that contain '_auto_' from data
+		data = {k: v for k, v in self.posterior.items() if '_auto_' not in k}
+		for key, values in data.items():
+			data[key] = values[None, ...]
+
+		return dict_to_dataset(data, library=numpyro)
+
+	def log_likelihood_to_xarray(self):
+		log_likelihood_dict = log_likelihood(
+			self.model,
+			self.posterior,
+			**self.model_kwargs
+		)
+  
+		data = {}
+		for obs_name, log_like in log_likelihood_dict.items():
+			shape = (1, log_like.shape[0]) + log_like.shape[1:]
+			data[obs_name] = np.reshape(np.asarray(log_like), shape)
+
+		return dict_to_dataset(data, library=numpyro)
+
+	def to_inference_data(self):
+		"""Convert all available data to an Inference object."""
+		return InferenceData(
+     	**{
+				"posterior": self.posterior_to_xarray(),
+				"log_likelihood": self.log_likelihood_to_xarray()
+			}
+    )
+
+def to_inference_data(
+  model: callable,
+  guide: callable,
+  svi: SVI,
+  **model_kwargs
+):
+  """
+  Convert NumPyro SVI data to an InferenceData object.
+
+  Parameters
+  ----------
+  model: callable
+      The generative model.
+  guide: callable
+      The variational guide.
+  svi: SVI
+      The SVI object.
+  **model_kwargs
+      Additional keyword arguments for the model.
+  """
+  converter = NumPyroSVIConverter(
+      model=model,
+      guide=guide,
+      svi=svi,
+      **model_kwargs
+  )
+  
+  return converter.to_inference_data()

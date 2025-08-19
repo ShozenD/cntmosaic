@@ -23,27 +23,38 @@ class CoordToColumns:
     Attributes
     ---------
     age_part: str
-        Column name for the participant age.
+        Name of the column giving the participant age in the participant data.
     age_cnt: Optional[str]
-        Column name for the contact age.
+        Name of the column giving the contact age in the contact data.
+        Do not need to specify both age_cnt and age_grp_cnt.
     age_grp_cnt: Optional[str]
-        Column name for the contact age group.
+        Name of the column giving the contact age group in the contact data.
+        Do not need to specify both age_cnt and age_grp_cnt. 
     id_var: str
-        Column name for the unique identifier of participants.
+        Name of the column giving the unique identifier of participants.
+        This column should be present in both participant and contact data.
     y: Optional[str]
-        Column name for the outcome variable. By default, it is assumed to be 'y'.
+        Name of the column giving the number of contacts in the contact data.
+        By default, it is assumed to be 'y'.
+    z: Optional[str]
+        Name of the column giving the number of group contacts in the participant data.
+        By default, it is assumed to be 'z'.
     grp_vars_part: Optional[list[str] | str]
-        Column names for the stratification variables in the participant data.
+        Names of columns for the stratification variables in the participant data.
         It can be a list of strings or a single string.
     grp_vars_cnt: Optional[list[str] | str]
-        Column names for the stratification variables in the contact data.
+        Names of columns for the stratification variables in the contact data.
         It can be a list of strings or a single string.
     repeat_part: Optional[str]
-        Column name giving the number of times a participant participated in the study.
+        Name of the column giving the number of times a participant participated in the study in the participant data.
+        This is used to introduce a repeat effect term in the models.
+        If not specified, it is assumed that each participant participated only once.
     age_pop: Optional[str]
-        Column name for the population age. This is used for population size calculations.
+        Name of the column for the population age in the population data.
+        This is used for population size calculations.
     size_pop: Optional[str]
-        Column name for the population size. This is used for population size calculations.
+        Name of the column for the population size in the population data.
+        This is used for population size calculations.
     """
 
     age_part: str
@@ -51,6 +62,7 @@ class CoordToColumns:
     age_grp_cnt: Optional[str] = None
     id_var: str = "id"
     y: Optional[str] = "y"
+    z: Optional[str] = "z"
     grp_vars_part: Optional[list[str] | str] = None
     grp_vars_cnt: Optional[list[str] | str] = None
     repeat_part: Optional[str] = None 
@@ -165,8 +177,9 @@ class BaseLoader(ABC):
         """
         This method validates the input data and column mappings.
         """
+
         # [Check] Ensure all necessary columns are present
-        cols_needed = [col_map.y, col_map.id_var] + col_map.age_vars()
+        cols_needed = [col_map.y, col_map.z, col_map.id_var] + col_map.age_vars()
         if col_map.grp_vars_part:
             cols_needed.extend(col_map.grp_vars_part)
         if col_map.grp_vars_cnt:
@@ -179,7 +192,7 @@ class BaseLoader(ABC):
 
         # [Check] Ensure all object columns are categorical. If not, convert them to categorical.
         for col in data.select_dtypes(include="object").columns:
-            if not isinstance(data[col].dtype, pd.CategoricalDtype):
+            if col != col_map.id_var and not isinstance(data[col].dtype, pd.CategoricalDtype):
                 warnings.warn(
                     f"Column {col} is not categorical. Converting to categorical.",
                     UserWarning,
@@ -251,7 +264,7 @@ class BaseLoader(ABC):
             df = df.rename({age_col: "age"}, axis=1)
             df[var_name] = pd.Categorical(
                 df[var_name],
-                categories=self.raw_df[var_name].cat.categories,
+                categories=self.df_full[var_name].cat.categories,
                 ordered=True,
             )
 
@@ -284,6 +297,37 @@ class BaseLoader(ABC):
             .agg(N=(self.col_map.id_var, "nunique"))
             .reset_index()
         )
+        self.df_n = df_n
+        
+        # [Do] Calculate group contact offsets
+        df_z = (
+            self.data[[self.col_map.id_var] + grp_vars_n + [self.col_map.z]]
+            .drop_duplicates()
+            .groupby(grp_vars_n, observed=True)['z']
+            .sum()
+            .reset_index()
+        )
+        df_yz = (
+            self.data[[self.col_map.id_var] + grp_vars_n + [self.col_map.y]]
+            .drop_duplicates()
+            .groupby(grp_vars_n, observed=True)['y']
+            .sum()
+            .reset_index()
+        )
+        df_S = df_yz.merge(df_z, on=grp_vars_n, how='left')
+        
+        # Assume at least one contact if there is a group contact to avoid numerical issues
+        # mask = (df_S[self.col_map.z] > 0) & (df_S['y'] == 0)
+        # df_S['y'] = np.where(mask, 1, df_S['y'])
+
+        # Calculate group contact offset S
+        mask = df_S[self.col_map.z] + df_S[self.col_map.y] > 0
+        df_S['S'] = np.where(mask,
+                             df_S[self.col_map.y] / (df_S[self.col_map.z] + df_S[self.col_map.y]),
+                             1.0)
+        df_S['S'] = 1 - (1 - df_S['S']) / (self.max_age - self.min_age + 1)
+        df_S = df_S.drop(columns=[self.col_map.z, self.col_map.y])
+        self.df_S = df_S
 
         # [Do] Calculate the number of contacts stratified by age and other grouping variables
         grp_vars = self.col_map.age_vars()
@@ -297,6 +341,7 @@ class BaseLoader(ABC):
             .agg({self.col_map.y: "sum"})
             .reset_index()
         )
+        self.df_y = df_y
 
         # [Do] Create a full grid of all combinations of the grouping variables via a cartesian product
         unique_coords = {var: self.data[var].unique() for var in grp_vars}
@@ -328,19 +373,24 @@ class BaseLoader(ABC):
         # [Do] Merge the full grid with the contact and participant data
         df_full = pd.merge(df_full, df_y, on=grp_vars, how="left")
         df_full = pd.merge(df_full, df_n, on=grp_vars_n, how="left")
-
+        df_full = pd.merge(df_full, df_S, on=grp_vars_n, how="left")
+        
         # [Do] Finalise the data
         df_full = df_full.dropna(subset=["N"])
         df_full = df_full[df_full["N"] > 0]
+        df_full["S"] = df_full["S"].fillna(1.0)
+        df_full["log_S"] = np.where(df_full["S"] > 0, np.log(df_full["S"]), 0.0)
         df_full["y"] = df_full["y"].fillna(0)
 
         # [Do] Create a xarray dataset
-        self.raw_df = df_full
+        self.df_full = df_full
+        
         self.ds = xr.Dataset(
             {
                 "y": ("index", df_full["y"].astype(int).to_numpy()),
                 "log_N": ("index", jnp.log(df_full["N"].to_numpy())),
                 "log_P": ("age", jnp.log(self.pop[self.col_map.size_pop].to_numpy())),
+                "log_S": ("index", jnp.array(df_full["log_S"].to_numpy())),
                 "aid": ("index", df_full[self.col_map.age_part].to_numpy()),
             },
             coords={
@@ -366,9 +416,9 @@ class BaseLoader(ABC):
 
         for var in self.col_map.grp_vars_part:
             if var != self.col_map.repeat_part: # Exclude repeat_part from stratification variables
-                self.raw_df[var] = self.raw_df[var].astype("category")
+                self.df_full[var] = self.df_full[var].astype("category")
                 self.ds[var] = xr.DataArray(
-                    data=self.raw_df[var],
+                    data=self.df_full[var],
                     dims="index",
                     coords={"index": self.ds.coords["index"]},
                 )
@@ -376,7 +426,7 @@ class BaseLoader(ABC):
         # If repeat effects are specified
         if self.col_map.repeat_part is not None:
             self.ds["rid"] = xr.DataArray(
-                data=self.raw_df[self.col_map.repeat_part].astype(int).to_numpy(),
+                data=self.df_full[self.col_map.repeat_part].astype(int).to_numpy(),
                 dims="index",
                 coords={"index": self.ds.coords["index"]},
             )
@@ -445,6 +495,11 @@ class DataLoader(BaseLoader):
             missing = [col for col in col_map.grp_vars_part if col not in part.columns]
             if len(missing) > 0:
                 raise KeyError(f"Missing columns {missing} in participants dataframe")
+            
+        # [Check] If the column z is present is in part.
+        # If not, add it as a column with value 0.
+        if col_map.z not in part.columns:
+            part.loc[:,col_map.z] = 0
 
         self.part = part.copy()
 

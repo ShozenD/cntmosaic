@@ -320,12 +320,28 @@ class BaseLoader(ABC):
         # mask = (df_S[self.col_map.z] > 0) & (df_S['y'] == 0)
         # df_S['y'] = np.where(mask, 1, df_S['y'])
 
-        # Calculate group contact offset S
-        mask = df_S[self.col_map.z] + df_S[self.col_map.y] > 0
-        df_S['S'] = np.where(mask,
-                             df_S[self.col_map.y] / (df_S[self.col_map.z] + df_S[self.col_map.y]),
-                             1.0)
-        df_S['S'] = 1 - (1 - df_S['S']) / (self.max_age - self.min_age + 1)
+        # ===== Calculate group contact offset S =====
+        # For school age children (5-18) assume contacts are with other children
+        mask = (
+            (df_S[self.col_map.age_part] >= 5) & (df_S[self.col_map.age_part] <= 18) &
+            (df_S[self.col_map.z] + df_S[self.col_map.y] > 0)
+        )
+        df_S['S'] = np.where(
+            mask,
+            1 - df_S[self.col_map.z] / (df_S[self.col_map.z] + df_S[self.col_map.y]),
+            1.0
+        )
+        
+        # For adults (18+) assume contacts are random across population
+        mask = (
+            (df_S[self.col_map.age_part] > 18) &
+            (df_S[self.col_map.z] + df_S[self.col_map.y] > 0)
+        )
+        df_S['S'] = np.where(
+            mask,
+            1 - df_S[self.col_map.z] / (df_S[self.col_map.z] + df_S[self.col_map.y]) / (self.max_age - self.min_age + 1),
+            1.0
+        )
         df_S = df_S.drop(columns=[self.col_map.z, self.col_map.y])
         self.df_S = df_S
 

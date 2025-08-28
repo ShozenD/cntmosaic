@@ -74,7 +74,7 @@ class BRCfine(BRC):
         if not hasattr(self.ds, 'log_P'):
             raise ValueError("Log of population age distribution (log_P) is missing.")
         
-    def model(self):
+    def model(self, y=None):
         beta0 = numpyro.sample('baseline', dist.Normal(0., 10.))
         with scope(prefix='rate'):
             f = self.priors['rate'].sample()
@@ -89,17 +89,17 @@ class BRCfine(BRC):
         )
         if self.likelihood == 'poisson':
             with numpyro.plate('data', len(self.y)):
-                numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y)
+                numpyro.sample('obs', dist.Poisson(rate=mu), obs=y)
         elif self.likelihood == 'negbin':
             inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
             with numpyro.plate('data', len(self.y)):
                 numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
                                                             concentration=1/inv_disp),
-                                obs=self.y)
+                                obs=y)
         elif self.likelihood == 'quasipoisson':
             with numpyro.plate('data', len(self.y)):
-                numpyro.sample('obs', QuasiPoisson(mu=mu, psi = self.psi), obs=self.y)
+                numpyro.sample('obs', QuasiPoisson(mu=mu, psi = self.psi), obs=y)
         elif self.likelihood == 'quasinegbin':
             with numpyro.plate('data', len(self.y)):
-                numpyro.sample('obs', QuasiNegBin(mu=mu, inv_odist=self.inv_odist, psi=self.psi), obs=self.y)
+                numpyro.sample('obs', QuasiNegBin(mu=mu, inv_odist=self.inv_odist, psi=self.psi), obs=y)
             

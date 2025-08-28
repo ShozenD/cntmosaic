@@ -19,26 +19,26 @@ from arviz.data.base import dict_to_dataset
 from arviz.data.inference_data import InferenceData
 
 def run_inference_mcmc(
-    prng_key,
-    model: callable,
-    num_warmup: int = 500,
-    num_samples: int = 500,
-    num_chains: int = 4,
-    target_accept_prob: float = 0.8,
-    init_strategy: callable = init_to_median,
-    **model_kwargs,
+	prng_key,
+	model: callable,
+	num_warmup: int = 500,
+	num_samples: int = 500,
+	num_chains: int = 4,
+	target_accept_prob: float = 0.8,
+	init_strategy: callable = init_to_median,
+	**model_kwargs,
 ):
   kernel = NUTS(
-    model,
-    target_accept_prob=target_accept_prob,
-    init_strategy=init_strategy
+	model,
+	target_accept_prob=target_accept_prob,
+	init_strategy=init_strategy
   )
   mcmc = MCMC(
-    kernel,
-    num_warmup=num_warmup,
-    num_samples=num_samples,
-    num_chains=num_chains,
-    progress_bar=False if 'NUMPYRO_SPHINXBUILD' in os.environ else True,
+	kernel,
+	num_warmup=num_warmup,
+	num_samples=num_samples,
+	num_chains=num_chains,
+	progress_bar=False if 'NUMPYRO_SPHINXBUILD' in os.environ else True,
   )
   mcmc.run(prng_key, **model_kwargs)
 
@@ -48,37 +48,37 @@ def run_inference_mcmc(
   return mcmc
 
 def run_inference_svi(
-    prng_key,
-    model: callable,
-    guide: callable,
-    num_steps: int = 5_000,
-    peak_lr: float = 0.01,
-    **model_kwargs,
+	prng_key,
+	model: callable,
+	guide: callable,
+	num_steps: int = 5_000,
+	peak_lr: float = 0.01,
+	**model_kwargs,
 ):
   lr_scheduler = linear_onecycle_schedule(num_steps, peak_lr)
   svi = SVI(model, guide, Adam(lr_scheduler), Trace_ELBO())
   return svi.run(prng_key, num_steps, progress_bar=True, **model_kwargs)
 
 def posterior_predictive_mcmc(
-    prng_key,
-    model: callable,
-    mcmc: MCMC,
-    **model_kwargs,
+	prng_key,
+	model: callable,
+	mcmc: MCMC,
+	**model_kwargs,
 ) -> dict[str, jax.Array]:
-    samples = mcmc.get_samples()
-    predictive = Predictive(model, samples, parallel=True)
-    return predictive(prng_key, **model_kwargs)
+	samples = mcmc.get_samples()
+	predictive = Predictive(model, samples, parallel=True)
+	return predictive(prng_key, **model_kwargs)
 
 def posterior_predictive_svi(
-    prng_key,
-    model: callable,
-    guide: callable,
-    params: dict,
-    num_samples: int = 2000,
-    **model_kwargs,
+	prng_key,
+	model: callable,
+	guide: callable,
+	params: dict,
+	num_samples: int = 2000,
+	**model_kwargs,
 ) -> dict[str, jax.Array]:
-    predictive = Predictive(model, guide=guide, params=params, num_samples=num_samples)
-    return predictive(prng_key, **model_kwargs)
+	predictive = Predictive(model, guide=guide, params=params, num_samples=num_samples)
+	return predictive(prng_key, **model_kwargs)
   
 class NumPyroSVIConverter:
 	def __init__(
@@ -124,7 +124,19 @@ class NumPyroSVIConverter:
 			model_kwargs=model_kwargs,
 			exclude_deterministic=True,
 		)
-  
+
+		sub_model = substitute(self.model, self.svi.params)
+		self.posterior_predictive = _predictive(
+			random.PRNGKey(0),
+			sub_model,
+			self.posterior,
+			(self.num_samples,),
+			return_sites="",
+			parallel=True,
+			model_args=(),
+			model_kwargs=model_kwargs,
+		)
+
 	def posterior_to_xarray(self):
 		# Remove items that contain '_auto_' from data
 		data = {k: v for k, v in self.posterior.items() if '_auto_' not in k}
@@ -150,11 +162,11 @@ class NumPyroSVIConverter:
 	def to_inference_data(self):
 		"""Convert all available data to an Inference object."""
 		return InferenceData(
-     	**{
+	 	**{
 				"posterior": self.posterior_to_xarray(),
 				"log_likelihood": self.log_likelihood_to_xarray()
 			}
-    )
+	)
 
 def to_inference_data(
   model: callable,
@@ -168,19 +180,19 @@ def to_inference_data(
   Parameters
   ----------
   model: callable
-      The generative model.
+	  The generative model.
   guide: callable
-      The variational guide.
+	  The variational guide.
   svi: SVI
-      The SVI object.
+	  The SVI object.
   **model_kwargs
-      Additional keyword arguments for the model.
+	  Additional keyword arguments for the model.
   """
   converter = NumPyroSVIConverter(
-      model=model,
-      guide=guide,
-      svi=svi,
-      **model_kwargs
+	  model=model,
+	  guide=guide,
+	  svi=svi,
+	  **model_kwargs
   )
   
   return converter.to_inference_data()

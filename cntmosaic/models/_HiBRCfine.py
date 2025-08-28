@@ -76,7 +76,7 @@ class HiBRCfine(BRCfine):
         )
         return log_delta
 
-    def model(self):
+    def model(self, y=None):
         beta0 = numpyro.sample('baseline', dist.Normal(0., 10.))
         with scope(prefix='rate'):
             f = self.priors['rate'].sample()
@@ -90,11 +90,12 @@ class HiBRCfine(BRCfine):
 
         mu = jnp.exp(log_cint + self.log_N + self.log_S + repeat_effect)
         if self.likelihood == 'poisson':
-            numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y) 
-            
+            with plate('data', len(self.y)):
+                numpyro.sample('obs', dist.Poisson(rate=mu), obs=y)
+
         if self.likelihood == 'negbin':
             inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
             with plate('data', len(self.y)):
                 numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
                                                             concentration=1/inv_disp), 
-                                obs=self.y)
+                                obs=y)

@@ -11,7 +11,7 @@ import numpyro
 from numpyro.handlers import seed, trace
 
 from ..dataloader import DataLoader
-from ._inference import (
+from ._numpyro import (
   run_inference_mcmc,
   run_inference_svi,
   posterior_predictive_mcmc,

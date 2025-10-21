@@ -1,16 +1,12 @@
 import jax
 import jax.numpy as jnp
-from jax import jit
+from jax import jit, random
 from functools import partial
 from scipy.special import comb
 from jax.scipy.special import factorial
 
 from numpyro.util import is_prng_key
 from numpyro.distributions.distribution import Distribution
-from numpyro.distributions.util import (
-	validate_sample,
-	cholesky_of_inverse
-)
 from numpyro.distributions import constraints
 from numpyro import distributions as dist
 
@@ -19,17 +15,10 @@ from .._utils import (
   symmetrize_from_lower_tri
 )
 
-
-def poly_basis(num_nodes: int, order: int) -> jnp.ndarray:	
-	x = jnp.linspace(-1, 1, num_nodes)
-	S = jnp.zeros((num_nodes, order))
-	for i in range(order):
-		S = S.at[:, i].set(x**i / factorial(i))
-	
-	return S
-
-@partial(jit, static_argnames=("num_nodes", "order"))
-def diff_matrix(num_nodes: int, order: int) -> jnp.ndarray:
+def diff_matrix(
+  num_nodes: int,
+  order: int
+) -> jnp.ndarray:
 	D = jnp.zeros((num_nodes - order, num_nodes))
 	i_vals = jnp.arange(order + 1)
 	coeff = (factorial(order) / (factorial(i_vals) * factorial(order - i_vals))) * (-1) ** (order - i_vals)
@@ -37,80 +26,101 @@ def diff_matrix(num_nodes: int, order: int) -> jnp.ndarray:
 		D = D.at[i, i:i+order+1].set(coeff)
 	return D
 
-@partial(jit, static_argnames=("num_nodes", "order"))
 def structure_matrix(num_nodes: int, order: int) -> jnp.ndarray:
 	D = diff_matrix(num_nodes, order)
+
 	return D.T @ D
 
-def linear_operator(S, L) -> jnp.ndarray:
-	V = L @ (L.T @ S)
-	W = S.T @ V
-	U = jnp.linalg.solve(W, V.T)
-	
-	return U.T @ S.T
+def make_igmrf2d_operator(num_nodes: tuple, order: tuple):
+  n1, n2 = num_nodes
+  order1, order2 = order
+  
+  Q1 = structure_matrix(n1, order1)
+  Q2 = structure_matrix(n2, order2)
 
-def igmrf1d_operators(order, num_nodes, eps=1e-6):
-	S = poly_basis(num_nodes, order)
-	Q = structure_matrix(num_nodes, order)
-	Q_star = Q - eps * (Q - jnp.diag(jnp.diag(Q)))  # Regularization to ensure positive definiteness
-	L = cholesky_of_inverse(Q_star)
-	Op = linear_operator(S, L)
-	return L, Op
+  lam1, U1 = jnp.linalg.eigh(Q1)   # Q1 = U1 @ diag(lam1) @ U1.T
+  lam2, U2 = jnp.linalg.eigh(Q2)   # Q2 = U2 @ diag(lam2) @ U2.T
+  
+  # Clean tiny negative eigenvalues
+  lam1 = jnp.maximum(lam1, 0.0)
+  lam2 = jnp.maximum(lam2, 0.0)
 
-def igmrf2d_operators(num_nodes, order, cov_struct="additive", eps=1e-6):
-	S1 = poly_basis(num_nodes[0], order[0])
-	S2 = poly_basis(num_nodes[1], order[1])
-	S = jnp.kron(S1, S2)
+  # Static nullspace mask: (lam1 == 0) AND (lam2 == 0)
+  # Use a tolerance because of roundoff; sqrt(eps) is a good scale.
+  tol = jnp.sqrt(jnp.finfo(lam1.dtype).eps)
+  null1 = lam1 <= tol
+  null2 = lam2 <= tol
+  null_mask = null1[:, None] & null2[None, :]   # shape (n1, n2)
 
-	Q1 = structure_matrix(num_nodes[0], order[0])
-	Q2 = structure_matrix(num_nodes[1], order[1])
-	if cov_struct == "additive":
-		Q = jnp.kron(Q1, jnp.eye(Q2.shape[0])) + jnp.kron(jnp.eye(Q1.shape[0]), Q1)
-	elif cov_struct == "multiplicative":
-		Q = jnp.kron(Q1, Q2)
-	else:
-		raise ValueError("Invalid covariance structure specified.")
+  @jit
+  def operator(Z, tau1, tau2):
+    Zt = U1.T @ Z @ U2
+    
+    s = tau1 * lam1[:, None] + tau2 * lam2[None, :]
+    # Clip BEFORE rsqrt to avoid NaNs; keep penalized modes differentiable.
+    s_clip = jnp.maximum(s, 0.0) + jnp.finfo(s.dtype).eps
 
-	Q_star = Q - eps * (Q - jnp.diag(jnp.diag(Q)))  # Regularization to ensure positive definiteness
-	L = cholesky_of_inverse(Q_star)
-	Op = linear_operator(S, L)
-	return L, Op
+    gains = jax.lax.rsqrt(s_clip)                 # 1/sqrt(s_clip)
+    gains = jnp.where(null_mask, 0.0, gains)  # exact zeros on nullspace
+    Y = Zt * gains
 
-def igmrf2d_sym_operators(num_nodes, order, cov_struct="additive", eps=1e-6):
-	S1 = poly_basis(num_nodes, order[0])
-	S2 = poly_basis(num_nodes, order[1])
-	S = jnp.kron(S1, S2)
+    F = U1 @ Y @ U2.T
+    return F
+  
+  return operator
 
-	D1 = jnp.kron(jnp.eye(num_nodes), diff_matrix(num_nodes, order[0]))
-	D2 = jnp.kron(diff_matrix(num_nodes, order[1]), jnp.eye(num_nodes))
+def make_sym_igmrf2d_operator(num_nodes: tuple, order: tuple):
+  n1, n2 = num_nodes
+  order1, order2 = order
 
-	ci, ri1, ri2 = rw_drop_indices(num_nodes)
-	D1 = D1[ri1][:, ci]
-	D2 = D2[ri2][:, ci]
-	S = S[ci, :]
- 
-	Q1 = D1.T @ D1
-	Q2 = D2.T @ D2
-	Q1_star = Q1 - eps * (Q1 - jnp.diag(jnp.diag(Q1)))
-	Q2_star = Q2 - eps * (Q2 - jnp.diag(jnp.diag(Q2)))
-	if cov_struct == "additive":
-		Q_star = Q1_star + Q2_star
-	elif cov_struct == "multiplicative":
-		Q_star = Q1_star * Q2_star  # TODO: Check algebra
-	else:
-		raise ValueError("Invalid covariance structure specified.")
+  # Build the full Kronecker sum structure matrix
+  D1 = jnp.kron(jnp.eye(n2), diff_matrix(n1, order1))
+  D2 = jnp.kron(diff_matrix(n2, order2), jnp.eye(n2))
 
-	L = cholesky_of_inverse(Q_star)
-	Op = linear_operator(S, L)
-	sym_idx = symmetrize_from_lower_tri(num_nodes)
-	return L, Op, sym_idx
+  # Apply the reduction
+  ci, ri1, ri2 = rw_drop_indices(n1)
+  D1_reduced = D1[ri1][:, ci]
+  D2_reduced = D2[ri2][:, ci]
+  
+  Q1 = D1_reduced.T @ D1_reduced
+  Q2 = D2_reduced.T @ D2_reduced
 
-@jit
-def igmrf(x, L, Op, scale=1.0):
-	x_transformed = L @ x
-	return scale * (x_transformed - Op @ x_transformed)
+  Q = Q1 + Q2
+  lam, U = jnp.linalg.eigh(Q)   # Q = U @ diag(lam) @ U.T
 
-@jit
-def igmrf_sym(x, L, Op, sym_idx, scale=1.0):
-	x_transformed = L @ x
-	return scale * (x_transformed - Op @ x_transformed)[sym_idx]
+  n = U.shape[0]
+  sym_idx = symmetrize_from_lower_tri(n1)
+  
+  @jit
+  def operator(z, tau):
+    denom = jnp.sqrt(tau * lam)
+    gains = jnp.where(denom > 0, 1.0 / denom, 0.0)
+    f = U @ (gains * z)
+
+    return f[sym_idx].reshape((n1, n2))
+
+  return operator
+
+def log_density_igmrf(
+  beta: jnp.ndarray,
+  Q0: jnp.ndarray,
+  tau: float,
+  r_eff: float = None,
+  logdet_Q_const: float = None
+):
+  Q = Q0 * tau
+  
+  if r_eff is None:
+    eigval_Q0, _ = jnp.linalg.eigh(Q0)
+    pos = eigval_Q0 > 0
+    
+    r_eff = pos.sum()
+    logdet_Q_const = jnp.sum(
+      jnp.log(jnp.where(pos, eigval_Q0, 1.0))
+    )
+  
+  b = beta
+  quad = b @ (Q @ b)
+  logdet_pseudo = r_eff * jnp.log(tau) + logdet_Q_const
+  
+  return 0.5 * logdet_pseudo - 0.5 * quad

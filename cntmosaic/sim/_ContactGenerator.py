@@ -8,18 +8,27 @@ class ContactGenerator:
                df_part: pd.DataFrame,
                cint_matrix: np.ndarray | list,
                model: str='poisson',
-               odisp: float | None = None):
+               odisp: float | None = None,
+               rnd_eff_shape = 5,
+               rnd_eff_rate = 5):
     assert model in self.allowed_models, f"Model '{model}' is not supported. Allowed models: {self.allowed_models}"
     
     self.df_part = df_part
     self.cint_matrix = cint_matrix # Note: If cint_matrix is a list, it must match the number of subgroups in df_part
     self.model = model
     self.odisp = odisp
+    self.rnd_eff_shape = rnd_eff_shape
+    self.rnd_eff_rate = rnd_eff_rate
     
   def _generate(self, df_part: pd.DataFrame, cint_matrix: np.ndarray, label: str = None):
     age = df_part['age_part'].astype(int).values
     lambda_ = cint_matrix[age, :]
-    
+    lambda_ *= np.random.gamma( # Add individual effects
+      shape=self.rnd_eff_shape,
+      scale=1/self.rnd_eff_rate,
+      size=cint_matrix[age, :].shape
+    )
+
     if self.model == 'poisson':
       samples = np.random.poisson(lambda_, size=(len(age), lambda_.shape[1]))
     elif self.model == 'negbin':

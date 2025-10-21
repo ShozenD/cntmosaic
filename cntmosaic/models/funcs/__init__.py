@@ -6,12 +6,10 @@ from ._GMRF import (
   gmrf_sym
 )
 
-from ._IGMRF import (  
-  igmrf1d_operators,
-  igmrf2d_operators,
-  igmrf2d_sym_operators,
-  igmrf,
-  igmrf_sym
+from ._IGMRF import (
+  make_igmrf2d_operator,
+  make_sym_igmrf2d_operator,
+  log_density_igmrf
 )
 
 __all__ = [
@@ -20,10 +18,8 @@ __all__ = [
   'gmrf2d_sym_operators',
   'gmrf',
   'gmrf_sym',
-  
-  'igmrf1d_operators',
-  'igmrf2d_operators',
-  'igmrf2d_sym_operators',
-  'igmrf',
-  'igmrf_sym'
+
+  'make_igmrf2d_operator',
+  'make_sym_igmrf2d_operator',
+  'log_density_igmrf'
 ]

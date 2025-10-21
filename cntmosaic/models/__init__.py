@@ -4,8 +4,8 @@ from ._BRCrefine import BRCrefine
 from ._HiBRCfine import HiBRCfine
 from ._HiBRCrefine import HiBRCrefine
 from ._SocialMix import SocialMix
-from ._Prem import Prem, Prem2
-from ._inference import to_inference_data
+from ._Prem import Prem
+from ._numpyro import to_inference_data
 
 __all__ = [
     'BRC',
@@ -15,7 +15,6 @@ __all__ = [
     'HiBRCrefine'
     'SocialMix',
     'Prem',
-    'Prem2',
     'HiBRCrefine',
-    'to_inference_data'
+    'to_inference_data',
 ]

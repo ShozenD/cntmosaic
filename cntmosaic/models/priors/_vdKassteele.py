@@ -10,7 +10,7 @@ from ..funcs import (
   gmrf,
   gmrf_sym
 )
-from .._utils import symmetrize_from_lower_tri
+from .._utils import symm_from_tril_ix_col
 
 from ._Prior2D import Prior2D
 
@@ -47,7 +47,7 @@ class vdKassteele(Prior2D):
 				self._set_grid()
 		
 		def _set_grid(self):
-				self.sym_idx = symmetrize_from_lower_tri(self.A)
+				self.sym_idx = symm_from_tril_ix_col(self.A)
 
 				if self.type == 'global':
 					self.L, self.sym_idx = gmrf2d_sym_operators(self.A, (2, 2), cov_struct='additive')

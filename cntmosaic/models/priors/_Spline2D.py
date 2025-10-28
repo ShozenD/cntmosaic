@@ -13,8 +13,8 @@ from .._utils import (
     age_age_grid,
     diff_age_age_grid,
     diff_age_age_index,
-    tril_indices_row,
-    symm_from_tril_indices_row
+    tril_ix_row,
+    symm_from_tril_ix_row
 )
 
 from .._math import (
@@ -96,9 +96,9 @@ class Spline2D(Prior2D):
         # Scale x and y to [0, 1]
         self.x = (x - self.min_age) / (self.max_age - self.min_age)
         self.y = (y - self.min_age) / (self.max_age - self.min_age)
-        
-        self.symm_tril_idx = symm_from_tril_indices_row(self.A)
-        
+
+        self.symm_tril_idx = symm_from_tril_ix_row(self.A)
+
     def _define_knots(self, x: NDArray, n_knots: int, degree: int) -> NDArray:
         boundary_extension = (x.max() - x.min()) * 0.05
         x_quantiles = np.quantile(x, np.linspace(0, 1, n_knots))
@@ -134,12 +134,12 @@ class Spline2D(Prior2D):
         self.PHI = self.tensor_spline_basis(self.x, self.y, n_basis_functions, self.degree)
         
         if self.prior_type == 'global':
-            self.symm_tril_idx = symm_from_tril_indices_row(self.A)
-            self.PHI = self.PHI[tril_indices_row(self.A)]
-            
+            self.symm_tril_idx = symm_from_tril_ix_row(self.A)
+            self.PHI = self.PHI[tril_ix_row(self.A)]
+
         elif self.prior_type == 'full': # Full case
-            self.symm_tril_idx = symm_from_tril_indices_row(self.A)
-            self.PHI_diag = self.PHI[tril_indices_row(self.A)]
+            self.symm_tril_idx = symm_from_tril_ix_row(self.A)
+            self.PHI_diag = self.PHI[tril_ix_row(self.A)]
             self.PHI_non_diag = self.PHI
         
     def sample(self):

@@ -1,22 +1,28 @@
-import operator
+from typing import Optional
+
 import numpy as np
+
+import jax
 import jax.numpy as jnp
 from jax import vmap
+
 import numpyro
 from numpyro import distributions as dist
+from numpyro.distributions import constraints
+from numpyro.distributions.distribution import Distribution
+from numpyro.util import is_prng_key
+from numpyro.distributions.util import validate_sample, promote_shapes
 
-from ..funcs import make_igmrf2d_operator, make_sym_igmrf2d_operator
-from .._utils import symmetrize_from_lower_tri
+from .._IGMRF import diff_matrix, laplacian
+from ..models._utils import symmetrize_from_lower_tri
 
-from ._Prior2D import Prior2D
-
-from .._math import (
+from ..models._math import (
 	inverse_alr,
 	inverse_clr,
 	inverse_ilr,
 )
 
-class IGMRF2D(Prior2D):
+class IGMRF2D(Distribution):
 	"""Class for sampling from a 2 dimensional intrinsic Gaussian Markov random field (IGMRF).
 	
 	Parameters
@@ -30,12 +36,15 @@ class IGMRF2D(Prior2D):
 	transform: str | None, default=None
 			The transformation to apply to the HSGP. Options are 'alr', 'clr', and 'ilr'.
 	"""
-	def __init__(self,
-						 grid_type: str='age-age',
-						 scale: float=1,
-						 order: tuple=(2, 2),
-						 transform: str | None=None,
-						 prior_type: str='global'):
+	def __init__(
+		self,
+		num_nodes: tuple,
+		order: tuple,
+		loc: ArrayLike = 0.0,
+		grid_type: str='age-age',
+		transform: str | None=None,
+		prior_type: str='global'
+  ):
 		self.scale = scale
 		self.order = order
 		super().__init__(grid_type, transform, prior_type)

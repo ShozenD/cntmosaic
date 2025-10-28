@@ -13,10 +13,10 @@ from .._utils import (
     age_age_grid,
     diff_age_age_grid,
     diff_age_age_index,
-    tril_indices_row,
-    symm_from_tril_indices_row,
-    lower_tri_indices,
-    symmetrize_from_lower_tri
+    tril_ix_row,
+    tril_ix_col,
+    symm_from_tril_ix_row,
+    symm_from_tril_ix_col,
 )
 
 from .._math import (
@@ -75,9 +75,9 @@ class HSGP2D(Prior2D):
         self.L = list(np.abs(Xn).max(axis=0) * self.C)
         
         if self.prior_type == 'global':
-            tril_idx = tril_indices_row(self.A)
+            tril_idx = tril_ix_row(self.A)
             self.X = Xn[tril_idx]
-            self.sym_tril_idx = symm_from_tril_indices_row(self.A)
+            self.sym_tril_idx = symm_from_tril_ix_row(self.A)
         else:
             self.X = Xn
     

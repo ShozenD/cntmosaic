@@ -11,7 +11,7 @@ from ._Spline2D import Spline2D
 from .._utils import (
     age_age_grid,
     diff_age_age_grid,
-    symm_from_tril_indices_row
+    symm_from_tril_ix_row
 )
 
 from .._math import (
@@ -87,9 +87,9 @@ class PSpline2D(Spline2D):
         # Scale x and y to [0, 1]
         self.x = (x - self.min_age) / (self.max_age - self.min_age)
         self.y = (y - self.min_age) / (self.max_age - self.min_age)
-        
-        self.symm_tril_idx = symm_from_tril_indices_row(self.A)
-    
+
+        self.symm_tril_idx = symm_from_tril_ix_row(self.A)
+
     def sample(self):
         """Sample from the penalised tensor spline prior."""
         

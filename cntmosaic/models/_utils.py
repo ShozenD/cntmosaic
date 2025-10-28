@@ -62,7 +62,7 @@ def diff_age_age_index(A: int) -> np.ndarray:
       
   return idx_matrix[r, c]
 
-def symmetrize_from_lower_tri(N: int) -> NDArray:
+def symm_from_tril_ix_col(N: int) -> NDArray:
 	"""
 	Indices to augment a vector containing the elements of a 
 	lower triangular matrix arranged in column-major order to a vector containing
@@ -91,7 +91,7 @@ def symmetrize_from_lower_tri(N: int) -> NDArray:
 
 	return idx
 
-def symm_from_tril_indices_row(N):
+def symm_from_tril_ix_row(N):
     """
     Return an index array that maps a 1-D array containing the **lower-triangle
     (including the diagonal) of an N x N matrix, stored row-wise** onto the
@@ -131,7 +131,7 @@ def symm_from_tril_indices_row(N):
     return idx_mat.ravel()
 
 
-def lower_tri_indices(N: int, inc_diag=True) -> NDArray:
+def tril_ix_col(N: int, inc_diag=True) -> NDArray:
 	"""
 	Indices to extract the lower triangular elements of a square matrix
 	in column-major order
@@ -163,7 +163,7 @@ def lower_tri_indices(N: int, inc_diag=True) -> NDArray:
 
 import numpy as np
 
-def tril_indices_row(N: int) -> np.ndarray:
+def tril_ix_row(N: int) -> np.ndarray:
     """
     Return the linear (row-major) indices of the **lower-triangular part
     (including the main diagonal)** of an N × N matrix, in row-wise order.

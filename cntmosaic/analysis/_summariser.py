@@ -1,11 +1,14 @@
 import numpy as np
+from numpy.typing import NDArray
+
 import jax
 from ..models import (
   SocialMix,
   BRCfine,
   BRCrefine,
   HiBRCfine,
-  HiBRCrefine
+  HiBRCrefine,
+  Prem
 )
 from ..utils import pixilate, depixilate, AgeBins
 
@@ -275,14 +278,35 @@ class ModelSummariserMCMC:
       
 class ModelSummariserPrem:
 	def __init__(self,
-               model,
+               model: Prem,
                age_bins: AgeBins=None,
-               age_dist: np.ndarray=None,
+               age_dist: NDArray | None = None,
+               age_grp_dist: NDArray | None = None,
                alpha=0.05):
+		"""Summarises the inference results for Prem et al. style models.
+  
+		Parameters
+		----------
+		model: Prem
+			A object of class Prem. SVI or MCMC must have been run.
+		age_bins: AgeBins, optional
+			AgeBins object that defines the age bins used in the model.
+			This data is used for pixilating and depixilating the contact intensity matrix.
+		age_dist: NDArray, optional
+			An array of population sizes for each fine age (1-year age).
+			This data is used for depixilating the contact intensity matrix.
+			Must be an NDarray of shape (num_fine_age,).
+		age_grp_dist: NDArray, optional
+			An array of population sizes for each age group.
+			Must be of shape (num_age_grps,).
+		alpha: float, default=0.05
+			Significance level for credible intervals.
+  	"""
    
 		self.model = model
 		self.age_bins = age_bins
 		self.age_dist = age_dist
+		self.age_grp_dist = age_grp_dist
 		self.alpha = alpha
 		self.prng_key = jax.random.PRNGKey(0)
 
@@ -293,22 +317,70 @@ class ModelSummariserPrem:
 		else:
 			raise ValueError("Model must have either mcmc or svi attributes.")
 		self.post_cint = np.exp(self.post['log_cint'])
+  
+		if self.age_grp_dist is None:
+			if self.age_bins is not None and self.age_dist is not None:
+				# Calculate age_grp_dist from age_dist and age_bins
+				age_grp_dist = []
+				age_edges = self.age_bins.left + [self.age_bins.max + 1]
+				for i in range(len(age_edges)-1):
+					start_age = age_edges[i]
+					end_age = age_edges[i+1]
+					age_grp_dist.append(self.age_dist[start_age:end_age].sum())
+
+				self.age_grp_dist = np.array(age_grp_dist)
+  
+	def symmetrize_cint(self):
+		"""Symmetrize the contact intensity matrix using the reciprocity adjustment."""
+  
+		if self.age_grp_dist is None:
+			raise ValueError("age_grp_dist must be provided for symmetrization.")
+
+		# Symmetrize the contact intensity matrix
+		M = self.post_cint
+		print()
+		P = np.diag(self.age_grp_dist)[np.newaxis, ...]
+		P_inv = np.diag(1 / self.age_grp_dist)[np.newaxis, ...]
+		self.post_cint = 0.5 * (M + P_inv @ np.transpose(M, (0, 2, 1)) @ P)
 
 	def summarise_cint(self,
                      depix: bool = False,
+                     symmetrize: bool = False,
                      probs: tuple = None,
                      alpha: float = 0.05):
 		"""
-		Summarise the contact intensity matrix of the model.
-		It uses the model's posterior predictive distribution to compute the summary statistics.
+		Summarise the posterior contact intensity matrix.
+
+		Parameters
+		----------
+		depix: bool, default=False
+			Whether to depixilate the contact intensity matrix.
+		symmetrize: bool, default=False
+			Whether to apply the reciprocity adjustment to the contact intensity matrix.
+		probs: tuple, optional
+			The quantiles to compute. If None, uses (alpha/2, 0.5, 1-alpha/2).
+		alpha: float, default=0.05
+			Significance level for credible intervals.
+   
+		Returns
+		-------
+		NDArray
+			The quantiles of the contact intensity matrix.
 		"""
 		if probs is None:
 			probs = (alpha/2, 0.5, 1-alpha/2)
   
-		if not hasattr(self, 'sum_cint'):
-			self.sum_cint = np.quantile(self.post_cint, probs, axis=0)
+		if symmetrize:
+			self.symmetrize_cint()
+    
+		self.sum_cint = np.quantile(self.post_cint, probs, axis=0)
+
+		if depix:
+			if self.age_bins is None:
+				raise ValueError("age_bins must be provided for depixilation.")
+			if self.age_dist is None:
+				raise ValueError("age_dist must be provided for depixilation.")
   
-		if depix and self.age_bins is not None and self.age_dist is not None:
 			# Depixilate the summed contact intensity
 			if not hasattr(self, 'depix_sum_cint'):
 				self.depix_sum_cint = np.array([
@@ -321,16 +393,35 @@ class ModelSummariserPrem:
 			return self.sum_cint
   
 	def summarise_mcint(self,
-                     	depix: bool = False,
+                     	depixilate: bool = False,
+                      symmetrize: bool = False,
                      	probs: tuple = None,
 										 	alpha: float = 0.05):
 		"""
 		Summarise the marginal contact intensity of the model.
+  
+		Parameters
+		----------
+		depixilate: bool, default=False
+			Whether to depixilate the contact intensity matrix before calculating marginal contact intensity.
+		symmetrize: bool, default=False
+			Whether to apply the reciprocity adjustment to the contact intensity matrix.
+		probs: tuple, optional
+			The quantiles to compute. If None, uses (alpha/2, 0.5, 1-alpha/2).
+		alpha: float, default=0.05
+			Significance level for credible intervals.
+		
+  	Returns
+		-------
+		NDArray
+			The quantiles of the marginal contact intensity.
 		"""
 		if probs is None:
 			probs = (alpha/2, 0.5, 1-alpha/2)
    
 		if not hasattr(self, 'sum_mcint'):
+			if symmetrize:
+				self.symmetrize_cint()
 			mcint = self.post_cint.sum(axis=1)
 			self.sum_mcint = np.quantile(mcint, probs, axis=0)
 		

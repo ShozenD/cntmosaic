@@ -2,41 +2,18 @@ from ._utils import (
     print_available_countries,
 )
 
-from ._sim import (
-    make_contact_pattern,
-    sample_contacts,
-    simulate_age,
-    simulate_ses,
-    sample_participants
-)
-
 from ._eval import ModelEvaluatorSVI, ModelEvaluatorMCMC
 
-from ._ParticipantGenerator import ParticipantGenerator
-from ._ContactMatrixGenerator import ContactMatrixGenerator
+from ._ParticipantGenerator import Subgroup, ParticipantGenerator
+from ._MatrixGenerator import MatrixGenerator
 from ._ContactGenerator import ContactGenerator
 
-utils_module = [
-    'print_available_countries',
+__all__ = [
+    "print_available_countries",
+    "ModelEvaluatorSVI",
+    "ModelEvaluatorMCMC",
+    "Subgroup",
+    "ParticipantGenerator",
+    "MatrixGenerator",
+    "ContactGenerator",
 ]
-
-sim_module = [
-	'print_available_countries',
-	'load_base_patterns',
-	'load_age_distribution',
-	'make_contact_pattern',
-    'sample_participants',
-	'sample_contacts',
-    'simulate_age',
-    'simulate_ses',
-    'ParticipantGenerator',
-    'ContactMatrixGenerator',
-    'ContactGenerator'
-]
-
-eval_module = [
-    'ModelEvaluatorSVI',
-    'ModelEvaluatorMCMC'
-]
-
-__all__ = utils_module + sim_module + eval_module

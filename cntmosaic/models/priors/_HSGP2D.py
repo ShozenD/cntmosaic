@@ -13,10 +13,10 @@ from .._utils import (
     age_age_grid,
     diff_age_age_grid,
     diff_age_age_index,
-    tril_indices_row,
-    symm_from_tril_indices_row,
-    lower_tri_indices,
-    symmetrize_from_lower_tri
+    tril_ix_row,
+    tril_ix_col,
+    symm_from_tril_ix_row,
+    symm_from_tril_ix_col,
 )
 
 from .._math import (
@@ -74,10 +74,10 @@ class HSGP2D(Prior2D):
         Xn = (X - X.mean(axis=0)) / X.std(axis=0)
         self.L = list(np.abs(Xn).max(axis=0) * self.C)
         
-        if self.type == 'global':
-            tril_idx = tril_indices_row(self.A)
+        if self.prior_type == 'global':
+            tril_idx = tril_ix_row(self.A)
             self.X = Xn[tril_idx]
-            self.sym_tril_idx = symm_from_tril_indices_row(self.A)
+            self.sym_tril_idx = symm_from_tril_ix_row(self.A)
         else:
             self.X = Xn
     
@@ -98,7 +98,7 @@ class HSGP2D(Prior2D):
                 dim=2
             )
 
-        if self.type == 'global':
+        if self.prior_type == 'global':
             sigma = numpyro.sample('gp_scale', dist.InverseGamma(5, 5))
             lenscale = numpyro.sample('gp_lenscale', dist.InverseGamma(5, 5))
             spd = compute_diag_spd(sigma, lenscale)
@@ -110,7 +110,7 @@ class HSGP2D(Prior2D):
             f = f[self.sym_tril_idx]
             return f.reshape((self.A, self.A))
         
-        elif self.type == 'partial':
+        elif self.prior_type == 'partial':
             plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)
             plate_coef = numpyro.plate('coef', self.eig_func.shape[-1], dim=-1)
             
@@ -127,7 +127,7 @@ class HSGP2D(Prior2D):
             f = (spd * beta) @ self.eig_func.T
             f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A))
         
-        elif self.type == 'full':
+        elif self.prior_type == 'full':
             plate_diag = numpyro.plate('diag', self.event_dim_diag, dim=-2)
             plate_non_diag = numpyro.plate('non_diag', self.event_dim_non_diag, dim=-2)
             plate_coef = numpyro.plate('coef', self.eig_func.shape[-1], dim=-1)
@@ -167,7 +167,7 @@ class HSGP2D(Prior2D):
             f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
 
         else:
-            raise ValueError(f"Unknown type '{self.type}'. Must be one of 'global', 'partial', or 'full'.")
+            raise ValueError(f"Unknown type '{self.prior_type}'. Must be one of 'global', 'partial', or 'full'.")
 
         # Optional transformations
         if self.transform == 'alr':

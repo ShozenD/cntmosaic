@@ -78,7 +78,7 @@ class BRCrefine(BRC):
     if not hasattr(self.ds, 'log_P'):
       raise ValueError("Log of population age distribution (log_P) is missing.")
     
-  def model(self):
+  def model(self, y=None):
     beta0 = numpyro.sample('baseline', dist.Normal(0., 10.))
     with scope(prefix='rate'):
       f = self.priors['rate'].sample()
@@ -96,11 +96,11 @@ class BRCrefine(BRC):
     
     if self.likelihood == 'poisson':
       with plate('data', len(self.y)):
-        numpyro.sample('obs', dist.Poisson(rate=mu), obs=self.y)
+        numpyro.sample('obs', dist.Poisson(rate=mu), obs=y)
         
     if self.likelihood == 'negbin':
       inv_disp = numpyro.sample('inv_disp', dist.Exponential(1))
       with plate('data', len(self.y)):
         numpyro.sample('obs', dist.NegativeBinomial2(mean=mu,
                                                     concentration=1/inv_disp),
-                      obs=self.y)
+                      obs=y)

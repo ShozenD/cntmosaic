@@ -1,20 +1,22 @@
 import pandas as pd
+import numpy as np
 
 import jax
 import jax.numpy as jnp
 import jaxlib
+from jax import random
 
 import numpyro
 from numpyro import distributions as dist
 from numpyro.handlers import seed, trace
-from ._inference import (
+from ._numpyro import (
   run_inference_mcmc,
   run_inference_svi,
   posterior_predictive_mcmc,
   posterior_predictive_svi
 )
 
-from .funcs import gmrf2d_operators, gmrf
+from ..distributions import IGMRF2D
 
 class Prem:
   def __init__(self,
@@ -70,52 +72,53 @@ class Prem:
       .reset_index()
     )
     
-    self.data["iid"] = pd.factorize(self.data["id"])[0]
+    self.data["iix"] = pd.factorize(self.data["id"])[0]
     
     self.N = self.data["id"].nunique()
-    self.y = jnp.array(self.data["y"].values)
+    self.y = np.array(self.data["y"].values)
     
-    self.iid = jnp.array(self.data["iid"].values)
+    self.iix = np.array(self.data["iix"].values)
     self.C = self.data["age_grp_cnt"].cat.categories.size
     self.D = self.data["age_grp_part"].cat.categories.size
-    self.cid = jnp.array(self.data["age_grp_part"].cat.codes)
-    self.did = jnp.array(self.data["age_grp_cnt"].cat.codes)
+    self.cix = np.array(self.data["age_grp_part"].cat.codes)
+    self.dix = np.array(self.data["age_grp_cnt"].cat.codes)
     
-    self.L = gmrf2d_operators((self.C, self.D), (1, 1), cov_struct="additive")
+  def model(self, y=None):
+    beta0 = numpyro.sample("beta0", dist.Normal(0., 10.))
     
-  def model(self):
-    beta0 = numpyro.sample("baseline", dist.Exponential(0.001))
-    z = numpyro.sample("z", dist.Normal(0., 1.), sample_shape=(self.C * self.D,))
-    log_cint = numpyro.deterministic(
-      "log_cint",
-      jnp.log(beta0)
-      + gmrf(z, self.L, scale=1).reshape(self.C, self.D, order="F")
-    )[self.cid, self.did]
+    tau = numpyro.sample("tau", dist.Gamma(1.0, 0.01))
+    beta_cd = numpyro.sample("beta_cd", IGMRF2D(
+      num_nodes=(self.D, self.C),
+      order=(1, 1),
+      cond_prec1=tau,
+      cond_prec2=tau,
+    )).reshape((self.D, self.C))
+    
+    log_cint = numpyro.deterministic('log_cint', beta0 + beta_cd)
     
     if self.random_effects:
-      theta = numpyro.sample("theta", dist.Exponential(0.0001))
-      with numpyro.plate('random_effects', self.N):
-        sigma = numpyro.sample("sigma", dist.Gamma(theta, theta))
-      
-      mu = jnp.exp(log_cint) * sigma[self.iid]
+      mu_re = numpyro.sample("mu_re", dist.Normal(0.0, 1.0))
+      tau_re = numpyro.sample("tau_re", dist.HalfNormal(1.0))
+      with numpyro.plate("random_effects", self.N):
+        sigma_re = numpyro.sample("sigma_re", dist.Normal(mu_re, tau_re))
+      lam = jnp.exp(log_cint[self.cix, self.dix] + sigma_re[self.iix])
     else:
-      mu = jnp.exp(log_cint)
-    
+      lam = jnp.exp(log_cint[self.cix, self.dix])
+
     with numpyro.plate("data", len(self.y)):
-      numpyro.sample("obs", dist.Poisson(rate=mu), obs=self.y)
+      numpyro.sample("obs", dist.Poisson(lam), obs=y)
       
   def print_model_shape(self):
     """Print the shapes of the model parameters."""
-    tr = trace(seed(self.model, jax.random.PRNGKey(0))).get_trace()
+    tr = trace(seed(self.model, random.PRNGKey(0))).get_trace()
     print(numpyro.util.format_shapes(tr))
-    
+
   def run_inference_mcmc(
     self,
     rng_key,
     num_samples: int = 500,
     num_warmup: int = 500,
-    num_chains: int = 2,
-    **kwargs):
+    num_chains: int = 2):
     """Run full Bayesian inference using Hamiltonian Monte Carlo and NUT Sampler.
 
     Parameters
@@ -131,24 +134,21 @@ class Prem:
     **kwargs
       Additional keyword arguments to pass to the MCMC
     """
-    if not isinstance(rng_key, jaxlib.xla_extension.ArrayImpl):
-      rng_key = jax.random.PRNGKey(int(rng_key))
     self.mcmc = run_inference_mcmc(
       rng_key,
       self.model,
       num_samples=num_samples,
       num_warmup=num_warmup,
       num_chains=num_chains,
-      **kwargs
+      y=self.y
     )
-    
+
   def run_inference_svi(
     self,
     prng_key,
     guide: callable,
     num_steps: int = 5_000,
-    peak_lr: float = 0.01,
-    **model_kwargs,
+    peak_lr: float = 0.01
   ):
     """Run stochastic variational inference.
 
@@ -172,15 +172,14 @@ class Prem:
       guide,
       num_steps=num_steps,
       peak_lr=peak_lr,
-      **model_kwargs
+      y=self.y
     )
-    
+
   def posterior_predictive_svi(
     self,
     prng_key,
     guide: callable,
     num_samples: int = 5_000,
-    **model_kwargs,
   ) -> dict[str, jax.Array]:
     """Generate posterior predictive samples using SVI.
 
@@ -203,36 +202,5 @@ class Prem:
       self.model,
       guide,
       self.svi.params,
-      num_samples=num_samples,
-      **model_kwargs
+      num_samples=num_samples
     )
-
-
-class Prem2(Prem):
-  def __init__(self,
-               part: pd.DataFrame,
-               cnt: pd.DataFrame,
-               random_effects: bool = False):
-    super().__init__(part, cnt, random_effects)
-    
-  def model(self):
-    beta0 = numpyro.sample("baseline", dist.Normal(0, 3))
-    
-    z = numpyro.sample("z", dist.Normal(0., 1.), sample_shape=(self.C * self.D,))
-    log_cint = numpyro.deterministic(
-      "log_cint",
-      beta0
-      + gmrf(z, self.L, scale=1).reshape(self.C, self.D, order="F")
-    )[self.cid, self.did]
-    
-    if self.random_effects:
-      tau = numpyro.sample("tau", dist.HalfCauchy(1))
-      with numpyro.plate('random_effects', self.N):
-        sigma = numpyro.sample("sigma", dist.Normal(0, tau))
-        
-      mu = jnp.exp(log_cint + sigma[self.iid]) 
-    else:
-      mu = jnp.exp(log_cint) 
-    
-    with numpyro.plate("data", len(self.y)):
-      numpyro.sample("obs", dist.Poisson(rate=mu), obs=self.y)

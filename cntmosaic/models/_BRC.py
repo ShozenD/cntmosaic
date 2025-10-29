@@ -11,7 +11,7 @@ import numpyro
 from numpyro.handlers import seed, trace
 
 from ..dataloader import DataLoader
-from ._inference import (
+from ._numpyro import (
   run_inference_mcmc,
   run_inference_svi,
   posterior_predictive_mcmc,
@@ -105,8 +105,7 @@ class BRC(ABC):
     rng_key,
     num_samples: int = 500,
     num_warmup: int = 500,
-    num_chains: int = 2,
-    **kwargs):
+    num_chains: int = 2):
     """Run full Bayesian inference using Hamiltonian Monte Carlo and NUT Sampler.
 
     Parameters
@@ -130,7 +129,7 @@ class BRC(ABC):
       num_samples=num_samples,
       num_warmup=num_warmup,
       num_chains=num_chains,
-      **kwargs
+      y=self.y
     )
 
   def run_inference_svi(
@@ -138,8 +137,7 @@ class BRC(ABC):
     prng_key,
     guide: callable,
     num_steps: int = 5_000,
-    peak_lr: float = 0.01,
-    **model_kwargs,
+    peak_lr: float = 0.01
   ):
     """Run stochastic variational inference.
 
@@ -163,7 +161,7 @@ class BRC(ABC):
       guide,
       num_steps=num_steps,
       peak_lr=peak_lr,
-      **model_kwargs
+      y=self.y
     )
 
   def posterior_predictive_svi(
@@ -171,7 +169,6 @@ class BRC(ABC):
     prng_key,
     guide: callable,
     num_samples: int = 5_000,
-    **model_kwargs,
   ) -> dict[str, jax.Array]:
     """Generate posterior predictive samples using SVI.
 
@@ -194,8 +191,7 @@ class BRC(ABC):
       self.model,
       guide,
       self.svi.params,
-      num_samples=num_samples,
-      **model_kwargs
+      num_samples=num_samples
     )
   
   def prior_sampler(self, para_name, num_samples=1, seed=0):
@@ -222,7 +218,7 @@ class BRC(ABC):
         If `para_name` is not found in `self.params.prior`.
     '''
     assert(para_name in self.params.prior)
-    _, subkey = jrd.split(jrd.PRNGKey(seed))
+    _, subkey = jax.random.split(jax.random.PRNGKey(seed))
     samples = self.params.prior[para_name].sample(
     subkey, sample_shape=(num_samples,))
     return samples

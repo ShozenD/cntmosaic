@@ -59,19 +59,18 @@ class vdKassteele(Prior2D):
 	
 		def sample(self):
 				"""Sample from the HSGP prior."""
-				tau = numpyro.sample('tau', dist.InverseGamma(1, 0.0001))
-    
 				if self.type == 'global':
 						N = self.A * (self.A + 1) // 2
-						
+						tau = numpyro.sample('tau', dist.InverseGamma(1, 0.0001))
 						z = numpyro.sample('z', dist.Normal(0, 1).expand((N,)).to_event(1))
 						f = gmrf_sym(z, self.L, self.sym_idx, tau)
       
 						return f.reshape((self.A, self.A), order='F')
 				
-				elif self.type == 'partial':      
+				elif self.type == 'partial':
+						tau = numpyro.sample('tau', dist.InverseGamma(1, 0.0001))
 						def map_gmrf(x): return gmrf(x, self.L, tau)
-      
+						
 						plate_event = numpyro.plate('event', self.event_dim_eff, dim=-2)
 						with plate_event:
 								z = numpyro.sample('z', dist.Normal(0, 1), sample_shape=(self.A**2,))
@@ -79,6 +78,8 @@ class vdKassteele(Prior2D):
 						f = self.trans_loc + f.reshape((self.event_dim_eff, self.A, self.A), order='F')
 				
 				elif self.type == 'full':
+						tau = numpyro.sample('tau', dist.InverseGamma(1, 0.0001))
+      
 						def map_gmrf_sym(x): return gmrf_sym(x, self.L_diag, self.sym_idx, tau)
 						def map_gmrf(x): return gmrf(x, self.L_non_diag, tau)
   

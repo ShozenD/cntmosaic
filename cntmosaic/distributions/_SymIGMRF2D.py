@@ -14,7 +14,7 @@ from numpyro.distributions.distribution import Distribution
 from numpyro.util import is_prng_key
 from numpyro.distributions.util import validate_sample
 
-from ..models._utils import symm_from_tril_ix_col, tril_ix_col
+from ..utils import symm_from_tril_ix_col, tril_ix_col
 
 
 def diff_matrix_np(num_nodes: int, order: int) -> NDArray:

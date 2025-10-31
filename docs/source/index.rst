@@ -15,10 +15,11 @@ The models in ``cntmosaic`` are implemented using the probabilistic programming 
 both Hamiltonian Monte Carlo (HMC) based full Bayesian inference and fast stochastic variational inference (SVI).
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :caption: Getting Started
    
-   usage/setup
+   usage/installation
+   usage/dependencies
    usage/quickstart
 
 .. toctree::
@@ -26,8 +27,14 @@ both Hamiltonian Monte Carlo (HMC) based full Bayesian inference and fast stocha
    :caption: Introductory Tutorial
 
 .. toctree::
+   :maxdepth: 2
+   :caption: API Reference
+
+   api/index
+
+.. toctree::
    :maxdepth: 1
-   :caption: API and Developer Reference
+   :caption: Developer Reference (Legacy)
 
    documentation/preprocess
    documentation/models

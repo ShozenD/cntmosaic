@@ -628,7 +628,10 @@ class ContactMatrixEstimator:
         )
 
         # Extract values and reindex to ensure all age groups present
-        Y_df = Y_agg["y"].reindex(index=age_groups, columns=age_groups, fill_value=0)
+        age_groups_index = pd.Index(age_groups)
+        Y_df = Y_agg["y"].reindex(
+            index=age_groups_index, columns=age_groups_index, fill_value=0
+        )
 
         return Y_df.values.astype(np.float64)
 
@@ -659,7 +662,7 @@ class ContactMatrixEstimator:
         counts = (
             df_part.groupby("age_grp_part", observed=False)
             .size()
-            .reindex(age_groups, fill_value=0)
+            .reindex(pd.Index(age_groups), fill_value=0)
         )
 
         if (counts == 0).any():
@@ -698,7 +701,7 @@ class ContactMatrixEstimator:
         pop_sizes = (
             df_age_dist.groupby("age_grp", observed=False)
             .agg({"P": "sum"})
-            .reindex(age_groups, fill_value=0)
+            .reindex(pd.Index(age_groups), fill_value=0)
         )
 
         if (pop_sizes["P"] == 0).any():
@@ -978,10 +981,12 @@ class SocialMix:
         Participant data with columns:
         - 'id': unique participant identifier
         - 'age_part': participant age (numeric)
+        - 'age_grp_part': participant age group (pd.Interval, categorical)
     df_cnt : pd.DataFrame
         Contact data with columns:
         - 'id': participant identifier (links to df_part)
         - 'age_cnt': contact age (numeric)
+        - 'age_grp_cnt': contact age group (pd.Interval, categorical)
         - 'y': number of contacts (numeric, >= 0)
     df_age_dist : pd.DataFrame
         Population age distribution with columns:

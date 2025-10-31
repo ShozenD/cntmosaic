@@ -30,14 +30,14 @@ jobs:
         pip install -r requirements.txt
         pip install pytest pytest-cov build
 
+    - name: Run tests with coverage
+      run: |
+        pytest --cov=cntmosaic --cov-report=xml --cov-report=term -v
+
     - name: Test package build
       run: |
         python -m build
         pip install dist/*.whl
-
-    - name: Run tests with coverage
-      run: |
-        pytest --cov=cntmosaic --cov-report=xml --cov-report=term -v
 
     - name: Upload coverage to Codecov
       if: matrix.python-version == '3.12'
@@ -46,4 +46,5 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
         flags: unittests
         name: codecov-umbrella
-        fail_ci_if_error: false
+        fail_ci_if_error: true
+        verbose: true

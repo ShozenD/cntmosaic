@@ -52,9 +52,6 @@ dependencies = [
     # Visualization
     "matplotlib>=3.4.0",
     "altair>=4.2.0",
-    
-    # Sparse matrix support (for MCMC)
-    "scikit-sparse>=0.4.5; platform_system != 'Windows'",
 ]
 
 [project.optional-dependencies]

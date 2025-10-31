@@ -26,6 +26,3 @@ tqdm>=4.60.0
 # Visualization
 matplotlib>=3.4.0
 altair>=4.2.0
-
-# Sparse matrix support (skip on Windows)
-scikit-sparse>=0.4.5; sys_platform != 'win32'

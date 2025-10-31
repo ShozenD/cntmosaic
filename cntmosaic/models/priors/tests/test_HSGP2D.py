@@ -7,16 +7,12 @@ def test_initialisation():
     C=[1.5, 1.5],
     M=[30, 30],
     grid_type='age-age',
-    loc=0,
-    event_dim=1,
     transform=None,
-    symmetric=False
+    prior_type='global'
   )
   
   assert prior.C == [1.5, 1.5]
   assert prior.M == [30, 30]
   assert prior.grid_type == 'age-age'
-  assert prior.loc == 0
-  assert prior.event_dim == 1
   assert prior.transform == None
-  assert prior.symmetric == False
+  assert prior.prior_type == 'global'

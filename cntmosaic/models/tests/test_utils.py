@@ -38,10 +38,10 @@ def test_diff_age_age_index_row_wise():
     # Call the function with the test case A=3
     idx = diff_age_age_index(3)
 
-    # The expected array is now in row-major order
-    expected_output = np.array([2, 3, 4, 6, 7, 8, 10, 11, 12])
+    # The expected array is now in column-major order
+    expected_output = np.array([6, 9, 12, 4, 7, 10, 2, 5, 8])
 
-    # Assert that the function's output matches the expected row-wise array
+    # Assert that the function's output matches the expected array
     assert_equal(idx, expected_output)
 
 

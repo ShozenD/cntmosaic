@@ -15,10 +15,10 @@ def test_basic_functionality():
   assert 'community' in patterns
   
   # Check dimensions
-  assert patterns['household'].shape == (85, 85)
-  assert patterns['school'].shape == (85, 85)
-  assert patterns['work'].shape == (85, 85)
-  assert patterns['community'].shape == (85, 85)
+  assert patterns['household'].shape == (81, 81)
+  assert patterns['school'].shape == (81, 81)
+  assert patterns['work'].shape == (81, 81)
+  assert patterns['community'].shape == (81, 81)
   
 def test_normalisation():
   patterns = load_template_patterns('United_States', normalise=True)

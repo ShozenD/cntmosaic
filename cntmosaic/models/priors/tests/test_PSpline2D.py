@@ -46,7 +46,7 @@ def test_sample_partial():
   prior = PSpline2D(prior_type='partial', transform='ilr')
   prior.set_age_bounds(0, 9)
   prior.set_event_dim(3)
-  prior.set_loc(jnp.ones((3, 10, 10)))
+  prior.set_loc(0.0)
 
   with numpyro.handlers.seed(rng_seed=42):
       result = prior.sample()
@@ -60,7 +60,7 @@ def test_sample_full():
   prior = PSpline2D(prior_type='full', transform='ilr')
   prior.set_age_bounds(0, 9)
   prior.set_event_dim(4)
-  prior.set_loc(jnp.ones((4, 10, 10)))
+  prior.set_loc(0.0)
     
   with numpyro.handlers.seed(rng_seed=42):
       result = prior.sample()

@@ -49,6 +49,9 @@ dependencies = [
     # Progress bars
     "tqdm>=4.60.0",
     
+    # Machine learning utilities
+    "scikit-learn>=1.0.0",
+    
     # Visualization
     "matplotlib>=3.4.0",
     "altair>=4.2.0",

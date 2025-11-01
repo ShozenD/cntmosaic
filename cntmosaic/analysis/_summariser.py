@@ -61,127 +61,596 @@ def compute_quantiles(
     return result
 
 
-class ModelSummariserSVI:
-    def __init__(self, model):
-        self.model = model
-        self.prng_key = jax.random.PRNGKey(0)
-        self.get_post_predictive()
-        self.get_post_predictive_cint()
+class ModelSummariserBRC:
+    """
+    Statistical summariser for BRC model inference results (MCMC or SVI).
 
-    def get_post_predictive(self):
+    Unified summariser for BRCfine, BRCrefine, HiBRCfine, and HiBRCrefine models.
+    Computes quantiles and credible intervals for contact matrices from MCMC or SVI
+    posterior samples, with automatic detection of inference method and model type.
+
+    Parameters
+    ----------
+    model : BRCfine | BRCrefine | HiBRCfine | HiBRCrefine
+        Fitted BRC model with MCMC or SVI results.
+    num_samples : int, default=3000
+        Number of posterior samples to draw if using SVI.
+
+    Attributes
+    ----------
+    model : BRC
+        Reference to the BRC model.
+    inference_method : Literal["mcmc", "svi"]
+        Detected inference method ("mcmc" or "svi").
+    model_type : Literal["brc", "hibrc"]
+        Detected model type ("brc" for BRCfine/BRCrefine, "hibrc" for HiBRCfine/HiBRCrefine).
+    num_samples : int
+        Number of samples for SVI posterior.
+    post_samples : Dict[str, NDArray]
+        Posterior samples from MCMC or SVI.
+    post_cint_samples : NDArray | Dict
+        Posterior contact intensity samples.
+        - For BRC: NDArray of shape (n_samples, A, A)
+        - For HiBRC: Dict[str, Dict[str, NDArray]] for each stratification variable
+
+    Raises
+    ------
+    ValueError
+        If neither MCMC nor SVI has been run on the model.
+        If model type is not supported.
+    TypeError
+        If model is not a BRC-family model.
+
+    Examples
+    --------
+    >>> from cntmosaic.models import BRCfine
+    >>> from cntmosaic.models.priors import Spline2D
+    >>> from cntmosaic.analysis import ModelSummariserBRC
+    >>>
+    >>> # Fit BRC model with MCMC
+    >>> model = BRCfine(dataloader, priors={"rate": Spline2D()})
+    >>> model.run_inference_mcmc(PRNGKey(0), num_samples=1000)
+    >>>
+    >>> # Create summariser (auto-detects MCMC)
+    >>> summariser = ModelSummariserBRC(model)
+    >>>
+    >>> # Get 95% credible intervals for contact intensity
+    >>> summary = summariser.summarise_cint(alpha=0.05)
+    >>> lower, median, upper = summary['lower'], summary['median'], summary['upper']
+    >>>
+    >>> # Also works with SVI
+    >>> model_svi = BRCfine(dataloader, priors={"rate": Spline2D()})
+    >>> model_svi.run_inference_svi(PRNGKey(0), guide, num_steps=10000)
+    >>> summariser_svi = ModelSummariserBRC(model_svi, num_samples=3000)
+    >>>
+    >>> # Works with hierarchical models too
+    >>> hibrc = HiBRCfine(dataloader, priors)
+    >>> hibrc.run_inference_mcmc(PRNGKey(0), num_samples=1000)
+    >>> summariser_hibrc = ModelSummariserBRC(hibrc)
+    >>> summary_by_group = summariser_hibrc.summarise_cint(alpha=0.05)
+
+    Notes
+    -----
+    - Automatically detects inference method (MCMC vs SVI)
+    - Automatically detects model type (BRC vs HiBRC)
+    - Unified API across all BRC-family models
+    - Efficient memory management for large posterior samples
+    - Results are cached to avoid redundant computation
+
+    See Also
+    --------
+    ModelSummariserPrem : Summariser for Prem models
+    ModelSummariserSocialMix : Summariser for SocialMix models
+    """
+
+    def __init__(
+        self,
+        model: "BRCfine | BRCrefine | HiBRCfine | HiBRCrefine",
+        num_samples: int = 3000,
+    ) -> None:
         """
-        Get the posterior predictive distribution of the model.
-        This is a wrapper around the model's posterior_predictive_svi method.
-        It uses the model's guide to sample from the posterior predictive distribution.
-        The guide is a variational approximation to the posterior distribution.
+        Initialize summariser with a BRC model.
+
+        Parameters
+        ----------
+        model : BRCfine | BRCrefine | HiBRCfine | HiBRCrefine
+            BRC model with completed MCMC or SVI inference.
+        num_samples : int, default=3000
+            Number of posterior samples to draw if using SVI.
+
+        Raises
+        ------
+        ValueError
+            If neither MCMC nor SVI has been run on the model.
+        TypeError
+            If model is not a BRC-family model.
         """
-        self.post_pred = self.model.posterior_predictive_svi(
-            self.prng_key, self.model.guide
-        )
+        # Validate model type
+        from ..models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine
 
-    def get_post_predictive_cint(self):
-        if isinstance(self.model, (HiBRCfine, HiBRCrefine)):
-            # For HiBRC models, the contact intensity needs to be computed
-            log_rate = self.post_pred["log_rate"].astype(
-                np.float32
-            )  # Convert early to save memory
-            log_P = self.model.log_P.astype(np.float32)  # Convert early to save memory
-            post_pred_cint = {}
-
-            for name, site in self.post_pred.items():
-                if "log_delta" in name:
-                    var = name.split("/")[0]
-                    cat = self.model.ds.attrs["grp_vars"][var]
-                    site = site.astype(np.float32)  # Convert early to save memory
-
-                    # Initialize dict for this variable
-                    post_pred_cint[var] = {}
-
-                    # Process each category separately to avoid memory explosion
-                    for i, c in enumerate(cat):
-                        # Compute contact intensity for this category only
-                        # Add dimensions efficiently without creating large intermediate arrays
-                        log_rate_expanded = log_rate[
-                            :, np.newaxis, :, :
-                        ]  # shape: (n_samples, 1, A, A)
-                        site_cat = site[
-                            :, i : i + 1, :, :
-                        ]  # shape: (n_samples, 1, A, A) - slice to keep dims
-                        log_P_expanded = log_P[
-                            np.newaxis, np.newaxis, :, :
-                        ]  # shape: (1, 1, A, A)
-
-                        # Compute log sum and exp in one operation to minimize memory
-                        log_sum = log_rate_expanded + site_cat + log_P_expanded
-
-                        # Use np.exp with out parameter to avoid creating intermediate arrays
-                        cint = np.exp(log_sum, dtype=np.float32).squeeze(
-                            axis=1
-                        )  # Remove singleton dimension
-                        post_pred_cint[var][c] = cint
-
-                        # Clean up intermediate arrays to free memory immediately
-                        del log_rate_expanded, site_cat, log_sum, cint
-
-            self.post_pred_cint = post_pred_cint
-        elif isinstance(self.model, (BRCfine, BRCrefine)):
-            pass
-
-    def summarise_rate(self, probs: tuple = (0.025, 0.5, 0.975)):
-        """
-        Summarise the rate parameter of the model.
-        This is a wrapper around the model's summarise_rate method.
-        It uses the model's posterior predictive distribution to compute the summary statistics.
-        """
-        if "sum_rate" not in self.__dict__:
-            self.sum_rate = np.quantile(
-                np.exp(self.post_pred["log_rate"]), probs, axis=0
+        if not isinstance(model, (BRCfine, BRCrefine, HiBRCfine, HiBRCrefine)):
+            raise TypeError(
+                f"Model must be a BRC-family model (BRCfine, BRCrefine, HiBRCfine, HiBRCrefine), "
+                f"got {type(model).__name__}"
             )
 
-        return self.sum_rate
+        # Detect inference method
+        has_mcmc = hasattr(model, "_mcmc_result") and model._mcmc_result is not None
+        has_svi = hasattr(model, "_svi_result") and model._svi_result is not None
 
-    def summarise_cint(self, probs: tuple = (0.025, 0.5, 0.975)):
-        """
-        Summarise the contact intensity matrix of the model.
-        It uses the model's posterior predictive distribution to compute the summary statistics.
-        """
-        if "sum_cint" not in self.__dict__:
-            if type(self.model) in (BRCfine, BRCrefine):
-                # For BRC models, the contact intensity is stored in 'log_cint'
-                self.sum_cint = np.quantile(self.post_pred["log_cint"], probs, axis=0)
-                self.sum_cint = np.exp(self.sum_cint)
+        if not (has_mcmc or has_svi):
+            raise ValueError(
+                "Neither MCMC nor SVI has been run on the model. "
+                "Call model.run_inference_mcmc() or model.run_inference_svi() first."
+            )
 
-            elif type(self.model) in (HiBRCfine, HiBRCrefine):
-                self.sum_cint = {
-                    var: {
-                        name: np.quantile(value, probs, axis=0)
-                        for name, value in cat.items()
+        # Store configuration
+        self.model = model
+        self.inference_method: Literal["mcmc", "svi"] = "mcmc" if has_mcmc else "svi"
+        self.num_samples = num_samples
+
+        # Detect model type
+        if isinstance(model, (HiBRCfine, HiBRCrefine)):
+            self.model_type: Literal["brc", "hibrc"] = "hibrc"
+        else:
+            self.model_type: Literal["brc", "hibrc"] = "brc"
+
+        # Initialize cache
+        self._cache: Dict[str, Dict[str, NDArray]] = {}
+
+        # Load posterior samples and compute contact intensities
+        self._load_posterior()
+        self._compute_contact_intensities()
+
+    def _load_posterior(self) -> None:
+        """Load posterior samples from MCMC or SVI."""
+        if self.inference_method == "mcmc":
+            self.post_samples = self.model._mcmc_result.get_samples()
+        else:  # svi
+            # Generate samples from variational posterior
+            self.post_samples = self.model.posterior_predictive_svi(
+                PRNGKey(0), self.model._guide, num_samples=self.num_samples
+            )
+
+    def _compute_contact_intensities(self) -> None:
+        """
+        Compute contact intensity samples from posterior.
+
+        For BRC models: contact intensity = exp(log_cint)
+        For HiBRC models: contact intensity = exp(log_rate + log_delta + log_P)
+        """
+        if self.model_type == "brc":
+            # Simple case: contact intensity is directly available
+            if "log_cint" in self.post_samples:
+                self.post_cint_samples = np.exp(self.post_samples["log_cint"])
+            else:
+                raise ValueError(
+                    "Posterior samples must contain 'log_cint' field for BRC models"
+                )
+
+        else:  # hibrc
+            # Complex case: compute contact intensity for each stratification category
+            self.post_cint_samples = self._compute_hibrc_contact_intensities()
+
+    def _compute_hibrc_contact_intensities(self) -> Dict[str, Dict[str, NDArray]]:
+        """
+        Compute stratified contact intensities for HiBRC models.
+
+        Returns
+        -------
+        Dict[str, Dict[str, NDArray]]
+            Nested dictionary: {var_name: {category: intensity_samples}}
+            where intensity_samples has shape (n_samples, A, A)
+
+        Notes
+        -----
+        Memory-efficient implementation:
+        - Processes each category separately to avoid memory explosion
+        - Uses float32 for intermediate computations
+        - Deletes intermediate arrays immediately after use
+        """
+        log_rate = self.post_samples["log_rate"].astype(np.float32)
+        log_P = self.model.log_P.astype(np.float32)
+
+        post_cint = {}
+
+        # Process each stratification variable
+        for name, site in self.post_samples.items():
+            if "log_delta" not in name:
+                continue
+
+            var = name.split("/")[0]
+            categories = self.model.ds.attrs["grp_vars"][var]
+            site = site.astype(np.float32)
+
+            # Initialize dict for this variable
+            post_cint[var] = {}
+
+            # Process each category separately to save memory
+            for i, category in enumerate(categories):
+                # Compute contact intensity for this category
+                # cint[c,d] = exp(log_rate[c,d] + log_delta[var,cat,c,d] + log_P[d])
+                log_rate_expanded = log_rate[
+                    :, np.newaxis, :, :
+                ]  # (n_samples, 1, A, A)
+                site_cat = site[:, i : i + 1, :, :]  # (n_samples, 1, A, A) - keep dims
+                log_P_expanded = log_P[np.newaxis, np.newaxis, :, :]  # (1, 1, A, A)
+
+                # Compute log sum and exp
+                log_sum = log_rate_expanded + site_cat + log_P_expanded
+                cint = np.exp(log_sum, dtype=np.float32).squeeze(
+                    axis=1
+                )  # Remove singleton
+
+                post_cint[var][category] = cint
+
+                # Free memory immediately
+                del log_rate_expanded, site_cat, log_sum, cint
+
+        return post_cint
+
+    def summarise_rate(
+        self,
+        alpha: float = 0.05,
+        probs: Optional[Tuple[float, ...]] = None,
+    ) -> NDArray | Dict[str, Dict[str, NDArray]]:
+        """
+        Compute summary statistics for contact rate matrix.
+
+        Contact rate R[c,d] represents the per-capita rate at which
+        individuals in age c contact individuals in age d.
+
+        Parameters
+        ----------
+        alpha : float, default=0.05
+            Significance level for credible intervals (e.g., 0.05 for 95% CI).
+            Ignored if probs is provided.
+        probs : Tuple[float, ...], optional
+            Specific quantile probabilities to compute.
+            If None, uses (alpha/2, 0.5, 1-alpha/2).
+
+        Returns
+        -------
+        NDArray | Dict
+            - For BRC models: NDArray of shape (3, A, A) or (len(probs), A, A)
+              containing [lower, median, upper] quantiles (or custom quantiles)
+            - For HiBRC models: Dict[str, Dict[str, NDArray]] with structure
+              {var_name: {category: quantiles}}
+
+        Raises
+        ------
+        ValueError
+            If alpha not in (0, 1).
+
+        Examples
+        --------
+        >>> # BRC model
+        >>> summary = summariser.summarise_rate(alpha=0.05)
+        >>> lower, median, upper = summary[0], summary[1], summary[2]
+        >>>
+        >>> # Custom quantiles
+        >>> quantiles = summariser.summarise_rate(probs=(0.1, 0.5, 0.9))
+        >>>
+        >>> # HiBRC model
+        >>> summary = summariser_hibrc.summarise_rate(alpha=0.05)
+        >>> for var, categories in summary.items():
+        ...     for cat, quantiles in categories.items():
+        ...         print(f"{var}={cat}: median = {quantiles[1]}")
+
+        Notes
+        -----
+        For BRC models, rate = exp(log_rate) from posterior samples.
+        For HiBRC models, rate = exp(log_rate + log_delta) for each category.
+        """
+        if probs is None:
+            validate_alpha(alpha)
+            probs = get_probs_from_alpha(alpha)
+
+        cache_key = f"rate_probs{probs}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        if self.model_type == "brc":
+            # Simple case: rate is directly available
+            rate_samples = np.exp(self.post_samples["log_rate"])
+            result = compute_quantiles(rate_samples, probs, axis=0)
+
+        else:  # hibrc
+            # Compute rate for each category
+            log_rate = self.post_samples["log_rate"]
+            result = {}
+
+            for name, site in self.post_samples.items():
+                if "log_delta" not in name:
+                    continue
+
+                var = name.split("/")[0]
+                categories = self.model.ds.attrs["grp_vars"][var]
+                result[var] = {}
+
+                for i, category in enumerate(categories):
+                    # rate = exp(log_rate + log_delta)
+                    log_rate_cat = log_rate + site[:, i, :, :]
+                    rate_samples = np.exp(log_rate_cat)
+                    result[var][category] = compute_quantiles(
+                        rate_samples, probs, axis=0
+                    )
+
+        self._cache[cache_key] = result
+        return result
+
+    def summarise_cint(
+        self,
+        alpha: float = 0.05,
+        probs: Optional[Tuple[float, ...]] = None,
+    ) -> NDArray | Dict[str, Dict[str, NDArray]]:
+        """
+        Compute summary statistics for contact intensity matrix.
+
+        Contact intensity M[c,d] represents the average number of contacts
+        that individuals in age c have with individuals in age d.
+
+        Parameters
+        ----------
+        alpha : float, default=0.05
+            Significance level for credible intervals (e.g., 0.05 for 95% CI).
+            Ignored if probs is provided.
+        probs : Tuple[float, ...], optional
+            Specific quantile probabilities to compute.
+            If None, uses (alpha/2, 0.5, 1-alpha/2).
+
+        Returns
+        -------
+        NDArray | Dict
+            - For BRC models: NDArray of shape (3, A, A) or (len(probs), A, A)
+            - For HiBRC models: Dict[str, Dict[str, NDArray]] with structure
+              {var_name: {category: quantiles}}
+
+        Raises
+        ------
+        ValueError
+            If alpha not in (0, 1).
+
+        Examples
+        --------
+        >>> summary = summariser.summarise_cint(alpha=0.05)
+        >>> lower, median, upper = summary[0], summary[1], summary[2]
+        >>>
+        >>> # For HiBRC with gender stratification
+        >>> summary = summariser_hibrc.summarise_cint(alpha=0.05)
+        >>> male_median = summary['gender']['Male'][1]
+        >>> female_median = summary['gender']['Female'][1]
+
+        Notes
+        -----
+        Contact intensity incorporates population structure through:
+        M[c,d] = exp(log_rate[c,d] + log_P[d])
+        """
+        if probs is None:
+            validate_alpha(alpha)
+            probs = get_probs_from_alpha(alpha)
+
+        cache_key = f"cint_probs{probs}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        if self.model_type == "brc":
+            # Simple case: direct quantile computation
+            result = compute_quantiles(self.post_cint_samples, probs, axis=0)
+
+        else:  # hibrc
+            # Compute quantiles for each category
+            result = {}
+            for var, categories_dict in self.post_cint_samples.items():
+                result[var] = {}
+                for category, samples in categories_dict.items():
+                    result[var][category] = compute_quantiles(samples, probs, axis=0)
+
+        self._cache[cache_key] = result
+        return result
+
+    def summarise_mcint(
+        self,
+        alpha: float = 0.05,
+        probs: Optional[Tuple[float, ...]] = None,
+    ) -> NDArray | Dict[str, Dict[str, NDArray]]:
+        """
+        Compute summary statistics for marginal contact intensity.
+
+        Marginal contact intensity m[c] = Σ_d M[c,d] represents the total
+        average number of contacts made by individuals in age c across all ages.
+
+        Parameters
+        ----------
+        alpha : float, default=0.05
+            Significance level for credible intervals (e.g., 0.05 for 95% CI).
+            Ignored if probs is provided.
+        probs : Tuple[float, ...], optional
+            Specific quantile probabilities to compute.
+            If None, uses (alpha/2, 0.5, 1-alpha/2).
+
+        Returns
+        -------
+        NDArray | Dict
+            - For BRC models: NDArray of shape (3, A) or (len(probs), A)
+            - For HiBRC models: Dict[str, Dict[str, NDArray]] with structure
+              {var_name: {category: quantiles}}
+
+        Examples
+        --------
+        >>> summary = summariser.summarise_mcint(alpha=0.05)
+        >>> lower, median, upper = summary[0], summary[1], summary[2]
+        >>> # median[age] gives median total contacts for that age
+
+        Notes
+        -----
+        Marginal contact intensity is computed by summing the contact intensity
+        matrix over the contact age dimension: m[c] = Σ_d M[c,d]
+        """
+        if probs is None:
+            validate_alpha(alpha)
+            probs = get_probs_from_alpha(alpha)
+
+        cache_key = f"mcint_probs{probs}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        if self.model_type == "brc":
+            # Sum over contact age (last axis)
+            mcint_samples = self.post_cint_samples.sum(axis=-1)
+            result = compute_quantiles(mcint_samples, probs, axis=0)
+
+        else:  # hibrc
+            # Compute marginals for each category
+            result = {}
+            for var, categories_dict in self.post_cint_samples.items():
+                result[var] = {}
+                for category, samples in categories_dict.items():
+                    mcint_samples = samples.sum(axis=-1)
+                    result[var][category] = compute_quantiles(
+                        mcint_samples, probs, axis=0
+                    )
+
+        self._cache[cache_key] = result
+        return result
+
+    def get_posterior_samples(
+        self,
+        quantity: Literal["rate", "cint", "mcint"] = "cint",
+    ) -> NDArray | Dict[str, Dict[str, NDArray]]:
+        """
+        Get raw posterior samples for specified quantity.
+
+        Useful for custom post-processing or plotting.
+
+        Parameters
+        ----------
+        quantity : {"rate", "cint", "mcint"}, default="cint"
+            Which quantity to return samples for:
+            - "rate": Contact rate matrix R[c,d]
+            - "cint": Contact intensity matrix M[c,d]
+            - "mcint": Marginal contact intensity m[c]
+
+        Returns
+        -------
+        NDArray | Dict
+            - For BRC models: NDArray of shape (n_samples, A, A) or (n_samples, A)
+            - For HiBRC models: Dict[str, Dict[str, NDArray]]
+
+        Examples
+        --------
+        >>> # Get raw samples for custom analysis
+        >>> samples = summariser.get_posterior_samples("cint")
+        >>> # Custom statistic: 90th percentile
+        >>> custom_stat = np.percentile(samples, 90, axis=0)
+        >>>
+        >>> # For plotting posterior distributions
+        >>> import matplotlib.pyplot as plt
+        >>> samples = summariser.get_posterior_samples("mcint")
+        >>> plt.hist(samples[:, 25])  # Distribution for age 25
+        """
+        if quantity == "rate":
+            if self.model_type == "brc":
+                return np.exp(self.post_samples["log_rate"])
+            else:  # hibrc
+                result = {}
+                log_rate = self.post_samples["log_rate"]
+                for name, site in self.post_samples.items():
+                    if "log_delta" not in name:
+                        continue
+                    var = name.split("/")[0]
+                    categories = self.model.ds.attrs["grp_vars"][var]
+                    result[var] = {}
+                    for i, category in enumerate(categories):
+                        log_rate_cat = log_rate + site[:, i, :, :]
+                        result[var][category] = np.exp(log_rate_cat)
+                return result
+
+        elif quantity == "cint":
+            return self.post_cint_samples
+
+        elif quantity == "mcint":
+            if self.model_type == "brc":
+                return self.post_cint_samples.sum(axis=-1)
+            else:  # hibrc
+                result = {}
+                for var, categories_dict in self.post_cint_samples.items():
+                    result[var] = {}
+                    for category, samples in categories_dict.items():
+                        result[var][category] = samples.sum(axis=-1)
+                return result
+
+        else:
+            raise ValueError(
+                f"Unknown quantity: {quantity}. Must be 'rate', 'cint', or 'mcint'"
+            )
+
+    def get_point_estimates(
+        self,
+        quantity: Literal["rate", "cint", "mcint"] = "cint",
+    ) -> Dict[str, NDArray] | Dict[str, Dict[str, Dict[str, NDArray]]]:
+        """
+        Get point estimates (mean and std) for specified quantity.
+
+        Parameters
+        ----------
+        quantity : {"rate", "cint", "mcint"}, default="cint"
+            Which quantity to compute estimates for.
+
+        Returns
+        -------
+        Dict
+            - For BRC models: {'mean': array, 'std': array}
+            - For HiBRC models: {var: {category: {'mean': array, 'std': array}}}
+
+        Examples
+        --------
+        >>> estimates = summariser.get_point_estimates("cint")
+        >>> cint_mean = estimates['mean']
+        >>> cint_std = estimates['std']
+        >>>
+        >>> # For HiBRC
+        >>> estimates = summariser_hibrc.get_point_estimates("cint")
+        >>> male_mean = estimates['gender']['Male']['mean']
+        >>> male_std = estimates['gender']['Male']['std']
+        """
+        samples = self.get_posterior_samples(quantity)
+
+        if self.model_type == "brc":
+            return {
+                "mean": samples.mean(axis=0),
+                "std": samples.std(axis=0, ddof=1),
+            }
+        else:  # hibrc
+            result = {}
+            for var, categories_dict in samples.items():
+                result[var] = {}
+                for category, cat_samples in categories_dict.items():
+                    result[var][category] = {
+                        "mean": cat_samples.mean(axis=0),
+                        "std": cat_samples.std(axis=0, ddof=1),
                     }
-                    for var, cat in self.post_pred_cint.items()
-                }
+            return result
 
-        return self.sum_cint
+    def clear_cache(self) -> None:
+        """Clear all cached computations."""
+        self._cache.clear()
 
-    def summarise_mcint(self, probs: tuple = (0.025, 0.5, 0.975)):
+    def get_cache_info(self) -> Dict[str, Any]:
         """
-        Summarise the marginal contact intensity of the model.
-        It uses the model's posterior predictive distribution to compute the summary statistics.
+        Get information about cached results.
+
+        Returns
+        -------
+        info : Dict[str, Any]
+            Dictionary with cache statistics.
         """
-        if "sum_mcint" not in self.__dict__:
-            if type(self.model) in (BRCfine, BRCrefine):
-                mcint = np.exp(self.post_pred["log_cint"]).sum(axis=2)
-                self.sum_mcint = np.quantile(mcint, probs, axis=0)
-
-            elif type(self.model) in (HiBRCfine, HiBRCrefine):
-                self.sum_mcint = {
-                    var: {
-                        name: np.quantile(value.sum(axis=2), probs, axis=0)
-                        for name, value in cat.items()
-                    }
-                    for var, cat in self.post_pred_cint.items()
-                }
-
-        return self.sum_mcint
+        return {
+            "n_cached": len(self._cache),
+            "cache_keys": list(self._cache.keys()),
+            "inference_method": self.inference_method,
+            "model_type": self.model_type,
+        }
 
 
 class ModelSummariserSocialMix:
@@ -626,101 +1095,6 @@ class ModelSummariserSocialMix:
             Dictionary with cache statistics
         """
         return {"n_cached": len(self._cache), "cache_keys": list(self._cache.keys())}
-
-
-class ModelSummariserMCMC:
-    """
-    Basic Model implementation only
-    """
-
-    def __init__(self, model):
-        self.model = model
-        self.prng_key = jax.random.PRNGKey(0)
-
-    def get_posterior(self):
-        """Get posterior samples from the MCMC run."""
-        self.post = self.model.mcmc.get_samples()
-
-    def get_post_cint(self):
-        """Calculate posterior contact intensity from MCMC samples"""
-        if not hasattr(self, "post"):
-            self.get_posterior()
-        self.post_cint = {"general": np.exp(self.post["log_cint"])}
-        return self.post_cint
-
-    def summarise_rate(self, probs: tuple = (0.025, 0.5, 0.975)):
-        """Summarise the posterior contact rate
-
-        Parameters
-        ----------
-        probs : tuple
-            The quantiles to compute
-
-        Returns
-        -------
-        dict
-            A dictionary containing the quantiles of the posterior contact rate
-        """
-        if not hasattr(self, "post"):
-            self.post = self.get_posterior()
-
-        if not hasattr(self, "sum_post_rate"):
-            self.sum_post_rate = np.quantile(
-                np.exp(self.post["log_rate"]), probs, axis=0
-            )
-
-        return self.sum_post_rate
-
-    def summarise_cint(self, probs: tuple = (0.025, 0.5, 0.975)):
-        """Summarise the posterior contact intensity
-
-        Parameters
-        ----------
-        probs : tuple
-            The quantiles to compute
-
-        Returns
-        -------
-        dict
-            A dictionary containing the quantiles of the posterior contact intensity
-        """
-        if not hasattr(self, "post_cint"):
-            self.get_post_cint()
-
-        if not hasattr(self, "sum_post_cint"):
-            self.sum_post_cint = {
-                name: np.quantile(value, probs, axis=0)
-                for name, value in self.post_cint.items()
-            }
-
-        return self.sum_post_cint
-
-    def summarise_mcint(self, probs: tuple = (0.025, 0.5, 0.975)):
-        """Summarise the posterior marginal contact intensity
-
-        Parameters
-        ----------
-        probs : tuple
-            The quantiles to compute
-
-        Returns
-        -------
-        dict
-            A dictionary containing the quantiles of the posterior marginal contact intensity
-        """
-        if not hasattr(self, "post_cint"):
-            self.get_post_cint()
-
-        if not hasattr(self, "sum_post_mcint"):
-            self.sum_post_mcint = {
-                var: {
-                    name: np.quantile(value.sum(axis=-1), probs, axis=0)
-                    for name, value in cat.items()
-                }
-                for var, cat in self.post_cint.items()
-            }
-
-        return self.sum_post_mcint
 
 
 class ModelSummariserPrem:

@@ -1,23 +1,21 @@
 from ._summariser import (
-  ModelSummariserSVI,
-  ModelSummariserMCMC,
-  ModelSummariserSocialMix,
-  ModelSummariserPrem
+    ModelSummariserBRC,
+    ModelSummariserSocialMix,
+    ModelSummariserPrem,
 )
 from ._evaluator import (
-  ModelEvaluator,
-  ModelEvaluatorSocialMix,
-  ModelEvaluatorPrem
+    ModelEvaluatorBRC,
+    ModelEvaluatorSocialMix,
+    ModelEvaluatorPrem,
 )
 from ._visualiser import ModelVisualiser
 
 __all__ = [
-  'ModelSummariserSVI',
-  'ModelSummariserMCMC',
-  'ModelSummariserSocialMix',
-  'ModelSummariserPrem',
-  'ModelEvaluator',
-  'ModelEvaluatorSocialMix',
-  'ModelEvaluatorPrem',
-  'ModelVisualiser'
+    "ModelSummariserBRC",
+    "ModelSummariserSocialMix",
+    "ModelSummariserPrem",
+    "ModelEvaluatorBRC",
+    "ModelEvaluatorSocialMix",
+    "ModelEvaluatorPrem",
+    "ModelVisualiser",
 ]

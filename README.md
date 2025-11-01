@@ -72,11 +72,35 @@ Now, you can start a new [Jupyter Hub](https://jupyter.rcs.imperial.ac.uk/) sess
 ## Usage
 `cntmosaic` is currently under development and is not yet available on PyPI. To use the package, clone the repository and install the package locally.
 ```zsh
-cd cntmosaic
 pip install -e .
 ```
 
 You can then import the package in the usual way
 ```python
 import cntmosaic
+```
+
+## Testing
+To run all unit tests in the package, use pytest from the root directory:
+```bash
+pytest
+```
+
+To run tests with coverage report:
+```bash
+pytest --cov=cntmosaic --cov-report=html
+```
+
+To run tests in a specific module:
+```bash
+pytest cntmosaic/datasets/tests/
+pytest cntmosaic/models/tests/
+pytest cntmosaic/preprocess/tests/
+pytest cntmosaic/sim/tests/
+pytest cntmosaic/utils/tests/
+```
+
+To run a specific test file:
+```bash
+pytest cntmosaic/datasets/tests/test_load_polymod_germany.py
 ```

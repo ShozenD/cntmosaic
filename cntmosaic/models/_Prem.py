@@ -280,7 +280,7 @@ class Prem:
             Additional keyword arguments to pass to the MCMC
         """
         try:
-            self._mcmc = run_inference_mcmc(
+            self._mcmc_result = run_inference_mcmc(
                 rng_key,
                 self.model,
                 num_samples=num_samples,

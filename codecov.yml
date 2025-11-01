@@ -1,0 +1,18 @@
+coverage:
+  status:
+    # Posts a status check for the project's overall coverage
+    project:
+      default:
+        target: 80%  # Set your desired overall coverage target
+        threshold: 1% # Allow coverage to drop by 1% without failing
+
+    # Posts a status check for the coverage of the new code in a PR
+    patch:
+      default:
+        target: 90%  # Set a higher target for new code
+
+# This section posts a comment on your pull requests
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default  # Posts a new comment on each update
+  require_changes: false # Post a comment even if coverage didn't change

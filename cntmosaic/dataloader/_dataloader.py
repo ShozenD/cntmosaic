@@ -1,14 +1,29 @@
+"""
+Data loading and preprocessing for social contact matrix estimation.
+
+This module provides classes for loading, validating, and preprocessing social contact
+survey data for use in Bayesian contact matrix estimation models. It handles participant
+data, contact data, and population distributions, ensuring data consistency and creating
+properly formatted datasets for downstream analysis.
+
+Classes
+-------
+CoordToColumns : Dataclass for column name mapping
+PopulationProportion : Dataclass for stratified population proportions
+BaseLoader : Abstract base class for data loading
+DataLoader : Main data loader for contact survey data
+"""
+
 import itertools
-from typing import Optional
-from abc import ABC
+from typing import Optional, List, Tuple, Dict, Any, Union
+from abc import ABC, abstractmethod
 import warnings
 from dataclasses import dataclass, field
 
 import pandas as pd
 import numpy as np
-import pandas as pd
+from numpy.typing import NDArray
 import xarray as xr
-
 import jax.numpy as jnp
 
 from ._utils import make_idarrs_for_intervals
@@ -17,67 +32,168 @@ from ._utils import make_idarrs_for_intervals
 @dataclass
 class CoordToColumns:
     """
-    This class is used to specify the mapping of columns in input dataframes to the
-    corresponding input variables for the models. It is passed to dataloader classes.
+    Column name mapping for contact survey data.
+
+    This dataclass specifies the mapping between input dataframe columns and the
+    variables required by contact matrix estimation models. It ensures consistent
+    naming conventions and validates that required column mappings are provided.
 
     Attributes
-    ---------
-    age_part: str
-        Name of the column giving the participant age in the participant data.
-    age_cnt: Optional[str]
-        Name of the column giving the contact age in the contact data.
-        Do not need to specify both age_cnt and age_grp_cnt.
-    age_grp_cnt: Optional[str]
-        Name of the column giving the contact age group in the contact data.
-        Do not need to specify both age_cnt and age_grp_cnt. 
-    id_var: str
-        Name of the column giving the unique identifier of participants.
-        This column should be present in both participant and contact data.
-    y: Optional[str]
-        Name of the column giving the number of contacts in the contact data.
-        By default, it is assumed to be 'y'.
-    z: Optional[str]
-        Name of the column giving the number of group contacts in the participant data.
-        By default, it is assumed to be 'z'.
-    grp_vars_part: Optional[list[str] | str]
-        Names of columns for the stratification variables in the participant data.
-        It can be a list of strings or a single string.
-    grp_vars_cnt: Optional[list[str] | str]
-        Names of columns for the stratification variables in the contact data.
-        It can be a list of strings or a single string.
-    repeat_part: Optional[str]
-        Name of the column giving the number of times a participant participated in the study in the participant data.
-        This is used to introduce a repeat effect term in the models.
-        If not specified, it is assumed that each participant participated only once.
-    age_pop: Optional[str]
-        Name of the column for the population age in the population data.
-        This is used for population size calculations.
-    size_pop: Optional[str]
-        Name of the column for the population size in the population data.
-        This is used for population size calculations.
+    ----------
+    age_part : str
+        Column name for participant age in the participant dataframe.
+        Should contain integer ages or age groups.
+    age_cnt : Optional[str], default=None
+        Column name for contact age in the contact dataframe.
+        Use this OR age_grp_cnt, not both.
+    age_grp_cnt : Optional[str], default=None
+        Column name for contact age group in the contact dataframe.
+        Must be pd.IntervalIndex if used. Use this OR age_cnt, not both.
+    id_var : str, default='id'
+        Column name for unique participant identifiers.
+        Must be present in both participant and contact dataframes.
+    y : str, default='y'
+        Column name for number of contacts in the contact dataframe.
+        If not present, will be auto-created with value 1 per contact.
+    z : str, default='z'
+        Column name for number of group contacts in the participant dataframe.
+        If not present, will be auto-created with value 0.
+    grp_vars_part : Optional[Union[List[str], str]], default=None
+        Stratification variable column name(s) in participant dataframe.
+        Can be a single string or list of strings. Examples: 'gender', ['gender', 'setting']
+    grp_vars_cnt : Optional[Union[List[str], str]], default=None
+        Stratification variable column name(s) in contact dataframe.
+        Can be a single string or list of strings.
+    repeat_part : Optional[str], default=None
+        Column name for repeat interview count in participant dataframe.
+        Used to model repeat participation effects. If provided, automatically
+        added to grp_vars_part during post-initialization.
+    age_pop : Optional[str], default=None
+        Column name for age in population dataframe.
+        Required for population weighting; must be provided with size_pop.
+    size_pop : Optional[str], default=None
+        Column name for population size/proportion in population dataframe.
+        Required for population weighting; must be provided with age_pop.
+
+    Raises
+    ------
+    ValueError
+        If neither age_cnt nor age_grp_cnt is provided.
+        If age_pop and size_pop are not both set or both None.
+
+    Warnings
+    --------
+    UserWarning
+        If the same stratification variable appears in both grp_vars_part and
+        grp_vars_cnt. The variable in grp_vars_cnt will be automatically removed
+        to avoid ambiguity.
+
+    Examples
+    --------
+    >>> # Basic usage with individual contact ages
+    >>> col_map = CoordToColumns(
+    ...     age_part="participant_age",
+    ...     age_cnt="contact_age",
+    ...     id_var="participant_id",
+    ...     age_pop="age",
+    ...     size_pop="population_size"
+    ... )
+    >>>
+    >>> # With age groups and stratification
+    >>> col_map = CoordToColumns(
+    ...     age_part="age_participant",
+    ...     age_grp_cnt="age_group_contact",
+    ...     grp_vars_part=["gender", "location"],
+    ...     grp_vars_cnt="setting",
+    ...     age_pop="age",
+    ...     size_pop="N"
+    ... )
+    >>>
+    >>> # With repeat interview effects
+    >>> col_map = CoordToColumns(
+    ...     age_part="age",
+    ...     age_cnt="contact_age",
+    ...     repeat_part="interview_round",
+    ...     age_pop="age",
+    ...     size_pop="pop_count"
+    ... )
+
+    Notes
+    -----
+    - The __post_init__ method automatically:
+      * Converts single string grp_vars to lists
+      * Resolves conflicts when same variable appears in both participant and contact data
+      * Adds repeat_part to grp_vars_part if specified
+    - For age groups (age_grp_cnt), the contact dataframe column must use pd.IntervalIndex
+    - Population columns (age_pop, size_pop) are required for most models
     """
 
     age_part: str
     age_cnt: Optional[str] = None
     age_grp_cnt: Optional[str] = None
     id_var: str = "id"
-    y: Optional[str] = "y"
-    z: Optional[str] = "z"
-    grp_vars_part: Optional[list[str] | str] = None
-    grp_vars_cnt: Optional[list[str] | str] = None
-    repeat_part: Optional[str] = None 
+    y: str = "y"
+    z: str = "z"
+    grp_vars_part: Optional[Union[List[str], str]] = None
+    grp_vars_cnt: Optional[Union[List[str], str]] = None
+    repeat_part: Optional[str] = None
     age_pop: Optional[str] = None
     size_pop: Optional[str] = None
 
-    def age_vars(self):
+    def age_vars(self) -> List[str]:
+        """
+        Get list of age variable names from contact and participant data.
+
+        Returns
+        -------
+        List[str]
+            Two-element list containing [contact_age_var, participant_age_var].
+
+        Raises
+        ------
+        ValueError
+            If neither age_cnt nor age_grp_cnt is provided.
+
+        Examples
+        --------
+        >>> col_map = CoordToColumns(age_part="age_p", age_cnt="age_c")
+        >>> col_map.age_vars()
+        ['age_c', 'age_p']
+        """
         if self.age_cnt:
             return [self.age_cnt, self.age_part]
         elif self.age_grp_cnt:
             return [self.age_grp_cnt, self.age_part]
         else:
-            raise ValueError("One of age_cnt or age_grp_cnt must be provided")
+            raise ValueError(
+                "One of 'age_cnt' or 'age_grp_cnt' must be provided. "
+                "Please specify either individual contact ages (age_cnt) or "
+                "contact age groups (age_grp_cnt)."
+            )
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """
+        Post-initialization processing and validation.
+
+        Automatically called after dataclass initialization to:
+        1. Convert string grp_vars to lists for consistent handling
+        2. Validate that age_pop and size_pop are provided together
+        3. Resolve naming conflicts between participant and contact stratification variables
+        4. Add repeat_part to participant stratification variables if specified
+
+        Raises
+        ------
+        ValueError
+            If age_pop is provided without size_pop, or vice versa.
+
+        Warnings
+        --------
+        UserWarning
+            If duplicate stratification variable names are found in both
+            grp_vars_part and grp_vars_cnt. The duplicate in grp_vars_cnt
+            will be removed.
+        """
+        # Convert single strings to lists for consistent processing
         if isinstance(self.grp_vars_part, str):
             object.__setattr__(self, "grp_vars_part", [self.grp_vars_part])
         elif self.grp_vars_part is None:
@@ -88,175 +204,664 @@ class CoordToColumns:
         elif self.grp_vars_cnt is None:
             object.__setattr__(self, "grp_vars_cnt", [])
 
+        # Validate population column specifications
         if (self.age_pop is None) != (self.size_pop is None):
             raise ValueError(
-                "Both 'age_pop' and 'size_pop' must be set together or both left as None."
+                "Both 'age_pop' and 'size_pop' must be specified together, or both left as None. "
+                f"Currently: age_pop={self.age_pop}, size_pop={self.size_pop}"
             )
 
-        var = set(self.grp_vars_part).intersection(set(self.grp_vars_cnt))
-        if var:
+        # Handle naming conflicts between participant and contact stratification variables
+        conflicting_vars = set(self.grp_vars_part).intersection(set(self.grp_vars_cnt))
+        if conflicting_vars:
             warnings.warn(
-                f"Variable of the same name exists in participants and contacts: {var} \n"
-                + "Default behaviour will neglect variable in contacts, only keeping variable in participants\n"
-                + "If wish to treat them as separate variable, please append suffixes to distinguish them"
+                f"Stratification variable(s) with identical names found in both "
+                f"participant and contact data: {conflicting_vars}\n"
+                f"Default behavior: keeping variable from participant data, "
+                f"removing from contact data.\n"
+                f"To treat them as separate variables, append suffixes to distinguish them "
+                f"(e.g., 'setting_part' vs 'setting_cnt').",
+                UserWarning,
+                stacklevel=2
             )
-            for v in var:
-                self.grp_vars_cnt.remove(v)
-        
-        # If repeat_part is specified, append it to the participant grouping variables
+            for var in conflicting_vars:
+                self.grp_vars_part.remove(var)
+
+        # Add repeat interview column to participant grouping variables if specified
         if self.repeat_part is not None:
-            self.grp_vars_part.append(self.repeat_part)
+            if self.repeat_part not in self.grp_vars_part:
+                self.grp_vars_part.append(self.repeat_part)
+
+
+@dataclass
+class PopulationProportion:
+    """
+    Stratified population proportion specification for contact matrix adjustment.
+
+    This class provides an intuitive, type-safe way to specify population proportions
+    stratified by demographic variables (e.g., gender, occupation, region). These
+    proportions are used to adjust contact matrices for demographic heterogeneity.
+
+    Attributes
+    ----------
+    data : pd.DataFrame
+        Dataframe containing stratified population proportions.
+        Must have columns for: age, stratification variable(s), and proportions.
+        Proportions within each age group must sum to 1.0.
+    age_col : str
+        Name of the column containing age values in the dataframe.
+        Should match or be compatible with the age range in the main dataset.
+    stratify_by : str
+        Name of the column containing the stratification variable.
+        Examples: 'gender', 'occupation', 'region', 'setting'.
+        Must be present in the main contact data for proper alignment.
+    proportion_col : str
+        Name of the column containing population proportions.
+        Values must be in [0, 1] and sum to 1.0 within each age group.
+
+    Methods
+    -------
+    validate()
+        Validates the population proportion data structure and values.
+    from_counts(data, age_col, stratify_by, count_col)
+        Class method to create PopulationProportion from population counts.
+
+    Raises
+    ------
+    ValueError
+        If required columns are missing from the dataframe.
+        If proportions don't sum to 1.0 within each age group (tolerance 1e-6).
+        If proportion values are outside [0, 1] range.
+
+    Examples
+    --------
+    >>> # From pre-computed proportions
+    >>> df_gender = pd.DataFrame({
+    ...     'age': [0, 0, 1, 1, 2, 2],
+    ...     'gender': ['M', 'F', 'M', 'F', 'M', 'F'],
+    ...     'proportion': [0.51, 0.49, 0.51, 0.49, 0.50, 0.50]
+    ... })
+    >>> pop_prop = PopulationProportion(
+    ...     data=df_gender,
+    ...     age_col='age',
+    ...     stratify_by='gender',
+    ...     proportion_col='proportion'
+    ... )
+    >>> pop_prop.validate()
+    >>>
+    >>> # From population counts (auto-computes proportions)
+    >>> df_counts = pd.DataFrame({
+    ...     'age': [0, 0, 1, 1],
+    ...     'gender': ['M', 'F', 'M', 'F'],
+    ...     'count': [510, 490, 505, 495]
+    ... })
+    >>> pop_prop = PopulationProportion.from_counts(
+    ...     data=df_counts,
+    ...     age_col='age',
+    ...     stratify_by='gender',
+    ...     count_col='count'
+    ... )
+    >>>
+    >>> # Multiple stratification variables (create separate PopulationProportion objects)
+    >>> pop_prop_gender = PopulationProportion(df_gender, 'age', 'gender', 'prop')
+    >>> pop_prop_region = PopulationProportion(df_region, 'age', 'region', 'prop')
+    >>> dataloader = DataLoader(..., population_proportions=[pop_prop_gender, pop_prop_region])
+
+    Notes
+    -----
+    - Validation is performed automatically during initialization via __post_init__
+    - Proportions must sum to 1.0 within each age group (tolerance: 1e-6)
+    - The stratification variable name must match the corresponding column in contact data
+    - For multiple stratifications, create separate PopulationProportion objects
+    """
+
+    data: pd.DataFrame
+    age_col: str
+    stratify_by: str
+    proportion_col: str
+
+    def __post_init__(self) -> None:
+        """Validate the population proportion specification after initialization."""
+        self.validate()
+
+    def validate(self) -> None:
+        """
+        Validate population proportion data structure and values.
+
+        Checks:
+        1. All required columns are present in the dataframe
+        2. Proportions are in valid range [0, 1]
+        3. Proportions sum to 1.0 within each age group (tolerance 1e-6)
+
+        Raises
+        ------
+        ValueError
+            If any validation check fails.
+
+        Examples
+        --------
+        >>> pop_prop = PopulationProportion(df, 'age', 'gender', 'proportion')
+        >>> # Validation happens automatically, but can be called explicitly:
+        >>> pop_prop.validate()
+        """
+        # Check required columns exist
+        required_cols = [self.age_col, self.stratify_by, self.proportion_col]
+        missing = [col for col in required_cols if col not in self.data.columns]
+        if missing:
+            raise ValueError(
+                f"Missing required columns in population proportion data: {missing}\n"
+                f"Required: {required_cols}\n"
+                f"Available: {list(self.data.columns)}"
+            )
+
+        # Check proportion values are in valid range
+        props = self.data[self.proportion_col]
+        if (props < 0).any() or (props > 1).any():
+            invalid_indices = self.data[(props < 0) | (props > 1)].index
+            raise ValueError(
+                f"Population proportions must be in range [0, 1]. "
+                f"Found invalid values at indices: {list(invalid_indices)}\n"
+                f"Invalid values: {props[invalid_indices].to_dict()}"
+            )
+
+        # Check proportions sum to 1 within each age group
+        group_sums = self.data.groupby(self.age_col)[self.proportion_col].sum()
+        bad_groups = group_sums[np.abs(group_sums - 1.0) > 1e-6]
+
+        if not bad_groups.empty:
+            raise ValueError(
+                f"Population proportions must sum to 1.0 within each age group (tolerance: 1e-6).\n"
+                f"Ages with invalid sums: {list(bad_groups.index)}\n"
+                f"Actual sums: {bad_groups.to_dict()}\n"
+                f"Hint: Use PopulationProportion.from_counts() to automatically compute proportions from counts."
+            )
+
+    @classmethod
+    def from_counts(
+        cls,
+        data: pd.DataFrame,
+        age_col: str,
+        stratify_by: str,
+        count_col: str,
+        proportion_col: str = "proportion",
+    ) -> "PopulationProportion":
+        """
+        Create PopulationProportion from population counts (automatically computes proportions).
+
+        This is a convenience constructor that automatically normalizes population counts
+        to proportions within each age group. More intuitive than manually computing
+        proportions.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Dataframe with population counts stratified by age and category.
+        age_col : str
+            Name of age column.
+        stratify_by : str
+            Name of stratification variable column (e.g., 'gender').
+        count_col : str
+            Name of column containing population counts.
+        proportion_col : str, default='proportion'
+            Name to assign to the computed proportion column.
+
+        Returns
+        -------
+        PopulationProportion
+            New instance with proportions computed from counts.
+
+        Examples
+        --------
+        >>> df = pd.DataFrame({
+        ...     'age': [0, 0, 1, 1, 2, 2],
+        ...     'gender': ['M', 'F', 'M', 'F', 'M', 'F'],
+        ...     'population': [5100, 4900, 5050, 4950, 5000, 5000]
+        ... })
+        >>> pop_prop = PopulationProportion.from_counts(
+        ...     data=df,
+        ...     age_col='age',
+        ...     stratify_by='gender',
+        ...     count_col='population'
+        ... )
+        >>> # Proportions are automatically computed:
+        >>> # age 0: M=0.51, F=0.49
+        >>> # age 1: M=0.505, F=0.495
+        >>> # age 2: M=0.50, F=0.50
+        """
+        # Validate required columns
+        required_cols = [age_col, stratify_by, count_col]
+        missing = [col for col in required_cols if col not in data.columns]
+        if missing:
+            raise ValueError(
+                f"Missing required columns: {missing}\n"
+                f"Available: {list(data.columns)}"
+            )
+
+        # Compute proportions within each age group
+        df_with_props = data.copy()
+        df_with_props[proportion_col] = (
+            df_with_props.groupby(age_col)[count_col]
+            .transform(lambda x: x / x.sum())
+        )
+
+        return cls(
+            data=df_with_props,
+            age_col=age_col,
+            stratify_by=stratify_by,
+            proportion_col=proportion_col,
+        )
+
+    def to_tuple(self) -> Tuple[pd.DataFrame, str, str, str]:
+        """
+        Convert to legacy tuple format for backward compatibility.
+
+        Returns
+        -------
+        Tuple[pd.DataFrame, str, str, str]
+            4-tuple: (data, age_col, stratify_by, proportion_col)
+
+        Notes
+        -----
+        This method exists for backward compatibility with the old API.
+        New code should use PopulationProportion objects directly.
+        """
+        return (self.data, self.age_col, self.stratify_by, self.proportion_col)
 
 
 class BaseLoader(ABC):
+    """
+    Abstract base class for loading and preprocessing contact survey data.
+
+    This class provides the core functionality for validating, merging, and transforming
+    contact survey data into formats suitable for statistical modeling. It handles:
+    - Data validation and quality checks
+    - Age range alignment between sample and population data
+    - Calculation of sample sizes and contact frequencies
+    - Group contact offset corrections
+    - Creation of xarray datasets for model input
+
+    Subclasses must implement specific validation methods for their data sources.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Combined dataframe containing both participant and contact information.
+        Must include columns specified in col_map.
+    pop : pd.DataFrame
+        Population dataframe with age distribution and population sizes.
+        Used for normalization and rate calculations.
+    col_map : CoordToColumns
+        Column mapping object specifying how to interpret dataframe columns.
+    pop_prop_quads : Optional[List[Tuple]], default=None
+        List of 4-tuples specifying population proportion adjustments for
+        stratification variables. Each tuple should contain:
+        (DataFrame, age_column, category_column, proportion_column)
+
+    Attributes
+    ----------
+    data : pd.DataFrame
+        Validated and cleaned input data.
+    col_map : CoordToColumns
+        Column mapping configuration.
+    pop : pd.DataFrame
+        Population dataframe.
+    min_age : int
+        Minimum age in the aligned age range.
+    max_age : int
+        Maximum age in the aligned age range.
+    ds : Optional[xr.Dataset]
+        Generated xarray dataset (created by load() method).
+
+    Raises
+    ------
+    KeyError
+        If required columns are missing from input dataframes.
+    TypeError
+        If age group column is not properly formatted as pd.IntervalIndex.
+    ValueError
+        If age ranges are inconsistent or population proportions don't sum to 1.
+
+    Notes
+    -----
+    - Age ranges are automatically aligned between sample and population data
+    - Missing values in critical columns will raise errors
+    - Object-type columns are automatically converted to categorical
+    - Group contacts are handled with special offset corrections
+
+    See Also
+    --------
+    DataLoader : Concrete implementation for separate participant/contact dataframes
+    CoordToColumns : Column mapping specification
+    PopulationProportion : Stratified population proportion specification (recommended)
+    """
+
     def __init__(
         self,
         data: pd.DataFrame,
         pop: pd.DataFrame,
         col_map: CoordToColumns,
-        pop_prop_quads: list | None =None,
-    ):
+        population_proportions: Optional[List[PopulationProportion]] = None,
+        pop_prop_quads: Optional[List[Tuple[pd.DataFrame, str, str, str]]] = None,
+    ) -> None:
         """
-        Base class initializer.
+        Initialize base loader with data validation.
 
         Parameters
         ----------
-        data pd.DataFrame:
-            Input dataframe containing both particiapnt and contact information.
-        col_map CoordToColumns:
-            Mapping of dataframe columns to model variables.
-        pop pd.DataFrame:
-            pandas dataframe containing population size by age.
+        data : pd.DataFrame
+            Combined input dataframe.
+        pop : pd.DataFrame
+            Population dataframe.
+        col_map : CoordToColumns
+            Column mapping specification.
+        population_proportions : Optional[List[PopulationProportion]], default=None
+            Population proportion specifications using the new intuitive API.
+        pop_prop_quads : Optional[List[Tuple]], default=None
+            Legacy population proportion format (backward compatibility).
+
+        Raises
+        ------
+        ValueError
+            If both population_proportions and pop_prop_quads are provided.
+        NotImplementedError
+            If pop_prop_quads is provided in incorrect format.
         """
+        # Check for conflicting parameters
+        if population_proportions is not None and pop_prop_quads is not None:
+            raise ValueError(
+                "Cannot specify both 'population_proportions' (new API) and "
+                "'pop_prop_quads' (legacy API). Please use only one.\n"
+                "Recommended: Use 'population_proportions' with PopulationProportion objects."
+            )
+
         self.data = self._validate(data, pop, col_map)
         self.col_map = col_map
         self.pop = pop
-        self.ds = None
-        
-        if pop_prop_quads is not None:
+        self.ds: Optional[xr.Dataset] = None
+
+        # Handle new API (recommended)
+        if population_proportions is not None:
+            # Validate all PopulationProportion objects
+            for i, pop_prop in enumerate(population_proportions):
+                if not isinstance(pop_prop, PopulationProportion):
+                    raise TypeError(
+                        f"Element {i} in population_proportions must be a "
+                        f"PopulationProportion object, got {type(pop_prop)}"
+                    )
+                # Validation happens automatically in PopulationProportion.__post_init__
+            
+            # Convert to internal format for processing
+            self.pop_prop = [pp.to_tuple() for pp in population_proportions]
+
+        # Handle legacy API (backward compatibility)
+        elif pop_prop_quads is not None:
+            warnings.warn(
+                "The 'pop_prop_quads' parameter is deprecated. "
+                "Please use 'population_proportions' with PopulationProportion objects instead.\n"
+                "Example:\n"
+                "  pop_prop = PopulationProportion(df, 'age', 'gender', 'proportion')\n"
+                "  DataLoader(..., population_proportions=[pop_prop])",
+                DeprecationWarning,
+                stacklevel=2
+            )
             try:
-                for t in pop_prop_quads:
-                    self._validate_quads(t)
+                for quad in pop_prop_quads:
+                    self._validate_quads(quad)
                 self.pop_prop = pop_prop_quads
-            # maybe move this to documentation page, provide a link
-            except:
+            except Exception as e:
                 warnings.warn(
-                    "\n pop_prop_quads argument takes a list of quadruple\n"
-                    + "a DataFrame containing data, the column name for pop age, the column name for category, the column name for population proportions\n"
-                    + 'For example, a valid input quadruple for the pandas dataframe `data` below would be [data, "age", "category", "proportions"]\n'
+                    "\npop_prop_quads argument requires a list of 4-tuples.\n"
+                    "Each tuple should contain:\n"
+                    "  (DataFrame, age_column_name, category_column_name, proportion_column_name)\n\n"
+                    "Example valid input:\n",
+                    UserWarning,
+                    stacklevel=2
                 )
-                sample = pd.DataFrame(
+                sample_df = pd.DataFrame(
                     {
                         "age": [1, 2, 1, 2],
                         "category": ["A", "A", "B", "B"],
                         "proportions": [0.2, 0.3, 0.8, 0.7],
                     }
                 )
-                warnings.warn("\n" + str(sample))
+                warnings.warn(f"\n{sample_df}\n", UserWarning, stacklevel=2)
                 warnings.warn(
-                    "\n The default behaviour assumes multiple quadruples\n"
-                    + "In the case where only 1 quadruple is passed, please warp them in a nested list\n"
+                    "For a single quadruple, wrap it in a list: [quadruple]\n"
+                    "For multiple quadruples: [quad1, quad2, ...]\n",
+                    UserWarning,
+                    stacklevel=2
                 )
-                raise NotImplementedError
+                raise NotImplementedError(
+                    f"Invalid pop_prop_quads format: {e}"
+                ) from e
 
     @staticmethod
-    def _validate_quads(t):
-        assert isinstance(t[0], pd.DataFrame)
+    def _validate_quads(quad: Tuple[pd.DataFrame, str, str, str]) -> None:
+        """
+        Validate structure and values of a population proportion quadruple.
+
+        Parameters
+        ----------
+        quad : Tuple[pd.DataFrame, str, str, str]
+            4-tuple containing (dataframe, age_col, category_col, proportion_col).
+
+        Raises
+        ------
+        AssertionError
+            If tuple structure is invalid.
+        NotImplementedError
+            If proportions don't sum to 1 within each age group.
+        """
+        # Validate tuple structure
+        assert isinstance(quad[0], pd.DataFrame), "First element must be a DataFrame"
         for i in [1, 2, 3]:
-            assert isinstance(t[i], str)
-            assert t[i] in t[0].columns
-        group_sums = t[0].groupby(t[1])[t[3]].sum()
-        bad_groups = group_sums[abs(group_sums - 1) > 1e-6]
+            assert isinstance(quad[i], str), f"Element {i} must be a string"
+            assert quad[i] in quad[0].columns, f"Column '{quad[i]}' not in DataFrame"
+
+        # Validate that proportions sum to 1 within each age group
+        df, age_col, _, prop_col = quad
+        group_sums = df.groupby(age_col)[prop_col].sum()
+        bad_groups = group_sums[np.abs(group_sums - 1.0) > 1e-6]
+
         if not bad_groups.empty:
             warnings.warn(
-                f"\n Population age proportions in age {list(bad_groups.index)} does not sum to 1"
+                f"Population proportions do not sum to 1.0 for age(s): {list(bad_groups.index)}\n"
+                f"Sum values: {bad_groups.to_dict()}",
+                UserWarning,
+                stacklevel=3
             )
-            raise NotImplementedError
+            raise NotImplementedError(
+                f"Invalid population proportions for ages: {list(bad_groups.index)}"
+            )
 
-    def _validate(self, data: pd.DataFrame, pop: pd.DataFrame, col_map: CoordToColumns):
+    def _validate(
+        self, data: pd.DataFrame, pop: pd.DataFrame, col_map: CoordToColumns
+    ) -> pd.DataFrame:
         """
-        This method validates the input data and column mappings.
-        """
+        Validate and preprocess input data for consistency and completeness.
 
-        # [Check] Ensure all necessary columns are present
+        This method performs comprehensive validation including:
+        1. Checking for required columns
+        2. Converting object columns to categorical
+        3. Validating age group formatting
+        4. Aligning age ranges between sample and population data
+        5. Subsetting to relevant columns only
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Input dataframe with contact and participant information.
+        pop : pd.DataFrame
+            Population dataframe with age distribution.
+        col_map : CoordToColumns
+            Column mapping specification.
+
+        Returns
+        -------
+        pd.DataFrame
+            Validated and cleaned dataframe ready for processing.
+
+        Raises
+        ------
+        KeyError
+            If required columns are missing from the dataframe.
+        TypeError
+            If age_grp_cnt column is not properly formatted as pd.IntervalIndex.
+
+        Warnings
+        --------
+        UserWarning
+            - If object columns are converted to categorical
+            - If age ranges between sample and population don't match
+        """
+        # Validate required columns are present
         cols_needed = [col_map.y, col_map.z, col_map.id_var] + col_map.age_vars()
         if col_map.grp_vars_part:
             cols_needed.extend(col_map.grp_vars_part)
         if col_map.grp_vars_cnt:
             cols_needed.extend(col_map.grp_vars_cnt)
-        missing = [col for col in cols_needed if col not in data.columns]
-        if missing:
-            raise KeyError(f"Missing columns in data: {missing}")
-        # [Do] subset the data to only the columns needed
-        data = data[np.unique(cols_needed)].dropna().copy()
 
-        # [Check] Ensure all object columns are categorical. If not, convert them to categorical.
-        for col in data.select_dtypes(include="object").columns:
-            if col != col_map.id_var and not isinstance(data[col].dtype, pd.CategoricalDtype):
+        missing_cols = [col for col in cols_needed if col not in data.columns]
+        if missing_cols:
+            raise KeyError(
+                f"Missing required columns in data: {missing_cols}\n"
+                f"Available columns: {list(data.columns)}"
+            )
+
+        # Subset to only needed columns and drop rows with missing values
+        unique_cols = list(np.unique(cols_needed))
+        data = data[unique_cols].dropna().copy()
+
+        if data.empty:
+            raise ValueError(
+                "After removing missing values, the dataframe is empty. "
+                "Check for excessive NaN values in required columns."
+            )
+
+        # Convert object columns to categorical for efficiency
+        object_cols = data.select_dtypes(include="object").columns
+        for col in object_cols:
+            if col != col_map.id_var and not isinstance(
+                data[col].dtype, pd.CategoricalDtype
+            ):
                 warnings.warn(
-                    f"Column {col} is not categorical. Converting to categorical.",
+                    f"Column '{col}' is object type. Converting to categorical for efficiency.",
                     UserWarning,
+                    stacklevel=2
                 )
                 data[col] = data[col].astype("category")
 
-        # [Check] If age_grp_cnt is specified, ensure that it is a pd.IntervalDtype
+        # Validate age group column formatting if specified
         if col_map.age_grp_cnt:
-            is_cat = isinstance(data[col_map.age_grp_cnt].dtype, pd.CategoricalDtype)
-            are_intervals = isinstance(
-                data[col_map.age_grp_cnt].cat.categories, pd.IntervalIndex
+            is_categorical = isinstance(
+                data[col_map.age_grp_cnt].dtype, pd.CategoricalDtype
             )
-            if not is_cat or not are_intervals:
+            if is_categorical:
+                are_intervals = isinstance(
+                    data[col_map.age_grp_cnt].cat.categories, pd.IntervalIndex
+                )
+                if not are_intervals:
+                    raise TypeError(
+                        f"Column '{col_map.age_grp_cnt}' must have pd.IntervalIndex categories, "
+                        f"got {type(data[col_map.age_grp_cnt].cat.categories)}"
+                    )
+            else:
                 raise TypeError(
-                    f"Column {col_map.age_grp_cnt} must be of type pd.IntervalDtype."
+                    f"Column '{col_map.age_grp_cnt}' must be categorical with interval categories. "
+                    f"Current type: {data[col_map.age_grp_cnt].dtype}"
                 )
 
-        # [Check] Checks the minimum and maximum values of age_part, age_cnt (or age_grp_cnt), and age_pop
-        # and determines the if they are consistent. If not automatically make sure they are consistent.
-        part_min_age = data[col_map.age_part].min()
-        part_max_age = data[col_map.age_part].max()
+        # Determine age ranges and ensure consistency
+        part_min_age = int(data[col_map.age_part].min())
+        part_max_age = int(data[col_map.age_part].max())
 
         if col_map.age_cnt:
-            cnt_min_age = data[col_map.age_cnt].min()
-            cnt_max_age = data[col_map.age_cnt].max()
-        else:  # If age_grp_cnt is specified
-            cnt_min_age = data[col_map.age_grp_cnt].min().left
-            cnt_max_age = data[col_map.age_grp_cnt].max().right - 1
+            cnt_min_age = int(data[col_map.age_cnt].min())
+            cnt_max_age = int(data[col_map.age_cnt].max())
+        else:  # age_grp_cnt is specified
+            cnt_min_age = int(data[col_map.age_grp_cnt].min().left)
+            cnt_max_age = int(data[col_map.age_grp_cnt].max().right - 1)
 
-        pop_min_age = pop[col_map.age_pop].min()
-        pop_max_age = pop[col_map.age_pop].max()
+        pop_min_age = int(pop[col_map.age_pop].min())
+        pop_max_age = int(pop[col_map.age_pop].max())
 
-        # Minimum and maximum ages of the sample (participants and contacts)
+        # Determine overall sample age range
         sample_min_age = min(part_min_age, cnt_min_age)
         sample_max_age = max(part_max_age, cnt_max_age)
 
+        # Align minimum age with population data
         if sample_min_age != pop_min_age:
             warnings.warn(
-                f"Minimum age in sample ({sample_min_age}) does not match that in the population information ({pop_min_age}). Adjusting sample minimum age to match population.",
+                f"Sample minimum age ({sample_min_age}) differs from population minimum age ({pop_min_age}). "
+                f"Filtering sample data to match population (age >= {pop_min_age}).",
                 UserWarning,
+                stacklevel=2
             )
-            data = data[data[col_map.age_part] >= pop_min_age]
+            data = data[data[col_map.age_part] >= pop_min_age].copy()
+            if data.empty:
+                raise ValueError(
+                    f"After filtering to age >= {pop_min_age}, no data remains. "
+                    "Check age range compatibility."
+                )
             min_age = pop_min_age
         else:
             min_age = sample_min_age
 
+        # Align maximum age with population data
         if sample_max_age != pop_max_age:
             warnings.warn(
-                f"Maximum age in sample ({sample_max_age}) does not match that in the population information ({pop_max_age}). Adjusting sample maximum age to match population.",
+                f"Sample maximum age ({sample_max_age}) differs from population maximum age ({pop_max_age}). "
+                f"Using population maximum age ({pop_max_age}) for analysis.",
                 UserWarning,
+                stacklevel=2
             )
             max_age = pop_max_age
         else:
             max_age = sample_max_age
 
-        # [Do] Set minimum and maximum age
-        # [Do] Select columns and drop NaN values
-        self.min_age = min_age
-        self.max_age = max_age
+        # Store age bounds as instance attributes
+        self.min_age: int = min_age
+        self.max_age: int = max_age
+
         return data
 
-    def _load_pop_proportions(self):
+    def _load_pop_proportions(self) -> None:
         """
-        append population proportions to the dataset
+        Append stratified population proportion arrays to the dataset.
+
+        This method processes population proportion quadruples (pop_prop_quads)
+        and adds them as xarray DataArrays to the dataset. Each quadruple 
+        specifies:
+        1. A dataframe with population proportions
+        2. Age column name
+        3. Stratification variable name (e.g., 'gender', 'occupation')
+        4. Proportion column name
+
+        The method:
+        - Ensures categorical consistency with main data
+        - Pivots data to create age × stratification matrices
+        - Stores as xarray DataArrays with named coordinates
+        - Tracks stratification variables in dataset attributes
+
+        Side Effects
+        ------------
+        Modifies self.ds by:
+        - Adding 'pop_prop_{var_name}' DataArrays for each stratification
+        - Setting ds.attrs['grp_vars'] dictionary with category lists
+
+        Notes
+        -----
+        This method is called automatically by load() if pop_prop_quads
+        were specified during initialization.
+
+        Examples
+        --------
+        >>> # After initialization with pop_prop_quads
+        >>> loader.load()
+        >>> loader.ds['pop_prop_gender']
+        <xarray.DataArray 'pop_prop_gender' (pop_prop_gender: 2, age: 76)>
+        array([[0.49, 0.48, ...],  # Female proportions by age
+               [0.51, 0.52, ...]])  # Male proportions by age
         """
         self.ds.attrs["grp_vars"] = dict()
         for q in self.pop_prop:
@@ -286,7 +891,67 @@ class BaseLoader(ABC):
 
     def load(self) -> xr.Dataset:
         """
-        Loads the data into an xarray dataset.
+        Load and transform data into an xarray Dataset for model fitting.
+
+        This is the main method that transforms raw contact survey data into a 
+        structured xarray Dataset containing:
+        - Contact counts stratified by age and grouping variables
+        - Participant counts (N)
+        - Population size (P)
+        - Group contact offset (S) accounting for household/group contacts
+        - Optional population proportion arrays for stratified analysis
+
+        The method performs several key transformations:
+        1. Aggregates participant counts by age and grouping variables
+        2. Computes group contact offsets to adjust for household contacts
+        3. Creates contact count matrix across all age combinations
+        4. Builds full Cartesian product of all stratification variables
+        5. Merges aggregated data with full grid (zero-filling missing cells)
+        6. Converts to xarray Dataset with named coordinates
+
+        Returns
+        -------
+        xr.Dataset
+            Xarray Dataset with the following variables:
+            - y : int array of contact counts
+            - log_N : log of participant counts
+            - log_P : log of population sizes by age
+            - log_S : log of group contact offset factors
+            - aid : participant age indices
+            - bid (or cid) : contact age indices (or age group codes)
+            
+            Additional variables may include stratification dimensions
+            (e.g., gender, occupation) and population proportion arrays.
+
+        Notes
+        -----
+        Group Contact Offset (S):
+        The offset S adjusts for group contacts (e.g., "household members")
+        that inflate contact counts. Different adjustments are applied:
+        - Children (5-18): Assumes group contacts are with other children
+        - Adults (18+): Assumes group contacts are random across population
+        - S = 1 - z/(z+y) for children
+        - S = 1 - z/(z+y)/(max_age - min_age + 1) for adults
+        
+        Where:
+        - z = number of group contacts
+        - y = number of individual contacts
+
+        The method automatically handles:
+        - Zero-filling for unobserved age combinations
+        - Categorical variable consistency
+        - Age group interval expansions for coarse age data
+        - Optional repeat effect variables
+
+        Examples
+        --------
+        >>> loader = BaseLoader(data, pop, col_map)
+        >>> ds = loader.load()
+        >>> ds.y.shape
+        (12345,)  # Number of unique strata
+        >>> ds.coords["age"]
+        <xarray.DataArray 'age' (age: 76)>
+        array([ 0,  1,  2, ..., 73, 74, 75])
         """
         # [Do] Calculate the number of participants stratified by age and other grouping variables
         grp_vars_n = [self.col_map.age_part]
@@ -453,30 +1118,112 @@ class BaseLoader(ABC):
 
 
 class DataLoader(BaseLoader):
-    """Prepares the data for models
+    """
+    Prepare contact survey data for Bayesian contact matrix estimation.
 
-    This class takes participant data, contact data, population data, and a column mapping object
-    and prepares the data for models. It conducts a preliminary check of the data, ensuring that all
-    necessary columns are present and that the data is in the correct format. It also handles and
-    merges the dataframes, ensuring that the data is in a format suitable for analysis.
+    This class handles the complete data preparation pipeline for contact matrix
+    models, starting from separate participant and contact dataframes. It:
+    1. Validates participant, contact, and population dataframes
+    2. Merges contact and participant data
+    3. Transforms data into xarray Dataset format via BaseLoader
 
-    Params
+    The DataLoader is the primary entry point for users working with standard
+    contact survey data where participants and contacts are stored in separate
+    dataframes (e.g., CoMix, POLYMOD surveys).
+
+    Parameters
+    ----------
+    part : pd.DataFrame
+        Participant-level data containing one row per survey participant.
+        Must include participant ID, age, and optional grouping variables.
+    cnt : pd.DataFrame
+        Contact-level data containing one row per reported contact.
+        Must include participant ID (linking to part), contact age or age group,
+        and optional contact-specific grouping variables.
+    pop : pd.DataFrame
+        Population age distribution data with age and population size columns.
+    col_map : CoordToColumns
+        Column mapping object specifying which columns in the dataframes
+        correspond to required variables (IDs, ages, grouping variables).
+    population_proportions : List[PopulationProportion] | None, optional
+        List of PopulationProportion objects specifying stratified population
+        proportions for demographic adjustment. This is the recommended API.
+        Example:
+            pop_prop = PopulationProportion.from_counts(
+                data=df_gender, age_col='age', stratify_by='gender', count_col='N'
+            )
+            DataLoader(..., population_proportions=[pop_prop])
+    pop_prop_quads : List[Tuple[pd.DataFrame, str, str, str]] | None, optional
+        Legacy parameter. List of 4-tuples for population proportions.
+        Deprecated: Use population_proportions instead.
+        Default: None (no stratified proportions).
+
+    Attributes
+    ----------
+    part : pd.DataFrame
+        Validated and processed participant dataframe.
+    cnt : pd.DataFrame
+        Validated and processed contact dataframe.
+    data : pd.DataFrame
+        Merged participant-contact dataframe passed to BaseLoader.
+
+    Methods
+    -------
+    _validate_part(part, col_map)
+        Validate participant dataframe structure and required columns.
+    _validate_cnt(cnt, col_map)
+        Validate contact dataframe structure and required columns.
+    _validate_pop(pop, col_map)
+        Validate population dataframe structure and required columns.
+    load()
+        Inherited from BaseLoader - transforms data to xarray Dataset.
+
+    Raises
     ------
-    part: pd.DataFrame
-        Dataframe containing participant data.
-    cnt: pd.DataFrame
-        Dataframe containing contact data.
-    pop: pd.DataFrame
-        Dataframe containing population data.
-    col_map: CoordToColumns
-        Object that maps the columns in the dataframes to the variables used in the models.
-    pop_prop_quads: list of tuples, optional
-        List of quadruples (tuple of length 4) containing population proportions. Each quadruple should contain:
-        - A pandas DataFrame containing the population proportions data
-        - The column name for the population age
-        - The column name for the category
-        - The column name for the population proportions.
-        Defaults to an empty list.
+    KeyError
+        If required columns are missing from any input dataframe.
+    ValueError
+        If both population_proportions and pop_prop_quads are specified.
+
+    Notes
+    -----
+    - The 'y' column (contact indicator) is auto-filled with 1 if missing from cnt
+    - The 'z' column (group contact count) is auto-filled with 0 if missing from part
+    - Participant and contact data are merged on the participant ID variable
+    - Column suffixes are handled automatically during merge
+
+    Examples
+    --------
+    >>> from cntmosaic.dataloader import DataLoader, CoordToColumns, PopulationProportion
+    >>> 
+    >>> # Define column mappings
+    >>> col_map = CoordToColumns(
+    ...     id_var='participant_id',
+    ...     age_part='age',
+    ...     age_cnt='cnt_age',
+    ...     age_pop='age',
+    ...     size_pop='population'
+    ... )
+    >>> 
+    >>> # Create population proportion (NEW API - recommended)
+    >>> pop_prop = PopulationProportion.from_counts(
+    ...     data=df_gender,
+    ...     age_col='age',
+    ...     stratify_by='gender',
+    ...     count_col='population'
+    ... )
+    >>> 
+    >>> # Load data with stratified population
+    >>> loader = DataLoader(
+    ...     part_df, cnt_df, pop_df, col_map,
+    ...     population_proportions=[pop_prop]
+    ... )
+    >>> ds = loader.load()
+    >>> 
+    >>> # Access contact matrix data
+    >>> ds.y  # Contact counts
+    >>> ds.log_N  # Log participant counts
+    >>> ds.pop_prop_gender  # Stratified population proportions by gender
     """
 
     def __init__(
@@ -485,77 +1232,180 @@ class DataLoader(BaseLoader):
         cnt: pd.DataFrame,
         pop: pd.DataFrame,
         col_map: CoordToColumns,
-        pop_prop_quads: list | None = None,
-    ):
+        population_proportions: List[PopulationProportion] | None = None,
+        pop_prop_quads: List[Tuple[pd.DataFrame, str, str, str]] | None = None,
+    ) -> None:
         self._validate_part(part, col_map)
         self._validate_cnt(cnt, col_map)
         self._validate_pop(pop, col_map)
         data = pd.merge(self.cnt, self.part, on=col_map.id_var, suffixes=("", "_cnt"))
-        super().__init__(data, pop, col_map, pop_prop_quads)
+        super().__init__(data, pop, col_map, population_proportions, pop_prop_quads)
 
-    def _validate_part(self, part: pd.DataFrame, col_map: CoordToColumns):
+    def _validate_part(self, part: pd.DataFrame, col_map: CoordToColumns) -> None:
         """
-        This method validates the participant data and column mappings.
-        Checks for the presence of necessary columns.
+        Validate participant dataframe structure and required columns.
+
+        Ensures the participant dataframe contains all necessary columns for
+        analysis, including participant ID, age, and any specified grouping
+        variables. Automatically adds missing 'z' column (group contact count)
+        initialized to 0 if not present.
+
+        Parameters
+        ----------
+        part : pd.DataFrame
+            Participant dataframe to validate.
+        col_map : CoordToColumns
+            Column mapping specification.
+
+        Raises
+        ------
+        KeyError
+            If required columns (id_var, age_part, or grp_vars_part) are missing.
+
+        Side Effects
+        ------------
+        Sets self.part to validated copy of input dataframe with 'z' column added
+        if it was missing.
+
+        Notes
+        -----
+        The 'z' column represents group/household contact counts. If not present
+        in the data, it's initialized to 0, indicating no group contacts reported.
         """
         # [Check] Ensure all necessary columns are present
         if col_map.id_var not in part.columns:
-            raise KeyError(f"Missing column {col_map.id_var} in participants dataframe")
+            raise KeyError(
+                f"Missing participant ID column '{col_map.id_var}' in participants dataframe.\n"
+                f"Available columns: {list(part.columns)}"
+            )
 
         if col_map.age_part not in part.columns:
             raise KeyError(
-                f"Missing column {col_map.age_part} in participants dataframe"
+                f"Missing participant age column '{col_map.age_part}' in participants dataframe.\n"
+                f"Available columns: {list(part.columns)}"
             )
 
         if col_map.grp_vars_part:
             missing = [col for col in col_map.grp_vars_part if col not in part.columns]
-            if len(missing) > 0:
-                raise KeyError(f"Missing columns {missing} in participants dataframe")
+            if missing:
+                raise KeyError(
+                    f"Missing grouping variable columns {missing} in participants dataframe.\n"
+                    f"Available columns: {list(part.columns)}"
+                )
             
-        # [Check] If the column z is present is in part.
+        # [Check] If the column z is present in part.
         # If not, add it as a column with value 0.
         if col_map.z not in part.columns:
-            part.loc[:,col_map.z] = 0
+            part = part.copy()
+            part[col_map.z] = 0
 
-        self.part = part.copy()
+        self.part: pd.DataFrame = part.copy()
 
-    def _validate_cnt(self, cnt: pd.DataFrame, col_map: CoordToColumns):
+    def _validate_cnt(self, cnt: pd.DataFrame, col_map: CoordToColumns) -> None:
         """
-        This method validates the contact data and column mappings.
-         Checks for the presence of necessary columns.
+        Validate contact dataframe structure and required columns.
+
+        Ensures the contact dataframe contains all necessary columns, including
+        participant ID (for merging), contact age information (either exact age
+        or age group), and any specified contact-level grouping variables.
+        Automatically adds missing 'y' column (contact indicator) initialized
+        to 1 if not present.
+
+        Parameters
+        ----------
+        cnt : pd.DataFrame
+            Contact dataframe to validate.
+        col_map : CoordToColumns
+            Column mapping specification.
+
+        Raises
+        ------
+        KeyError
+            If required columns (id_var, age_cnt or age_grp_cnt, grp_vars_cnt)
+            are missing.
+
+        Side Effects
+        ------------
+        Sets self.cnt to validated copy of input dataframe with 'y' column added
+        if it was missing.
+
+        Notes
+        -----
+        - Either age_cnt (exact age) or age_grp_cnt (age group) must be present
+        - The 'y' column represents contact indicators/counts. If not present,
+          it's initialized to 1, indicating one contact per row
+        - Contact-level grouping variables (grp_vars_cnt) are optional
         """
         # [Check] Ensure all necessary columns are present
         if col_map.id_var not in cnt.columns:
-            raise KeyError(f"Missing column {col_map.id_var} in contacts dataframe")
+            raise KeyError(
+                f"Missing participant ID column '{col_map.id_var}' in contacts dataframe.\n"
+                f"Available columns: {list(cnt.columns)}"
+            )
 
         if col_map.age_cnt:
             if col_map.age_cnt not in cnt.columns:
                 raise KeyError(
-                    f"Missing column {col_map.age_cnt} in contacts dataframe"
+                    f"Missing contact age column '{col_map.age_cnt}' in contacts dataframe.\n"
+                    f"Available columns: {list(cnt.columns)}"
                 )
 
         if col_map.age_grp_cnt:
             if col_map.age_grp_cnt not in cnt.columns:
                 raise KeyError(
-                    f"Missing column {col_map.age_grp_cnt} in contacts dataframe"
+                    f"Missing contact age group column '{col_map.age_grp_cnt}' in contacts dataframe.\n"
+                    f"Available columns: {list(cnt.columns)}"
                 )
 
         if col_map.grp_vars_cnt:
             missing = [col for col in col_map.grp_vars_cnt if col not in cnt.columns]
-            if len(missing) > 0:
-                raise KeyError(f"Missing columns {missing} in contacts dataframe")
+            if missing:
+                raise KeyError(
+                    f"Missing contact grouping variable columns {missing} in contacts dataframe.\n"
+                    f"Available columns: {list(cnt.columns)}"
+                )
 
-        # [Check] If the column y is present is in cnt. If not, add it as a column with value 1
+        # [Check] If the column y is present in cnt. If not, add it as a column with value 1
         if col_map.y not in cnt.columns:
-            cnt.loc[:,col_map.y] = 1
+            cnt = cnt.copy()
+            cnt[col_map.y] = 1
 
-        self.cnt = cnt.copy()
+        self.cnt: pd.DataFrame = cnt.copy()
 
-    def _validate_pop(self, pop: pd.DataFrame, col_map: CoordToColumns):
+    def _validate_pop(self, pop: pd.DataFrame, col_map: CoordToColumns) -> None:
         """
-        This method validates the input data and column mappings.
+        Validate population dataframe structure and required columns.
+
+        Ensures the population dataframe contains age and population size columns
+        needed for adjusting contact rates to population-level contact matrices.
+
+        Parameters
+        ----------
+        pop : pd.DataFrame
+            Population dataframe to validate.
+        col_map : CoordToColumns
+            Column mapping specification.
+
+        Raises
+        ------
+        KeyError
+            If required columns (age_pop, size_pop) are missing.
+
+        Notes
+        -----
+        The population dataframe should contain:
+        - age_pop: Age values corresponding to population counts
+        - size_pop: Population size (counts) for each age
+        
+        Population proportions are computed automatically by BaseLoader.
         """
         if col_map.age_pop not in pop.columns:
-            raise KeyError(f"Missing column {col_map.age_pop} in population dataframe")
+            raise KeyError(
+                f"Missing population age column '{col_map.age_pop}' in population dataframe.\n"
+                f"Available columns: {list(pop.columns)}"
+            )
         if col_map.size_pop not in pop.columns:
-            raise KeyError(f"Missing column {col_map.size_pop} in population dataframe")
+            raise KeyError(
+                f"Missing population size column '{col_map.size_pop}' in population dataframe.\n"
+                f"Available columns: {list(pop.columns)}"
+            )

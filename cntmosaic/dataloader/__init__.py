@@ -1,6 +1,7 @@
-from ._dataloader import CoordToColumns, DataLoader
+from ._dataloader import CoordToColumns, DataLoader, PopulationProportion
 
 __all__ = [
   "CoordToColumns",
-  "DataLoader"
+  "DataLoader",
+  "PopulationProportion"
 ]

@@ -596,14 +596,14 @@ class Spline2D(Prior2D):
 
     def sample_global(self):
         beta = numpyro.sample(
-            "spline_coef", dist.Normal(0, 1), sample_shape=(self.PHI.shape[-1],)
+            "spline_coefs", dist.Normal(0, 1), sample_shape=(self.PHI.shape[-1],)
         )
         f = (self.PHI @ beta)[self.symm_tril_idx].reshape((self.A, self.A))
         return f
 
     def sample_partial(self):
         beta = numpyro.sample(
-            "spline_coef",
+            "spline_coefs",
             dist.Normal(0, 1),
             sample_shape=(self.PHI.shape[-1], self.event_dim_eff),
         )
@@ -615,12 +615,12 @@ class Spline2D(Prior2D):
 
     def sample_full(self):
         beta_diag = numpyro.sample(
-            "spline_coef_diag",
+            "spline_coefs_diag",
             dist.Normal(0, 1),
             sample_shape=(self.PHI_diag.shape[-1], self.event_dim_diag),
         )
         beta_non_diag = numpyro.sample(
-            "spline_coef_non_diag",
+            "spline_coefs_non_diag",
             dist.Normal(0, 1),
             sample_shape=(self.PHI_non_diag.shape[-1], self.event_dim_non_diag),
         )

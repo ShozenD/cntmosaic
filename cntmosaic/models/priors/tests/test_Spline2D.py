@@ -58,28 +58,30 @@ def test_sample_global():
 
 
 def test_sample_partial():
-  """Test sampling from partial prior."""
-  prior = Spline2D(prior_type='partial', transform='ilr')
-  prior.set_age_bounds(0, 9)
-  prior.set_event_dim(3)
-  prior.set_loc(0.0)  # Use scalar location instead
+    """Test sampling from partial prior."""
+    prior = Spline2D(prior_type="partial", transform="ilr")
+    prior.set_age_bounds(0, 9)
+    prior.set_event_dim(3)
+    prior.set_loc(0.0)  # Use scalar location instead
 
-  with numpyro.handlers.seed(rng_seed=42):
-      result = prior.sample()
-    
-  # Check output shape
-  assert result.shape == (3, 10, 10)
-  assert isinstance(result, jnp.ndarray)
+    with numpyro.handlers.seed(rng_seed=42):
+        result = prior.sample()
+
+    # Check output shape
+    assert result.shape == (3, 10, 10)
+    assert isinstance(result, jnp.ndarray)
+
+
 def test_sample_full():
-  """Test sampling from full prior."""
-  prior = Spline2D(prior_type='full', transform='ilr')
-  prior.set_age_bounds(0, 9)
-  prior.set_event_dim(4)
-  prior.set_loc(0.0)  # Use scalar location instead
-    
-  with numpyro.handlers.seed(rng_seed=42):
-      result = prior.sample()
-    
-  # Check output shape
-  assert result.shape == (4, 10, 10)
-  assert isinstance(result, jnp.ndarray)
+    """Test sampling from full prior."""
+    prior = Spline2D(prior_type="full", transform="ilr")
+    prior.set_age_bounds(0, 9)
+    prior.set_event_dim(4)
+    prior.set_loc(0.0)  # Use scalar location instead
+
+    with numpyro.handlers.seed(rng_seed=42):
+        result = prior.sample()
+
+    # Check output shape
+    assert result.shape == (4, 10, 10)
+    assert isinstance(result, jnp.ndarray)

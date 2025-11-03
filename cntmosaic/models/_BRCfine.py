@@ -282,7 +282,7 @@ class BRCfine(BRC):
         >>> prior_samples = prior_pred(PRNGKey(0))
         """
         # Baseline contact rate (global intercept)
-        beta0 = numpyro.sample("baseline", dist.Normal(0.0, 2.5))
+        beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
 
         # Smooth age-age contact rate function from prior
         with scope(prefix="rate"):

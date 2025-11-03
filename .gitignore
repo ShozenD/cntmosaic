@@ -77,6 +77,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+# Note: Notebook outputs are automatically stripped by nbstripout (see .gitattributes)
 
 # IPython
 profile_default/
@@ -169,6 +170,12 @@ data/*
 
 # VS Code
 .vscode/
+
+# Tutorial figures (keep these for documentation)
+!docs/tutorials/figures/*.png
+!docs/tutorials/figures/*.pdf
+!docs/tutorials/figures/*.svg
+!docs/tutorials/figures/*.html
 
 # Figures
 figures/*

@@ -222,8 +222,8 @@ class Prior2D(ABC):
 
         # Define valid shapes and their transformation functions
         valid_shapes = {
-            (self.event_dim_eff, self.A, self.A): lambda x: x,
-            (self.event_dim_eff, self.A): lambda x: jnp.repeat(
+            (self.event_dim, self.A, self.A): lambda x: x,
+            (self.event_dim, self.A): lambda x: jnp.repeat(
                 x[:, :, None], self.A, axis=2
             ),
         }
@@ -238,9 +238,9 @@ class Prior2D(ABC):
         if data is None:
             raise ValueError(
                 f"Invalid loc shape {loc.shape}. Expected one of:\n"
-                f"  - Scalar (broadcasted to ({self.event_dim_eff}, {self.A}, {self.A}))\n"
-                f"  - ({self.event_dim_eff}, {self.A}, {self.A})\n"
-                f"  - ({self.event_dim_eff}, {self.A}) (broadcasted along last dim)\n"
+                f"  - Scalar (broadcasted to ({self.event_dim}, {self.A}, {self.A}))\n"
+                f"  - ({self.event_dim}, {self.A}, {self.A})\n"
+                f"  - ({self.event_dim}, {self.A}) (broadcasted along last dim)\n"
                 f"Hint: If shape mismatch is unexpected, check that set_age_bounds "
                 f"and set_event_dim were called with correct values."
             )
@@ -251,7 +251,7 @@ class Prior2D(ABC):
             if transform_func:
                 # Apply transformation along the appropriate axis (last axis for A x A matrices)
                 # Note: This assumes data represents compositional data in simplex
-                self.trans_loc = transform_func(data, axis=-1)
+                self.trans_loc = transform_func(data, axis=0)
             else:
                 # This should never happen due to validate_params, but keep as safeguard
                 raise ValueError(f"Unknown transform: {self.transform}")

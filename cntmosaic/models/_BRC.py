@@ -387,7 +387,7 @@ class BRC(ABC):
 
     def run_inference_mcmc(
         self,
-        rng_key: PRNGKey,
+        prng_key: PRNGKey,
         num_samples: int = 500,
         num_warmup: int = 500,
         num_chains: int = 2,
@@ -405,7 +405,7 @@ class BRC(ABC):
 
         Parameters
         ----------
-        rng_key : jax.random.PRNGKey
+        prng_key : jax.random.PRNGKey
             JAX random number generator key for reproducibility. Generate with
             `jax.random.PRNGKey(seed)`.
         num_samples : int, default=500
@@ -484,7 +484,7 @@ class BRC(ABC):
 
         try:
             self._mcmc_result = run_inference_mcmc(
-                rng_key,
+                prng_key,
                 self.model,
                 num_samples=num_samples,
                 num_warmup=num_warmup,
@@ -842,8 +842,8 @@ class BRC(ABC):
                 f"Available parameters: {list(self.priors.keys())}"
             )
 
-        rng_key = jax.random.PRNGKey(seed)
-        _, subkey = jax.random.split(rng_key)
+        prng_key = jax.random.PRNGKey(seed)
+        _, subkey = jax.random.split(prng_key)
 
         samples = self.priors[para_name].sample(subkey, sample_shape=(num_samples,))
 

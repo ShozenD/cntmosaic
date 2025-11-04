@@ -252,7 +252,7 @@ class Prem:
 
     def run_inference_mcmc(
         self,
-        rng_key: PRNGKey,
+        prng_key: PRNGKey,
         num_samples: int = 500,
         num_warmup: int = 500,
         num_chains: int = 2,
@@ -264,7 +264,7 @@ class Prem:
 
         Parameters
         ----------
-        rng_key: jax.random.PRNGKey
+        prng_key: jax.random.PRNGKey
             Random number generator key.
         num_samples: int, default=1000
             Number of samples to draw from the posterior.
@@ -281,7 +281,7 @@ class Prem:
         """
         try:
             self._mcmc_result = run_inference_mcmc(
-                rng_key,
+                prng_key,
                 self.model,
                 num_samples=num_samples,
                 num_warmup=num_warmup,

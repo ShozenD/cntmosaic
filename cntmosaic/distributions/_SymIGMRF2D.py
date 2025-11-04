@@ -454,9 +454,13 @@ class SymIGMRF2D(Distribution):
 
         # ===== Broadcast adjustments =====
         if jnp.ndim(loc) == 0:
-            self.loc = jnp.broadcast_to(loc, batch_shape + (self.num_nodes**2,))
+            self.loc = jnp.broadcast_to(
+                loc, batch_shape + (self.num_nodes * (self.num_nodes + 1) // 2,)
+            )
         else:
-            self.loc = jnp.broadcast_to(loc, batch_shape + (self.num_nodes**2,))
+            self.loc = jnp.broadcast_to(
+                loc, batch_shape + (self.num_nodes * (self.num_nodes + 1) // 2,)
+            )
 
         # Broadcast conditional precisions to (batch_shape,)
         self.cond_prec = jnp.broadcast_to(cond_prec, batch_shape)
@@ -467,7 +471,7 @@ class SymIGMRF2D(Distribution):
         else:
             self.U_sub = self.U_sub
 
-        event_shape = (self.num_nodes**2,)
+        event_shape = (self.num_nodes * (self.num_nodes + 1) // 2,)
 
         super(SymIGMRF2D, self).__init__(
             batch_shape=batch_shape,
@@ -500,9 +504,9 @@ class SymIGMRF2D(Distribution):
         Returns
         -------
         Array
-            Samples from the symmetric distribution with shape:
-            sample_shape + batch_shape + (num_nodes²,)
-            When reshaped to (num_nodes, num_nodes), satisfies matrix[i,j] = matrix[j,i].
+            Samples from the lower-triangular (including diagonal) part of the
+            symmetric IGMRF2D distribution, with shape:
+            sample_shape + batch_shape + (num_nodes x (num_nodes + 1) // 2,)
 
         Notes
         -----
@@ -521,12 +525,7 @@ class SymIGMRF2D(Distribution):
         lam_sub = cond_prec_reshaped * self.lam_sub
         lam_sub = lam_sub.reshape(self.batch_shape + (-1,))
         scale = jnp.sqrt(1 / lam_sub)[..., jnp.newaxis]
-        result = (
-            self.loc
-            + jnp.squeeze(jnp.matmul(self.U_sub, scale * eps), axis=-1)[
-                ..., self.sym_ix
-            ]
-        )
+        result = self.loc + jnp.squeeze(jnp.matmul(self.U_sub, scale * eps), axis=-1)
 
         return result
 
@@ -550,9 +549,7 @@ class SymIGMRF2D(Distribution):
         ----------
         value : ArrayLike
             Sample value at which to evaluate log probability.
-            Shape must be batch_shape + event_shape.
-            Although the full n² vectorized matrix is provided, only the
-            n(n+1)/2 lower-triangular elements are used in the computation.
+            Shape must be batch_shape + event_shape + (num_nodes + (num_nodes + 1) // 2,).
 
         Returns
         -------
@@ -573,13 +570,7 @@ class SymIGMRF2D(Distribution):
         - Uses eigendecomposition rather than direct inversion
         - Only processes non-zero eigenvalues (filtered during initialization)
         """
-        n_tril = self.num_nodes * (self.num_nodes + 1) // 2
-        value_tril = value[..., self.tril_ix]
-
-        if jnp.ndim(self.loc) == 0:
-            diff = value_tril - self.loc
-        else:
-            diff = value_tril - self.loc[..., self.tril_ix]
+        diff = value - self.loc
 
         # Compute log determinant using non-zero eigenvalues only
         cond_prec_reshaped = self.cond_prec[..., jnp.newaxis]

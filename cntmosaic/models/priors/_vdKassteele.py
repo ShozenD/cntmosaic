@@ -11,6 +11,7 @@ from .._utils import symm_from_tril_ix_col
 
 from ._Prior2D import Prior2D
 from ...distributions import IGMRF2D, SymIGMRF2D
+from ...utils import symm_from_tril_ix_col
 
 
 class vdKassteele(Prior2D):
@@ -167,7 +168,7 @@ class vdKassteele(Prior2D):
         prior_type: str = "global",
         order: int = 2,
         tau_shape: float = 2.0,
-        tau_rate: float = 0.01,
+        tau_rate: float = 0.1,
     ):
         """
         Initialize vdKassteele IGMRF prior.
@@ -246,7 +247,7 @@ class vdKassteele(Prior2D):
         Called automatically by set_age_bounds(). Uses column-major ordering
         for compatibility with JAX operations.
         """
-        self.sym_idx = symm_from_tril_ix_col(self.A)
+        self.symm_tril_ix = symm_from_tril_ix_col(self.A)
 
     def sample_single(self) -> ArrayLike:
         """
@@ -289,8 +290,12 @@ class vdKassteele(Prior2D):
         sample_partial : Asymmetric variant
         """
         tau = numpyro.sample("tau", dist.Gamma(self.tau_shape, self.tau_rate))
-        f = numpyro.sample("f", SymIGMRF2D(self.A, order=2, cond_prec=tau))
-        f = f.reshape((self.A, self.A))
+        f = numpyro.sample("f", SymIGMRF2D(self.A, order=2, cond_prec=tau))[
+            self.symm_tril_ix
+        ]
+        f = f.reshape(
+            (self.A, self.A), order="F"
+        )  # Column-major order to match SymIGMRF2D output
 
         return f
 
@@ -345,7 +350,7 @@ class vdKassteele(Prior2D):
             "f",
             IGMRF2D((self.A, self.A), order=(self.order, self.order), cond_prec1=tau),
             sample_shape=(self.event_dim,),
-        )  # shape: (event_dim, A*A)
+        )  # IGMRF2D returns C-order (row-major) flattened arrays, so reshape with default C-order
         f = f.reshape((self.event_dim, self.A, self.A))
 
         return f
@@ -412,7 +417,9 @@ class vdKassteele(Prior2D):
             "f_diag",
             SymIGMRF2D(self.A, order=self.order, cond_prec=tau),
             sample_shape=(self.event_dim_diag,),
-        )  # shape: (event_dim_diag + 1, A*A)
+        )[
+            ..., self.symm_tril_ix
+        ]  # shape: (event_dim_diag + 1, A*A)
 
         # Sample off-diagonal elements (asymmetric allowed)
         f_non_diag = numpyro.sample(
@@ -436,6 +443,8 @@ class vdKassteele(Prior2D):
         f = f.at[non_diag_idx, :].set(f_non_diag)
 
         # Reshape to (event_dim, A, A)
+        # Note: SymIGMRF2D outputs are reshape-order-invariant (symmetric by design)
+        # IGMRF2D outputs use C-order, so default C-order reshape is appropriate
         f = f.reshape((self.event_dim, self.A, self.A))
 
         return f

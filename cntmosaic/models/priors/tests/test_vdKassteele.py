@@ -24,7 +24,7 @@ class TestInitialization:
         assert prior.prior_type == "global"
         assert prior.order == 2
         assert prior.tau_shape == 2.0
-        assert prior.tau_rate == 0.01
+        assert prior.tau_rate == 0.1
         assert prior.transform is None
 
     def test_custom_parameters(self):
@@ -82,8 +82,8 @@ class TestAgeBounds:
         prior.set_age_bounds(0, 20)
 
         # Check that symmetrization indices are created
-        assert hasattr(prior, "sym_idx")
-        assert prior.sym_idx is not None
+        assert hasattr(prior, "symm_tril_ix")
+        assert prior.symm_tril_ix is not None
 
 
 class TestSampleSingle:

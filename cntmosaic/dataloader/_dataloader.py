@@ -222,7 +222,7 @@ class CoordToColumns:
                 f"To treat them as separate variables, append suffixes to distinguish them "
                 f"(e.g., 'setting_part' vs 'setting_cnt').",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             for var in conflicting_vars:
                 self.grp_vars_part.remove(var)
@@ -305,7 +305,7 @@ class PopulationProportion:
     >>> # Multiple stratification variables (create separate PopulationProportion objects)
     >>> pop_prop_gender = PopulationProportion(df_gender, 'age', 'gender', 'prop')
     >>> pop_prop_region = PopulationProportion(df_region, 'age', 'region', 'prop')
-    >>> dataloader = DataLoader(..., population_proportions=[pop_prop_gender, pop_prop_region])
+    >>> dataloader = DataLoader(..., pop_prop=[pop_prop_gender, pop_prop_region])
 
     Notes
     -----
@@ -439,10 +439,9 @@ class PopulationProportion:
 
         # Compute proportions within each age group
         df_with_props = data.copy()
-        df_with_props[proportion_col] = (
-            df_with_props.groupby(age_col)[count_col]
-            .transform(lambda x: x / x.sum())
-        )
+        df_with_props[proportion_col] = df_with_props.groupby(age_col)[
+            count_col
+        ].transform(lambda x: x / x.sum())
 
         return cls(
             data=df_with_props,
@@ -492,10 +491,12 @@ class BaseLoader(ABC):
         Used for normalization and rate calculations.
     col_map : CoordToColumns
         Column mapping object specifying how to interpret dataframe columns.
-    pop_prop_quads : Optional[List[Tuple]], default=None
-        List of 4-tuples specifying population proportion adjustments for
-        stratification variables. Each tuple should contain:
-        (DataFrame, age_column, category_column, proportion_column)
+    pop_prop : Optional[Union[PopulationProportion, List[PopulationProportion]]], default=None
+        Population proportion specification(s) for stratification variables.
+        Can be either:
+        - A single PopulationProportion object
+        - A list of PopulationProportion objects for multiple stratifications
+        If None, no stratified population proportions are used.
 
     Attributes
     ----------
@@ -517,7 +518,8 @@ class BaseLoader(ABC):
     KeyError
         If required columns are missing from input dataframes.
     TypeError
-        If age group column is not properly formatted as pd.IntervalIndex.
+        If age group column is not properly formatted as pd.IntervalIndex,
+        or if pop_prop contains non-PopulationProportion objects.
     ValueError
         If age ranges are inconsistent or population proportions don't sum to 1.
 
@@ -532,7 +534,7 @@ class BaseLoader(ABC):
     --------
     DataLoader : Concrete implementation for separate participant/contact dataframes
     CoordToColumns : Column mapping specification
-    PopulationProportion : Stratified population proportion specification (recommended)
+    PopulationProportion : Stratified population proportion specification
     """
 
     def __init__(
@@ -540,8 +542,9 @@ class BaseLoader(ABC):
         data: pd.DataFrame,
         pop: pd.DataFrame,
         col_map: CoordToColumns,
-        population_proportions: Optional[List[PopulationProportion]] = None,
-        pop_prop_quads: Optional[List[Tuple[pd.DataFrame, str, str, str]]] = None,
+        pop_prop: Optional[
+            Union[PopulationProportion, List[PopulationProportion]]
+        ] = None,
     ) -> None:
         """
         Initialize base loader with data validation.
@@ -554,125 +557,39 @@ class BaseLoader(ABC):
             Population dataframe.
         col_map : CoordToColumns
             Column mapping specification.
-        population_proportions : Optional[List[PopulationProportion]], default=None
-            Population proportion specifications using the new intuitive API.
-        pop_prop_quads : Optional[List[Tuple]], default=None
-            Legacy population proportion format (backward compatibility).
+        pop_prop : Optional[Union[PopulationProportion, List[PopulationProportion]]], default=None
+            Population proportion specification(s). Can be either:
+            - A single PopulationProportion object
+            - A list of PopulationProportion objects for multiple stratifications
+            If None, no stratified population proportions are used.
 
         Raises
         ------
-        ValueError
-            If both population_proportions and pop_prop_quads are provided.
-        NotImplementedError
-            If pop_prop_quads is provided in incorrect format.
+        TypeError
+            If pop_prop contains elements that are not PopulationProportion objects.
         """
-        # Check for conflicting parameters
-        if population_proportions is not None and pop_prop_quads is not None:
-            raise ValueError(
-                "Cannot specify both 'population_proportions' (new API) and "
-                "'pop_prop_quads' (legacy API). Please use only one.\n"
-                "Recommended: Use 'population_proportions' with PopulationProportion objects."
-            )
-
         self.data = self._validate(data, pop, col_map)
         self.col_map = col_map
         self.pop = pop
         self.ds: Optional[xr.Dataset] = None
 
-        # Handle new API (recommended)
-        if population_proportions is not None:
+        # Handle pop_prop parameter (accept single object or list)
+        if pop_prop is not None:
+            # Convert single PopulationProportion to list for uniform processing
+            if isinstance(pop_prop, PopulationProportion):
+                pop_prop = [pop_prop]
+
             # Validate all PopulationProportion objects
-            for i, pop_prop in enumerate(population_proportions):
-                if not isinstance(pop_prop, PopulationProportion):
+            for i, pp in enumerate(pop_prop):
+                if not isinstance(pp, PopulationProportion):
                     raise TypeError(
-                        f"Element {i} in population_proportions must be a "
-                        f"PopulationProportion object, got {type(pop_prop)}"
+                        f"Element {i} in pop_prop must be a "
+                        f"PopulationProportion object, got {type(pp)}"
                     )
                 # Validation happens automatically in PopulationProportion.__post_init__
-            
+
             # Convert to internal format for processing
-            self.pop_prop = [pp.to_tuple() for pp in population_proportions]
-
-        # Handle legacy API (backward compatibility)
-        elif pop_prop_quads is not None:
-            warnings.warn(
-                "The 'pop_prop_quads' parameter is deprecated. "
-                "Please use 'population_proportions' with PopulationProportion objects instead.\n"
-                "Example:\n"
-                "  pop_prop = PopulationProportion(df, 'age', 'gender', 'proportion')\n"
-                "  DataLoader(..., population_proportions=[pop_prop])",
-                DeprecationWarning,
-                stacklevel=2
-            )
-            try:
-                for quad in pop_prop_quads:
-                    self._validate_quads(quad)
-                self.pop_prop = pop_prop_quads
-            except Exception as e:
-                warnings.warn(
-                    "\npop_prop_quads argument requires a list of 4-tuples.\n"
-                    "Each tuple should contain:\n"
-                    "  (DataFrame, age_column_name, category_column_name, proportion_column_name)\n\n"
-                    "Example valid input:\n",
-                    UserWarning,
-                    stacklevel=2
-                )
-                sample_df = pd.DataFrame(
-                    {
-                        "age": [1, 2, 1, 2],
-                        "category": ["A", "A", "B", "B"],
-                        "proportions": [0.2, 0.3, 0.8, 0.7],
-                    }
-                )
-                warnings.warn(f"\n{sample_df}\n", UserWarning, stacklevel=2)
-                warnings.warn(
-                    "For a single quadruple, wrap it in a list: [quadruple]\n"
-                    "For multiple quadruples: [quad1, quad2, ...]\n",
-                    UserWarning,
-                    stacklevel=2
-                )
-                raise NotImplementedError(
-                    f"Invalid pop_prop_quads format: {e}"
-                ) from e
-
-    @staticmethod
-    def _validate_quads(quad: Tuple[pd.DataFrame, str, str, str]) -> None:
-        """
-        Validate structure and values of a population proportion quadruple.
-
-        Parameters
-        ----------
-        quad : Tuple[pd.DataFrame, str, str, str]
-            4-tuple containing (dataframe, age_col, category_col, proportion_col).
-
-        Raises
-        ------
-        AssertionError
-            If tuple structure is invalid.
-        NotImplementedError
-            If proportions don't sum to 1 within each age group.
-        """
-        # Validate tuple structure
-        assert isinstance(quad[0], pd.DataFrame), "First element must be a DataFrame"
-        for i in [1, 2, 3]:
-            assert isinstance(quad[i], str), f"Element {i} must be a string"
-            assert quad[i] in quad[0].columns, f"Column '{quad[i]}' not in DataFrame"
-
-        # Validate that proportions sum to 1 within each age group
-        df, age_col, _, prop_col = quad
-        group_sums = df.groupby(age_col)[prop_col].sum()
-        bad_groups = group_sums[np.abs(group_sums - 1.0) > 1e-6]
-
-        if not bad_groups.empty:
-            warnings.warn(
-                f"Population proportions do not sum to 1.0 for age(s): {list(bad_groups.index)}\n"
-                f"Sum values: {bad_groups.to_dict()}",
-                UserWarning,
-                stacklevel=3
-            )
-            raise NotImplementedError(
-                f"Invalid population proportions for ages: {list(bad_groups.index)}"
-            )
+            self.pop_prop = [pp.to_tuple() for pp in pop_prop]
 
     def _validate(
         self, data: pd.DataFrame, pop: pd.DataFrame, col_map: CoordToColumns
@@ -747,7 +664,7 @@ class BaseLoader(ABC):
                 warnings.warn(
                     f"Column '{col}' is object type. Converting to categorical for efficiency.",
                     UserWarning,
-                    stacklevel=2
+                    stacklevel=2,
                 )
                 data[col] = data[col].astype("category")
 
@@ -795,7 +712,7 @@ class BaseLoader(ABC):
                 f"Sample minimum age ({sample_min_age}) differs from population minimum age ({pop_min_age}). "
                 f"Filtering sample data to match population (age >= {pop_min_age}).",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             data = data[data[col_map.age_part] >= pop_min_age].copy()
             if data.empty:
@@ -813,7 +730,7 @@ class BaseLoader(ABC):
                 f"Sample maximum age ({sample_max_age}) differs from population maximum age ({pop_max_age}). "
                 f"Using population maximum age ({pop_max_age}) for analysis.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             max_age = pop_max_age
         else:
@@ -829,9 +746,9 @@ class BaseLoader(ABC):
         """
         Append stratified population proportion arrays to the dataset.
 
-        This method processes population proportion quadruples (pop_prop_quads)
-        and adds them as xarray DataArrays to the dataset. Each quadruple 
-        specifies:
+        This method processes population proportion specifications (from pop_prop)
+        and adds them as xarray DataArrays to the dataset. Each specification
+        provides:
         1. A dataframe with population proportions
         2. Age column name
         3. Stratification variable name (e.g., 'gender', 'occupation')
@@ -851,12 +768,12 @@ class BaseLoader(ABC):
 
         Notes
         -----
-        This method is called automatically by load() if pop_prop_quads
-        were specified during initialization.
+        This method is called automatically by load() if pop_prop
+        was specified during initialization.
 
         Examples
         --------
-        >>> # After initialization with pop_prop_quads
+        >>> # After initialization with pop_prop
         >>> loader.load()
         >>> loader.ds['pop_prop_gender']
         <xarray.DataArray 'pop_prop_gender' (pop_prop_gender: 2, age: 76)>
@@ -893,7 +810,7 @@ class BaseLoader(ABC):
         """
         Load and transform data into an xarray Dataset for model fitting.
 
-        This is the main method that transforms raw contact survey data into a 
+        This is the main method that transforms raw contact survey data into a
         structured xarray Dataset containing:
         - Contact counts stratified by age and grouping variables
         - Participant counts (N)
@@ -919,7 +836,7 @@ class BaseLoader(ABC):
             - log_S : log of group contact offset factors
             - aid : participant age indices
             - bid (or cid) : contact age indices (or age group codes)
-            
+
             Additional variables may include stratification dimensions
             (e.g., gender, occupation) and population proportion arrays.
 
@@ -932,7 +849,7 @@ class BaseLoader(ABC):
         - Adults (18+): Assumes group contacts are random across population
         - S = 1 - z/(z+y) for children
         - S = 1 - z/(z+y)/(max_age - min_age + 1) for adults
-        
+
         Where:
         - z = number of group contacts
         - y = number of individual contacts
@@ -963,24 +880,24 @@ class BaseLoader(ABC):
             .reset_index()
         )
         self.df_n = df_n
-        
+
         # [Do] Calculate group contact offsets
         df_z = (
             self.data[[self.col_map.id_var] + grp_vars_n + [self.col_map.z]]
             .drop_duplicates()
-            .groupby(grp_vars_n, observed=True)['z']
+            .groupby(grp_vars_n, observed=True)["z"]
             .sum()
             .reset_index()
         )
         df_yz = (
             self.data[[self.col_map.id_var] + grp_vars_n + [self.col_map.y]]
             .drop_duplicates()
-            .groupby(grp_vars_n, observed=True)['y']
+            .groupby(grp_vars_n, observed=True)["y"]
             .sum()
             .reset_index()
         )
-        df_S = df_yz.merge(df_z, on=grp_vars_n, how='left')
-        
+        df_S = df_yz.merge(df_z, on=grp_vars_n, how="left")
+
         # Assume at least one contact if there is a group contact to avoid numerical issues
         # mask = (df_S[self.col_map.z] > 0) & (df_S['y'] == 0)
         # df_S['y'] = np.where(mask, 1, df_S['y'])
@@ -988,24 +905,27 @@ class BaseLoader(ABC):
         # ===== Calculate group contact offset S =====
         # For school age children (5-18) assume contacts are with other children
         mask = (
-            (df_S[self.col_map.age_part] >= 5) & (df_S[self.col_map.age_part] <= 18) &
-            (df_S[self.col_map.z] + df_S[self.col_map.y] > 0)
+            (df_S[self.col_map.age_part] >= 5)
+            & (df_S[self.col_map.age_part] <= 18)
+            & (df_S[self.col_map.z] + df_S[self.col_map.y] > 0)
         )
-        df_S['S'] = np.where(
+        df_S["S"] = np.where(
             mask,
             1 - df_S[self.col_map.z] / (df_S[self.col_map.z] + df_S[self.col_map.y]),
-            1.0
+            1.0,
         )
-        
+
         # For adults (18+) assume contacts are random across population
-        mask = (
-            (df_S[self.col_map.age_part] > 18) &
-            (df_S[self.col_map.z] + df_S[self.col_map.y] > 0)
+        mask = (df_S[self.col_map.age_part] > 18) & (
+            df_S[self.col_map.z] + df_S[self.col_map.y] > 0
         )
-        df_S['S'] = np.where(
+        df_S["S"] = np.where(
             mask,
-            1 - df_S[self.col_map.z] / (df_S[self.col_map.z] + df_S[self.col_map.y]) / (self.max_age - self.min_age + 1),
-            1.0
+            1
+            - df_S[self.col_map.z]
+            / (df_S[self.col_map.z] + df_S[self.col_map.y])
+            / (self.max_age - self.min_age + 1),
+            1.0,
         )
         df_S = df_S.drop(columns=[self.col_map.z, self.col_map.y])
         self.df_S = df_S
@@ -1055,7 +975,7 @@ class BaseLoader(ABC):
         df_full = pd.merge(df_full, df_y, on=grp_vars, how="left")
         df_full = pd.merge(df_full, df_n, on=grp_vars_n, how="left")
         df_full = pd.merge(df_full, df_S, on=grp_vars_n, how="left")
-        
+
         # [Do] Finalise the data
         df_full = df_full.dropna(subset=["N"])
         df_full = df_full[df_full["N"] > 0]
@@ -1065,7 +985,7 @@ class BaseLoader(ABC):
 
         # [Do] Create a xarray dataset
         self.df_full = df_full
-        
+
         self.ds = xr.Dataset(
             {
                 "y": ("index", df_full["y"].astype(int).to_numpy()),
@@ -1096,14 +1016,16 @@ class BaseLoader(ABC):
             self.ds["bid_pad"] = (["index", "max_int_length"], bid_pad)
 
         for var in self.col_map.grp_vars_part:
-            if var != self.col_map.repeat_part: # Exclude repeat_part from stratification variables
+            if (
+                var != self.col_map.repeat_part
+            ):  # Exclude repeat_part from stratification variables
                 self.df_full[var] = self.df_full[var].astype("category")
                 self.ds[var] = xr.DataArray(
                     data=self.df_full[var],
                     dims="index",
                     coords={"index": self.ds.coords["index"]},
                 )
-        
+
         # If repeat effects are specified
         if self.col_map.repeat_part is not None:
             self.ds["rid"] = xr.DataArray(
@@ -1145,18 +1067,23 @@ class DataLoader(BaseLoader):
     col_map : CoordToColumns
         Column mapping object specifying which columns in the dataframes
         correspond to required variables (IDs, ages, grouping variables).
-    population_proportions : List[PopulationProportion] | None, optional
-        List of PopulationProportion objects specifying stratified population
-        proportions for demographic adjustment. This is the recommended API.
-        Example:
+    pop_prop : Union[PopulationProportion, List[PopulationProportion], None], optional
+        Population proportion specification(s) for demographic adjustment.
+        Can be either:
+        - A single PopulationProportion object
+        - A list of PopulationProportion objects for multiple stratifications
+        If None, no stratified population proportions are used.
+
+        Example with single stratification:
             pop_prop = PopulationProportion.from_counts(
                 data=df_gender, age_col='age', stratify_by='gender', count_col='N'
             )
-            DataLoader(..., population_proportions=[pop_prop])
-    pop_prop_quads : List[Tuple[pd.DataFrame, str, str, str]] | None, optional
-        Legacy parameter. List of 4-tuples for population proportions.
-        Deprecated: Use population_proportions instead.
-        Default: None (no stratified proportions).
+            DataLoader(..., pop_prop=pop_prop)
+
+        Example with multiple stratifications:
+            pop_prop_gender = PopulationProportion.from_counts(...)
+            pop_prop_region = PopulationProportion.from_counts(...)
+            DataLoader(..., pop_prop=[pop_prop_gender, pop_prop_region])
 
     Attributes
     ----------
@@ -1182,8 +1109,8 @@ class DataLoader(BaseLoader):
     ------
     KeyError
         If required columns are missing from any input dataframe.
-    ValueError
-        If both population_proportions and pop_prop_quads are specified.
+    TypeError
+        If pop_prop contains non-PopulationProportion objects.
 
     Notes
     -----
@@ -1195,7 +1122,7 @@ class DataLoader(BaseLoader):
     Examples
     --------
     >>> from cntmosaic.dataloader import DataLoader, CoordToColumns, PopulationProportion
-    >>> 
+    >>>
     >>> # Define column mappings
     >>> col_map = CoordToColumns(
     ...     id_var='participant_id',
@@ -1204,22 +1131,29 @@ class DataLoader(BaseLoader):
     ...     age_pop='age',
     ...     size_pop='population'
     ... )
-    >>> 
-    >>> # Create population proportion (NEW API - recommended)
+    >>>
+    >>> # Create population proportion (single stratification)
     >>> pop_prop = PopulationProportion.from_counts(
     ...     data=df_gender,
     ...     age_col='age',
     ...     stratify_by='gender',
     ...     count_col='population'
     ... )
-    >>> 
-    >>> # Load data with stratified population
+    >>>
+    >>> # Load data with single stratification
     >>> loader = DataLoader(
     ...     part_df, cnt_df, pop_df, col_map,
-    ...     population_proportions=[pop_prop]
+    ...     pop_prop=pop_prop
     ... )
     >>> ds = loader.load()
-    >>> 
+    >>>
+    >>> # Load data with multiple stratifications
+    >>> pop_prop_region = PopulationProportion.from_counts(...)
+    >>> loader = DataLoader(
+    ...     part_df, cnt_df, pop_df, col_map,
+    ...     pop_prop=[pop_prop, pop_prop_region]
+    ... )
+    >>>
     >>> # Access contact matrix data
     >>> ds.y  # Contact counts
     >>> ds.log_N  # Log participant counts
@@ -1232,14 +1166,13 @@ class DataLoader(BaseLoader):
         cnt: pd.DataFrame,
         pop: pd.DataFrame,
         col_map: CoordToColumns,
-        population_proportions: List[PopulationProportion] | None = None,
-        pop_prop_quads: List[Tuple[pd.DataFrame, str, str, str]] | None = None,
+        pop_prop: Union[PopulationProportion, List[PopulationProportion], None] = None,
     ) -> None:
         self._validate_part(part, col_map)
         self._validate_cnt(cnt, col_map)
         self._validate_pop(pop, col_map)
         data = pd.merge(self.cnt, self.part, on=col_map.id_var, suffixes=("", "_cnt"))
-        super().__init__(data, pop, col_map, population_proportions, pop_prop_quads)
+        super().__init__(data, pop, col_map, pop_prop)
 
     def _validate_part(self, part: pd.DataFrame, col_map: CoordToColumns) -> None:
         """
@@ -1292,7 +1225,7 @@ class DataLoader(BaseLoader):
                     f"Missing grouping variable columns {missing} in participants dataframe.\n"
                     f"Available columns: {list(part.columns)}"
                 )
-            
+
         # [Check] If the column z is present in part.
         # If not, add it as a column with value 0.
         if col_map.z not in part.columns:
@@ -1396,7 +1329,7 @@ class DataLoader(BaseLoader):
         The population dataframe should contain:
         - age_pop: Age values corresponding to population counts
         - size_pop: Population size (counts) for each age
-        
+
         Population proportions are computed automatically by BaseLoader.
         """
         if col_map.age_pop not in pop.columns:

@@ -114,7 +114,7 @@ def test_init_with_minimal_args(generate_unstratified_contact_data):
     dataloader = generate_unstratified_contact_data
 
     priors = {
-        "rate": HSGP2D(prior_type="full"),  # No 'A' parameter for HSGP2D
+        "rate": HSGP2D(prior_type="global"),  # No 'A' parameter for HSGP2D
     }
 
     model = HiBRCfine(dataloader, priors=priors)
@@ -170,7 +170,7 @@ def test_validate_hierarchical_inputs_checks_prior_types(
         "rate": HSGP2D(prior_type="partial"),  # No A parameter
     }
 
-    with pytest.raises(ValueError, match="prior_type must be 'full'"):
+    with pytest.raises(ValueError, match="prior_type must be 'global'"):
         HiBRCfine(dataloader, priors=priors)
 
 
@@ -184,7 +184,7 @@ def test_set_age_dims_basic(generate_unstratified_contact_data):
     dataloader = generate_unstratified_contact_data
 
     priors = {
-        "rate": HSGP2D(prior_type="full"),  # No A parameter
+        "rate": HSGP2D(prior_type="global"),  # No A parameter
     }
 
     model = HiBRCfine(dataloader, priors=priors)
@@ -317,18 +317,6 @@ def test_model_type_hints():
 
     assert "y" in sig.parameters
     assert sig.return_annotation != inspect.Parameter.empty
-
-
-def test_helpful_error_message_for_wrong_prior_type(generate_unstratified_contact_data):
-    """Test that wrong prior_type gives clear error message."""
-    dataloader = generate_unstratified_contact_data
-
-    priors = {
-        "rate": HSGP2D(prior_type="global"),  # No A parameter
-    }
-
-    with pytest.raises(ValueError, match="prior_type must be 'full'"):
-        HiBRCfine(dataloader, priors=priors)
 
 
 # ============================================================================

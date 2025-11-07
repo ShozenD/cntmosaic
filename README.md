@@ -10,75 +10,135 @@ It also provides a set of models to infer social contact matrices from real worl
 The models in `cntmosaic` are implemented using the probabilistic programming language [Numpyro](https://num.pyro.ai/en/stable/index.html) which allows for
 both Hamiltonian Monte Carlo (HMC) based full Bayesian inference and fast stochastic variational inference (SVI).
 
-## Setup
-### Local Setup
-
-To install the package locally, create a new virtual environment
+## Installation Guide
+#### Step 1: Clone the repository
+```bash
+git clone https://github.com/ShozenD/cntmosaic.git
+cd cntmosaic
+```
+#### Step 2: Create a virtual environment and activate it
+**On MacOS/Linux:**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
-Then, install the dependencies
-```bash
-pip install -r requirements.txt
+
+**On Windows:**
+```cmd
+python -m venv .venv
+.venv\Scripts\activate
 ```
 
-### Imperial College HPC
-The following instructions are for setting up the analysis environment on the [Imperial College HPC](https://icl-rcs-user-guide.readthedocs.io/en/latest/). There are two ways to setup the environment depending on the need. For basic usage, the Easybuild Python environment is sufficient. However, if you wish to work interactively on the server (i.e., use JupyterHub), a custom conda environment must be created.
+You should see `(.venv)` appear in your terminal prompt, indicating the virtual environment is active.
 
-#### Easybuild Python
-Login to the HPC via SSH and cd into the project directory. Load a recent version of the SciPy-bundle.
+#### Step 3: Install the package
+
+Install in **editable mode** (recommended for development or staying up-to-date):
 ```bash
-cd high_res_brc
+pip install -e .
+```
+
+This will automatically install all required dependencies listed in `pyproject.toml`.
+
+Or install normally:
+```bash
+pip install .
+```
+
+#### Step 4: Verify installation
+Test that the package is installed correctly:
+```bash
+python -c "import cntmosaic; print('Installation successful!')"
+```
+
+---
+
+## Imperial College HPC Setup
+
+Special instructions for users of the [Imperial College HPC](https://icl-rcs-user-guide.readthedocs.io/en/latest/).
+
+### Option A: Using Easybuild Python (Recommended for Batch Jobs)
+
+#### Step 1: Connect and Navigate
+
+```bash
+ssh username@login.hpc.ic.ac.uk
+cd /path/to/your/workspace
+git clone https://github.com/ShozenD/cntmosaic.git
+cd cntmosaic
+```
+
+#### Step 2: Load Python Module
+
+```bash
 module load tools/prod
 module load Python/3.10.8-GCCcore-12.2.0
 ```
-Create a virtual environment and activate it
+
+#### Step 3: Create Virtual Environment
+
 ```bash
 virtualenv .venv
 source .venv/bin/activate
 ```
-Install the dependencies using pip
+
+#### Step 4: Install Dependencies
+
 ```bash
 pip install -r requirements_hpc.txt
-```
-> [!IMPORTANT]  
-> To enable GPU computations, you may need to explicitly tell pip to install a version of JAX with CUDA.
-> For specific instructions, visit the [JAX GitHub page](https://github.com/jax-ml/jax).
-
-#### Enabling JupyterHub
-To enable JupyterHub, a custom conda environment must be created. First, login to the HPC via SSH and load the module
-```bash
-eval "$(~/miniforge3/bin/conda shell.bash hook)"
-```
-Setup a new conda environment
-```bash
-conda create -n cntmosaic python=3.12 ipykernel jupyter_client
-```
-Activate the environment
-```bash
-conda activate cntmosaic
-```
-Install the required packages using pip
-```bash
-pip install -r requirements.txt
-```
-Install the python kernel for Jupyter
-```bash
-python -m ipykernel install --user --name python312_cntmosaic --display-name "Python3.12 (cntmosaic)"
-```
-Now, you can start a new [Jupyter Hub](https://jupyter.rcs.imperial.ac.uk/) session and select the new ```Python3.12 (cntmosaic)``` kernel icon in the Jupyter Launcher.
-
-## Usage
-`cntmosaic` is currently under development and is not yet available on PyPI. To use the package, clone the repository and install the package locally.
-```zsh
 pip install -e .
 ```
 
-You can then import the package in the usual way
-```python
-import cntmosaic
+#### Step 5: Enable GPU (Optional)
+
+For GPU support on HPC, explicitly install JAX with CUDA:
+```bash
+pip install --upgrade "jax[cuda12]"
 ```
+
+### Option B: Using Conda with JupyterHub (For Interactive Work)
+
+#### Step 1: Initialize Conda
+
+```bash
+eval "$(~/miniforge3/bin/conda shell.bash hook)"
+```
+
+If you don't have miniforge installed:
+```bash
+wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+bash Miniforge3-Linux-x86_64.sh
+```
+
+#### Step 2: Create Conda Environment
+
+```bash
+conda create -n cntmosaic python=3.12 ipykernel jupyter_client
+conda activate cntmosaic
+```
+
+#### Step 3: Install Package
+
+```bash
+cd /path/to/cntmosaic
+pip install -e .
+```
+
+#### Step 4: Register Jupyter Kernel
+
+```bash
+python -m ipykernel install --user --name cntmosaic --display-name "Python 3.12 (cntmosaic)"
+```
+
+#### Step 5: Launch JupyterHub
+
+1. Navigate to [jupyter.rcs.imperial.ac.uk](https://jupyter.rcs.imperial.ac.uk/)
+2. Log in with your Imperial credentials
+3. Start a new server
+4. Select the **"Python 3.12 (cntmosaic)"** kernel from the launcher
+
+---
+
 
 ## Testing
 To run all unit tests in the package, use pytest from the root directory:

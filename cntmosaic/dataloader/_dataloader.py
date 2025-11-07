@@ -15,16 +15,16 @@ DataLoader : Main data loader for contact survey data
 """
 
 import itertools
-from typing import Optional, List, Tuple, Dict, Any, Union
-from abc import ABC, abstractmethod
 import warnings
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-import pandas as pd
-import numpy as np
-from numpy.typing import NDArray
-import xarray as xr
 import jax.numpy as jnp
+import numpy as np
+import pandas as pd
+import xarray as xr
+from numpy.typing import NDArray
 
 from ._utils import make_idarrs_for_intervals
 
@@ -942,6 +942,7 @@ class BaseLoader(ABC):
             .agg({self.col_map.y: "sum"})
             .reset_index()
         )
+        self.grp_vars = grp_vars
         self.df_y = df_y
 
         # [Do] Create a full grid of all combinations of the grouping variables via a cartesian product

@@ -1,19 +1,16 @@
 from typing import Optional, Union
 
-import numpy as np
-from numpy.typing import NDArray
-
 import jax.numpy as jnp
-from jax import vmap
+import numpy as np
 import numpyro
+from jax import vmap
+from numpy.typing import NDArray
 from numpyro import distributions as dist
 
 from ...distributions._IGMRF2D import IGMRF2D
-from ._Spline2D import Spline2D
-
-from .._utils import age_age_grid, diff_age_age_grid, symm_from_tril_ix_row
-
 from .._math import inverse_alr, inverse_clr, inverse_ilr
+from .._utils import age_age_grid, diff_age_age_grid, symm_from_tril_ix_row
+from ._Spline2D import Spline2D
 
 
 class PSpline2D(Spline2D):
@@ -354,11 +351,11 @@ class PSpline2D(Spline2D):
 
         if self.grid_type == "age-age":
             beta = numpyro.sample(
-                "spline_beta", IGMRF2D(num_nodes, order, cond_prec1=tau)
+                "spline_coefs", IGMRF2D(num_nodes, order, cond_prec1=tau)
             )  # (M*M,)
         else:  # diff-age
             beta = numpyro.sample(
-                "spline_beta",
+                "spline_coefs",
                 IGMRF2D(
                     num_nodes, order, cond_prec1=tau, cond_prec2=tau * self.tau_ratio
                 ),
@@ -431,13 +428,13 @@ class PSpline2D(Spline2D):
         if self.grid_type == "age-age":
             # Use isometric IGMRF for age-age parameterization
             beta = numpyro.sample(
-                "spline_beta",
+                "spline_coefs",
                 IGMRF2D(num_nodes, order, cond_prec1=tau),
             )  # (event_dim_eff, M*M)
         else:  # diff-age
             # Use anisotropic IGMRF for diff-age parameterization
             beta = numpyro.sample(
-                "spline_beta",
+                "spline_coefs",
                 IGMRF2D(
                     num_nodes, order, cond_prec1=tau, cond_prec2=tau * self.tau_ratio
                 ),
@@ -526,17 +523,17 @@ class PSpline2D(Spline2D):
         if self.grid_type == "age-age":
             # Use isometric IGMRF for age-age parameterization
             beta_diag = numpyro.sample(
-                "spline_beta_diag",
+                "spline_coefs_diag",
                 IGMRF2D(num_nodes, order, cond_prec1=tau_diag),
             )  # (event_dim_diag, M*M)
             beta_non_diag = numpyro.sample(
-                "spline_beta_non_diag",
+                "spline_coefs_non_diag",
                 IGMRF2D(num_nodes, order, cond_prec1=tau_non_diag),
             )  # (event_dim_non_diag, M*M)
         else:  # diff-age
             # Use anisotropic IGMRF for diff-age parameterization
             beta_diag = numpyro.sample(
-                "spline_beta_diag",
+                "spline_coefs_diag",
                 IGMRF2D(
                     num_nodes,
                     order,
@@ -545,7 +542,7 @@ class PSpline2D(Spline2D):
                 ),
             )  # (event_dim_diag, M*M)
             beta_non_diag = numpyro.sample(
-                "spline_beta_non_diag",
+                "spline_coefs_non_diag",
                 IGMRF2D(
                     num_nodes,
                     order,

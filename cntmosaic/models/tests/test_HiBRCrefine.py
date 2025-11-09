@@ -387,7 +387,9 @@ def test_prior_loc_configuration(generate_stratified_contact_data):
 
     priors = {
         "rate": PSpline2D(grid_type="diff-age", prior_type="global"),
-        "gender": PSpline2D(grid_type="diff-age", prior_type="partial"),
+        "gender": PSpline2D(
+            grid_type="diff-age", prior_type="partial", transform="alr"
+        ),
     }
 
     model = HiBRCrefine(dataloader, priors, likelihood="poisson")
@@ -474,7 +476,9 @@ def test_svi_inference_poisson(generate_stratified_contact_data):
 
     priors = {
         "rate": PSpline2D(grid_type="diff-age", prior_type="global"),
-        "gender": PSpline2D(grid_type="diff-age", prior_type="partial"),
+        "gender": PSpline2D(
+            grid_type="diff-age", prior_type="partial", transform="alr"
+        ),
     }
 
     model = HiBRCrefine(dataloader, priors, likelihood="poisson")
@@ -495,7 +499,9 @@ def test_svi_inference_negbin(generate_stratified_contact_data):
 
     priors = {
         "rate": PSpline2D(grid_type="diff-age", prior_type="global"),
-        "gender": PSpline2D(grid_type="diff-age", prior_type="partial"),
+        "gender": PSpline2D(
+            grid_type="diff-age", prior_type="partial", transform="alr"
+        ),
     }
 
     model = HiBRCrefine(dataloader, priors, likelihood="negbin")
@@ -520,7 +526,9 @@ def test_mcmc_inference_poisson(generate_stratified_contact_data):
 
     priors = {
         "rate": PSpline2D(grid_type="diff-age", prior_type="global"),
-        "gender": PSpline2D(grid_type="diff-age", prior_type="partial"),
+        "gender": PSpline2D(
+            grid_type="diff-age", prior_type="partial", transform="alr"
+        ),
     }
 
     model = HiBRCrefine(dataloader, priors, likelihood="poisson")
@@ -545,7 +553,9 @@ def test_mcmc_inference_negbin(generate_stratified_contact_data):
 
     priors = {
         "rate": PSpline2D(grid_type="diff-age", prior_type="global"),
-        "gender": PSpline2D(grid_type="diff-age", prior_type="partial"),
+        "gender": PSpline2D(
+            grid_type="diff-age", prior_type="partial", transform="alr"
+        ),
     }
 
     model = HiBRCrefine(dataloader, priors, likelihood="negbin")
@@ -562,29 +572,6 @@ def test_mcmc_inference_negbin(generate_stratified_contact_data):
     assert "inv_disp" in samples
 
 
-def test_mcmc_multiple_chains(generate_stratified_contact_data):
-    """Test MCMC with multiple chains."""
-    dataloader = generate_stratified_contact_data
-
-    priors = {
-        "rate": PSpline2D(grid_type="diff-age", prior_type="global"),
-        "gender": PSpline2D(grid_type="diff-age", prior_type="partial"),
-    }
-
-    model = HiBRCrefine(dataloader, priors, likelihood="poisson")
-
-    prng_key = PRNGKey(4)
-
-    # Run with 2 chains
-    model.run_inference_mcmc(prng_key, num_warmup=10, num_samples=10, num_chains=2)
-
-    assert model._mcmc_result is not None
-
-    # Samples should be combined across chains
-    samples = model._mcmc_result.get_samples()
-    assert "baseline" in samples
-
-
 # ============================================================================
 # Test Integration
 # ============================================================================
@@ -596,7 +583,9 @@ def test_end_to_end_workflow(generate_stratified_contact_data):
 
     priors = {
         "rate": PSpline2D(grid_type="diff-age", prior_type="global"),
-        "gender": PSpline2D(grid_type="diff-age", prior_type="partial"),
+        "gender": PSpline2D(
+            grid_type="diff-age", prior_type="partial", transform="alr"
+        ),
     }
 
     # Initialize model

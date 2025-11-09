@@ -88,7 +88,7 @@ class PSpline2D(Spline2D):
         Grid structure for contact matrix:
         - 'age-age': Standard age-by-age contact matrix
         - 'diff-age': Age difference representation
-    transform : {None, 'alr', 'clr', 'ilr'}, default='ilr'
+    transform : {None, 'alr', 'clr', 'ilr'}, default=None
         Compositional data transformation for converting to simplex
 
     Attributes
@@ -149,7 +149,7 @@ class PSpline2D(Spline2D):
     ...     M=30,
     ...     degree=3,
     ...     order=2,
-    ...     transform='ilr'
+    ...     transform='alr'
     ... )
     >>> prior_partial.set_age_bounds(0, 75)
     >>> prior_partial.set_event_dim(4)
@@ -163,7 +163,7 @@ class PSpline2D(Spline2D):
     ...     order=2,
     ...     tau_shape=2.0,
     ...     tau_rate=0.01,
-    ...     transform='ilr'
+    ...     transform='alr'
     ... )
 
     Notes
@@ -207,14 +207,14 @@ class PSpline2D(Spline2D):
     def __init__(
         self,
         prior_type: str,
-        M: int | list[int] = 30,
-        degree: int | list[int] = 3,
+        M: Union[int, list[int]] = 30,
+        degree: Union[int, list[int]] = 3,
         order: int = 1,
         tau_shape: float = 2.0,
         tau_rate: float = 0.01,
         tau_ratio: float = 1.0,
         grid_type: str = "age-age",
-        transform: str = "ilr",
+        transform: Union[str, None] = None,
     ):
         super().__init__(prior_type, M, degree, grid_type, transform)
         self.order = order
@@ -241,70 +241,6 @@ class PSpline2D(Spline2D):
         self.y = (y - self.min_age) / (self.max_age - self.min_age)
 
         self.symm_tril_idx = symm_from_tril_ix_row(self.A)
-
-    def apply_inverse_transform(self, f):
-        """
-        Apply inverse compositional transformation to latent field.
-
-        Transforms the unconstrained latent field f back to the simplex (probability
-        space) using the specified inverse log-ratio transformation. This is the final
-        step in converting sampled IGMRF values to contact probabilities.
-
-        Parameters
-        ----------
-        f : array, shape (event_dim_eff, A, A)
-            Unconstrained latent field from IGMRF sampling
-
-        Returns
-        -------
-        transformed : array, shape (A, A, A)
-            Transformed field on the simplex. Each matrix transformed[:, :, j]
-            represents contact probabilities for age group j, with rows summing to 1.
-
-        Notes
-        -----
-        The transformation depends on the transform attribute:
-        - None: Returns f unchanged (no transformation)
-        - 'alr': Additive log-ratio inverse (adds reference category)
-        - 'clr': Centered log-ratio inverse (removes centering constraint)
-        - 'ilr': Isometric log-ratio inverse (orthonormal basis)
-
-        All transformations map from ℝᵈ to the simplex Δᴬ⁻¹ where d is event_dim_eff.
-
-        Examples
-        --------
-        >>> import jax.numpy as jnp
-        >>> from cntmosaic.models.priors._IGMRF2D import IGMRF2D
-        >>>
-        >>> prior = IGMRF2D(
-        ...     num_nodes=(5, 5),
-        ...     order=(1, 1),
-        ...     transform='clr',
-        ...     prior_type='partial'
-        ... )
-        >>> prior.set_age_bounds(0, 25)
-        >>>
-        >>> # Simulate latent field
-        >>> f = jnp.zeros((5, 5, 5))  # event_dim_eff = A = 5 for CLR
-        >>> transformed = prior.apply_inverse_transform(f)
-        >>> print(transformed.shape)  # (5, 5, 5)
-        >>> print(jnp.allclose(transformed.sum(axis=0), 1.0))  # True (on simplex)
-
-        See Also
-        --------
-        cntmosaic.models._math.inverse_alr : ALR inverse transformation
-        cntmosaic.models._math.inverse_clr : CLR inverse transformation
-        cntmosaic.models._math.inverse_ilr : ILR inverse transformation
-        """
-        # Optional transformations
-        if self.transform == "alr":
-            return inverse_alr(f, axis=0)
-        elif self.transform == "clr":
-            return inverse_clr(f, axis=0)
-        elif self.transform == "ilr":
-            return inverse_ilr(f, axis=0)
-        else:
-            return f
 
     def sample_global(self):
         """
@@ -381,8 +317,8 @@ class PSpline2D(Spline2D):
         Notes
         -----
         Sampling process:
-        1. Sample precisions: τ ~ Gamma(tau_shape, tau_rate), shape (event_dim_eff,)
-        2. Sample coefficients: β ~ IGMRF2D with precision τ, shape (event_dim_eff, M²)
+        1. Sample precisions: τ ~ Gamma(tau_shape, tau_rate), shape (event_dim_latent,)
+        2. Sample coefficients: β ~ IGMRF2D with precision τ, shape (event_dim_latent, M²)
         3. Compute latent field: f = Φ β
         4. Add location parameter: f += trans_loc
         5. Apply inverse transformation (ALR/CLR/ILR) to map to simplex
@@ -400,7 +336,7 @@ class PSpline2D(Spline2D):
         ...     prior_type='partial',
         ...     M=25,
         ...     order=2,
-        ...     transform='ilr'
+        ...     transform='alr'
         ... )
         >>> prior.set_age_bounds(0, 60)
         >>> prior.set_event_dim(3)
@@ -421,7 +357,7 @@ class PSpline2D(Spline2D):
         tau = numpyro.sample(
             "spline_tau",
             dist.Gamma(self.tau_shape, self.tau_rate),
-            sample_shape=(self.event_dim_eff,),
+            sample_shape=(self.event_dim_latent,),
         )
 
         # Sample beta coefficients
@@ -443,7 +379,7 @@ class PSpline2D(Spline2D):
         beta = beta.swapaxes(0, 1)  # (M*M, event_dim_eff)
         f = self.PHI @ beta  # (A*A, event_dim_eff)
         f = f.swapaxes(0, 1)
-        f = f.reshape((self.event_dim_eff, self.A, self.A))
+        f = f.reshape((self.event_dim_latent, self.A, self.A))
         f = self.trans_loc + f
 
         return self.apply_inverse_transform(f)
@@ -466,8 +402,8 @@ class PSpline2D(Spline2D):
         Notes
         -----
         Sampling process:
-        1. Sample diagonal precisions: τ_diag ~ Gamma(shape, rate), shape (event_dim_diag,)
-        2. Sample off-diagonal precisions: τ_non_diag ~ Gamma(shape, rate), shape (event_dim_non_diag,)
+        1. Sample diagonal precisions: τ_diag ~ Gamma(shape, rate), shape (event_dim_diag_eff,)
+        2. Sample off-diagonal precisions: τ_non_diag ~ Gamma(shape, rate), shape (event_dim_non_diag_eff,)
         3. Sample diagonal coefficients: β_diag ~ IGMRF2D with τ_diag
         4. Sample off-diagonal coefficients: β_non_diag ~ IGMRF2D with τ_non_diag
         5. Compute diagonal field: f_diag = Φ_diag β_diag (symmetrized)
@@ -491,7 +427,7 @@ class PSpline2D(Spline2D):
         ...     order=2,
         ...     tau_shape=2.0,
         ...     tau_rate=0.01,
-        ...     transform='ilr'
+        ...     transform='alr'
         ... )
         >>> prior.set_age_bounds(0, 45)
         >>> prior.set_event_dim(4)
@@ -512,12 +448,12 @@ class PSpline2D(Spline2D):
         tau_diag = numpyro.sample(
             "spline_tau_diag",
             dist.Gamma(self.tau_shape, self.tau_rate),
-            sample_shape=(self.event_dim_diag,),
+            sample_shape=(self.event_dim_diag_eff,),
         )
         tau_non_diag = numpyro.sample(
             "spline_tau_non_diag",
             dist.Gamma(self.tau_shape, self.tau_rate),
-            sample_shape=(self.event_dim_non_diag,),
+            sample_shape=(self.event_dim_non_diag_eff,),
         )
 
         if self.grid_type == "age-age":
@@ -554,35 +490,15 @@ class PSpline2D(Spline2D):
         beta_diag = beta_diag.swapaxes(0, 1)  # (M*M, event_dim_diag)
         f_diag = self.PHI_diag @ beta_diag
         f_diag = f_diag[self.symm_tril_idx, :].swapaxes(0, 1)  # Must be symmetric
+        f_diag = f_diag.reshape((self.event_dim_diag_eff, self.A, self.A))
 
         beta_non_diag = beta_non_diag.swapaxes(0, 1)  # (M*M, event_dim_non_diag)
-        f_non_diag = (self.PHI_non_diag @ beta_non_diag).swapaxes(
-            0, 1
-        )  # (event_dim_non_diag, A**2)
+        f_non_diag = (self.PHI_non_diag @ beta_non_diag).swapaxes(0, 1)
+        f_non_diag = f_non_diag.reshape((self.event_dim_non_diag_eff, self.A, self.A))
 
-        # Preallocate the output tensor
-        f = jnp.zeros((self.event_dim_eff, self.A**2))
+        # Assemble diagonal and off-diagonal blocks into full event grid
+        f = self._assemble_full_prior_blocks(f_diag, f_non_diag)
 
-        # Allocate diagonal elements
-        sqrt_event_dim = jnp.sqrt(self.event_dim).astype(int)
-        diag_idx = jnp.array(
-            [(i * sqrt_event_dim + i) for i in range(sqrt_event_dim)]
-        )  # Flat index of (i,i) in row-major order
-        all_idx = jnp.arange(self.event_dim)
-        non_diag_idx = jnp.setdiff1d(all_idx, diag_idx)
-
-        # Allocate elements
-        if self.transform in ["alr", "ilr"]:
-            f = f.at[diag_idx[:-1], :].set(
-                f_diag
-            )  # Last element left out for log-ratio transformation
-        else:
-            f = f.at[diag_idx, :].set(f_diag)
-
-        f = f.at[non_diag_idx, :].set(f_non_diag)
-
-        # Reshape to (event_dim_eff, A, A)
-        f = f.reshape((self.event_dim_eff, self.A, self.A))
         f = self.trans_loc + f
         return self.apply_inverse_transform(f)
 

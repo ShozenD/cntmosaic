@@ -1,29 +1,21 @@
 from typing import Optional, Union
 
-import numpy as np
-from numpy.typing import NDArray
 import jax.numpy as jnp
-
+import numpy as np
+import numpyro
+from numpy.typing import NDArray
+from numpyro import distributions as dist
 from scipy.interpolate import BSpline
 
-import numpyro
-from numpyro import distributions as dist
-
-from ._Prior2D import Prior2D
-
+from .._math import inverse_alr, inverse_clr, inverse_ilr
 from .._utils import (
     age_age_grid,
     diff_age_age_grid,
     diff_age_age_index,
-    tril_ix_row,
     symm_from_tril_ix_row,
+    tril_ix_row,
 )
-
-from .._math import (
-    inverse_alr,
-    inverse_clr,
-    inverse_ilr,
-)
+from ._Prior2D import Prior2D
 
 
 def validate_init_params(M: int | list[int], degree: int | list[int]):
@@ -72,13 +64,8 @@ class Spline2D(Prior2D):
     2D tensor product B-spline prior for contact matrix estimation.
 
     This prior class implements flexible spatial smoothing for contact matrices using
-    tensor product B-splines. It provides a computationally efficient alternative to
-    Gaussian process priors by representing the latent field as a linear combination
+    tensor product B-splines. It represents the latent field as a linear combination
     of B-spline basis functions.
-
-    The tensor product structure allows for anisotropic smoothing in age dimensions,
-    making it suitable for modeling age-structured contact patterns that may have
-    different smoothness characteristics in different directions.
 
     Mathematical Background
     -----------------------
@@ -98,7 +85,6 @@ class Spline2D(Prior2D):
     B-splines provide:
     - Local support: changing one coefficient affects only a local region
     - Smoothness: controlled by the degree parameter
-    - Computational efficiency: sparse basis matrices
     - Numerical stability: well-conditioned basis
 
     Prior Types
@@ -117,10 +103,10 @@ class Spline2D(Prior2D):
     Parameters
     ----------
     prior_type : {'global', 'partial', 'full'}
-        Structure of the prior:
-        - 'global': Symmetric contact matrix with shared coefficients
-        - 'partial': Asymmetric with dimension-specific coefficients
-        - 'full': Separate bases for diagonal and off-diagonal elements
+        The type of prior to use:
+        - 'global': single symmetric matrix for global contact rates.
+        - 'partial': multiple independent non-symmetric matrices.
+        - 'full': multiple matrices with separate modeling of diagonal and off-diagonal elements.
     M : int or list of int, default=30
         Number of interior knots (equivalently, number of basis functions minus endpoints).
         If int, uses the same number for both dimensions. If list of length 2, specifies
@@ -133,15 +119,14 @@ class Spline2D(Prior2D):
         - degree=4+: Higher order smoothness
         Higher degrees provide smoother interpolation but require more knots.
     grid_type : {'age-age', 'diff-age'}, default='age-age'
-        Grid structure for contact matrix:
-        - 'age-age': Standard age-by-age contact matrix
-        - 'diff-age': Age difference representation for more structured patterns
-    transform : {None, 'alr', 'clr', 'ilr'}, default='ilr'
-        Compositional data transformation:
-        - None: No transformation (simplex constraint via softmax)
-        - 'alr': Additive log-ratio transformation
+        The type of age grid to use. The 'age-age' grid smoothes over age pairs, while the
+        'diff-age' grid smoothes over age differences and contact ages.
+    transform : {None, 'alr', 'clr', 'ilr'}, default=None
+        Compositional transformation to use when mapping from the unconstrained space to the simplex:
+        - None: No transformation
+        - 'alr': Additive log-ratio transformation (recommended)
         - 'clr': Centered log-ratio transformation
-        - 'ilr': Isometric log-ratio transformation (default, recommended)
+        - 'ilr': Isometric log-ratio transformation
 
     Attributes
     ----------
@@ -208,7 +193,7 @@ class Spline2D(Prior2D):
     ...     prior_type='partial',
     ...     M=25,
     ...     degree=3,
-    ...     transform='ilr',
+    ...     transform='alr',
     ...     grid_type='age-age'
     ... )
     >>> prior_partial.set_age_bounds(0, 60)  # 13 age groups
@@ -228,7 +213,7 @@ class Spline2D(Prior2D):
     ...     prior_type='full',
     ...     M=30,
     ...     degree=3,
-    ...     transform='ilr'
+    ...     transform='alr'
     ... )
     >>> prior_full.set_age_bounds(0, 80)
     >>> prior_full.set_event_dim(9)  # 3x3 grid of settings
@@ -279,7 +264,7 @@ class Spline2D(Prior2D):
         M: int = 30,
         degree: int = 3,
         grid_type: str = "age-age",
-        transform: str = "ilr",
+        transform: Union[str, None] = None,
     ):
 
         validate_init_params(M, degree)
@@ -346,7 +331,7 @@ class Spline2D(Prior2D):
 
         Notes
         -----
-        For 'age-age' grid: Creates full A × A coordinate pairs
+        For 'age-age' grid: Creates full A x A coordinate pairs
         For 'diff-age' grid: Creates age difference representation
 
         Raises
@@ -530,70 +515,6 @@ class Spline2D(Prior2D):
             self.PHI_diag = self.PHI[tril_ix_row(self.A)]
             self.PHI_non_diag = self.PHI
 
-    def apply_inverse_transform(self, f):
-        """
-        Apply inverse compositional transformation to latent field.
-
-        Transforms the unconstrained latent field f back to the simplex (probability
-        space) using the specified inverse log-ratio transformation. This is the final
-        step in converting sampled IGMRF values to contact probabilities.
-
-        Parameters
-        ----------
-        f : array, shape (event_dim_eff, A, A)
-            Unconstrained latent field from IGMRF sampling
-
-        Returns
-        -------
-        transformed : array, shape (A, A, A)
-            Transformed field on the simplex. Each matrix transformed[:, :, j]
-            represents contact probabilities for age group j, with rows summing to 1.
-
-        Notes
-        -----
-        The transformation depends on the transform attribute:
-        - None: Returns f unchanged (no transformation)
-        - 'alr': Additive log-ratio inverse (adds reference category)
-        - 'clr': Centered log-ratio inverse (removes centering constraint)
-        - 'ilr': Isometric log-ratio inverse (orthonormal basis)
-
-        All transformations map from ℝᵈ to the simplex Δᴬ⁻¹ where d is event_dim_eff.
-
-        Examples
-        --------
-        >>> import jax.numpy as jnp
-        >>> from cntmosaic.models.priors._IGMRF2D import IGMRF2D
-        >>>
-        >>> prior = IGMRF2D(
-        ...     num_nodes=(5, 5),
-        ...     order=(1, 1),
-        ...     transform='clr',
-        ...     prior_type='partial'
-        ... )
-        >>> prior.set_age_bounds(0, 25)
-        >>>
-        >>> # Simulate latent field
-        >>> f = jnp.zeros((5, 5, 5))  # event_dim_eff = A = 5 for CLR
-        >>> transformed = prior.apply_inverse_transform(f)
-        >>> print(transformed.shape)  # (5, 5, 5)
-        >>> print(jnp.allclose(transformed.sum(axis=0), 1.0))  # True (on simplex)
-
-        See Also
-        --------
-        cntmosaic.models._math.inverse_alr : ALR inverse transformation
-        cntmosaic.models._math.inverse_clr : CLR inverse transformation
-        cntmosaic.models._math.inverse_ilr : ILR inverse transformation
-        """
-        # Optional transformations
-        if self.transform == "alr":
-            return inverse_alr(f, axis=0)
-        elif self.transform == "clr":
-            return inverse_clr(f, axis=0)
-        elif self.transform == "ilr":
-            return inverse_ilr(f, axis=0)
-        else:
-            return f
-
     def sample_global(self):
         beta = numpyro.sample(
             "spline_coefs", dist.Normal(0, 1), sample_shape=(self.PHI.shape[-1],)
@@ -617,27 +538,24 @@ class Spline2D(Prior2D):
         beta_diag = numpyro.sample(
             "spline_coefs_diag",
             dist.Normal(0, 1),
-            sample_shape=(self.PHI_diag.shape[-1], self.event_dim_diag),
+            sample_shape=(self.PHI_diag.shape[-1], self.event_dim_diag_eff),
         )
         beta_non_diag = numpyro.sample(
             "spline_coefs_non_diag",
             dist.Normal(0, 1),
-            sample_shape=(self.PHI_non_diag.shape[-1], self.event_dim_non_diag),
+            sample_shape=(self.PHI_non_diag.shape[-1], self.event_dim_non_diag_eff),
         )
 
         f_diag = self.PHI_diag @ beta_diag
         f_diag = f_diag[self.symm_tril_idx, :].swapaxes(0, 1)
-        f_diag = f_diag.reshape((self.event_dim_diag, self.A, self.A))
+        f_diag = f_diag.reshape((self.event_dim_diag_eff, self.A, self.A))
 
         f_non_diag = self.PHI_non_diag @ beta_non_diag
         f_non_diag = f_non_diag.swapaxes(0, 1)
-        f_non_diag = f_non_diag.reshape((self.event_dim_non_diag, self.A, self.A))
+        f_non_diag = f_non_diag.reshape((self.event_dim_non_diag_eff, self.A, self.A))
 
-        f = jnp.zeros(
-            (self.event_dim_eff, self.A, self.A)
-        )  # event_dim_eff = event_dim_diag + event_dim_non_diag
-        f = f.at[: self.event_dim_diag, :, :].set(f_diag)
-        f = f.at[self.event_dim_diag :, :, :].set(f_non_diag)  # Remaining dimensions
+        # Assemble diagonal and off-diagonal blocks into full event grid
+        f = self._assemble_full_prior_blocks(f_diag, f_non_diag)
 
         f = self.trans_loc + f
         return self.apply_inverse_transform(f)
@@ -718,7 +636,7 @@ class Spline2D(Prior2D):
         ...     prior_type='partial',
         ...     M=25,
         ...     degree=3,
-        ...     transform='ilr'
+        ...     transform='alr'
         ... )
         >>> prior_partial.set_age_bounds(0, 40)
         >>> prior_partial.set_event_dim(4)  # 4 contact settings

@@ -1,24 +1,18 @@
 from typing import Optional
 
-import numpy as np
-
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
-from jax import vmap
-
+import numpy as np
 import numpyro
+from jax import vmap
+from jax.typing import ArrayLike
 from numpyro import distributions as dist
 
-from ._Prior2D import Prior2D
 from ...distributions._IGMRF2D import IGMRF2D as IGMRF2D_dist
 from ...distributions._SymIGMRF2D import SymIGMRF2D
-from .._math import (
-    inverse_alr,
-    inverse_clr,
-    inverse_ilr,
-)
+from .._math import inverse_alr, inverse_clr, inverse_ilr
 from .._utils import symm_from_tril_ix_col
+from ._Prior2D import Prior2D
 
 
 class IGMRF2D(Prior2D):
@@ -59,6 +53,15 @@ class IGMRF2D(Prior2D):
 
     Parameters
     ----------
+    prior_type : {'global', 'partial', 'full'}
+        Structure of the prior:
+        - 'global': Symmetric matrix with single shared prior
+        - 'partial': Asymmetric with row/column-specific priors
+        - 'full': Separate priors for diagonal and off-diagonal elements
+    grid_type : {'age-age', 'diff-age'}, default='age-age'
+        Grid structure for contact matrix:
+        - 'age-age': Standard age-by-age contact matrix
+        - 'diff-age': Age difference representation
     num_nodes : tuple of int
         Number of nodes in each dimension (n₁, n₂). For age-structured contact matrices,
         typically (A, A) where A is the number of age groups.
@@ -68,23 +71,14 @@ class IGMRF2D(Prior2D):
         - (2, 2): Second-order differences (smoother, penalizes curvature)
         Higher orders produce progressively smoother fields.
     loc : float or array-like, default=0.0
-        Prior location (mean) parameter. Can be scalar or array of shape (event_dim_eff, A, A).
+        Prior location (mean) parameter. Can be scalar or array of shape (event_dim_latent, A, A).
         After transformation is applied in Prior2D.set_loc().
-    grid_type : {'age-age', 'diff-age'}, default='age-age'
-        Grid structure for contact matrix:
-        - 'age-age': Standard age-by-age contact matrix
-        - 'diff-age': Age difference representation
     transform : {None, 'alr', 'clr', 'ilr'}, default=None
         Compositional data transformation:
         - None: No transformation (simplex constraint via softmax)
-        - 'alr': Additive log-ratio transformation
+        - 'alr': Additive log-ratio transformation (recommended)
         - 'clr': Centered log-ratio transformation
         - 'ilr': Isometric log-ratio transformation
-    prior_type : {'global', 'partial', 'full'}, default='global'
-        Structure of the prior:
-        - 'global': Symmetric matrix with single shared prior
-        - 'partial': Asymmetric with row/column-specific priors
-        - 'full': Separate priors for diagonal and off-diagonal elements
 
     Attributes
     ----------
@@ -128,37 +122,31 @@ class IGMRF2D(Prior2D):
     >>>
     >>> # Global prior for symmetric contact matrix (no transformation)
     >>> prior = IGMRF2D(
-    ...     num_nodes=(16, 16),
-    ...     order=(2, 2),
-    ...     prior_type='global'
+    ...     prior_type='global',
+    ...     order=(2, 2)
     ... )
-    >>> prior.set_age_bounds(0, 80)  # 16 age groups: [0-5), [5-10), ..., [75-80)
+    >>> prior.set_age_bounds(0, 30) # 31 ages
     >>>
     >>> # Sample from the prior
     >>> def model():
-    ...     f = prior.sample()  # Symmetric 16x16 contact matrix
+    ...     f = prior.sample()  # Symmetric 31x31 contact matrix
     ...     return f
-    >>>
     >>> key = random.PRNGKey(0)
     >>> with numpyro.handlers.seed(rng_seed=0):
     ...     samples = model()
     >>>
     >>> # Partial prior with CLR transformation for compositional data
     >>> prior_clr = IGMRF2D(
-    ...     num_nodes=(16, 16),
-    ...     order=(1, 1),
-    ...     transform='clr',
-    ...     prior_type='partial'
+    ...     prior_type='partial',
+    ...     transform='clr'
     ... )
-    >>> prior_clr.set_age_bounds(0, 80)
-    >>> prior_clr.set_loc(jnp.zeros((15, 16, 16)))  # 15 = A - 1 for CLR
+    >>> prior_clr.set_event_dim(16)  # K=16 age groups
+    >>> prior_clr.set_age_bounds(0, 30)  # 31 ages
     >>>
     >>> # Full prior with separate smoothness for diagonal/off-diagonal
     >>> prior_full = IGMRF2D(
-    ...     num_nodes=(10, 10),
-    ...     order=(2, 2),
-    ...     transform='ilr',
-    ...     prior_type='full'
+    ...     prior_type='full',
+    ...     transform='alr'
     ... )
 
     Notes
@@ -189,17 +177,15 @@ class IGMRF2D(Prior2D):
 
     def __init__(
         self,
-        num_nodes: tuple,
-        order: tuple,
-        loc: ArrayLike = 0.0,
+        prior_type: str,
         grid_type: Optional[str] = "age-age",
+        order: tuple = (2, 2),
+        loc: ArrayLike = 0.0,
         transform: Optional[str] = None,
-        prior_type: Optional[str] = "global",
     ):
-        self.loc = loc
-        self.num_nodes = num_nodes
-        self.order = order
         super().__init__(grid_type, transform, prior_type)
+        self.loc = loc
+        self.order = order
 
     def set_age_bounds(self, min_age: int, max_age: int):
         """
@@ -244,7 +230,8 @@ class IGMRF2D(Prior2D):
         lower triangular elements. This enables efficient storage and sampling of
         symmetric contact matrices.
         """
-        self.sym_idx = symm_from_tril_ix_col(self.A)
+        self.num_nodes = (self.A, self.A)
+        self.symm_tril_ix = symm_from_tril_ix_col(self.A)
 
     def sample_global(self):
         """
@@ -288,8 +275,8 @@ class IGMRF2D(Prior2D):
         >>> print(sample.shape)  # (10, 10)
         >>> print(jnp.allclose(sample, sample.T))  # True (symmetric)
         """
-        f = numpyro.sample("f", SymIGMRF2D(self.num_nodes, self.order))
-        return f
+        f = numpyro.sample("f", SymIGMRF2D(self.num_nodes[0], self.order[0]))
+        return f[self.symm_tril_ix].reshape((self.A, self.A))
 
     def sample_partial(self):
         """
@@ -306,19 +293,14 @@ class IGMRF2D(Prior2D):
 
         Returns
         -------
-        f : array, shape (event_dim_eff, A, A)
-            Contact matrix after inverse transformation. Shape depends on the
-            transformation:
-            - None: (A, A, A) on simplex
-            - ALR: (A, A, A) with last column as reference
-            - CLR: (A, A, A) centered on geometric mean
-            - ILR: (A, A, A) via isometric log-ratio
+        f : array, shape (event_dim_latent, A, A)
+            Contact matrix after inverse transformation.
 
         Notes
         -----
         - Precision τ ~ Gamma(2, 0.1) independently for each effective dimension
         - trans_loc is added to f before inverse transformation
-        - The effective dimension (event_dim_eff) depends on the transformation:
+        - The effective dimension (event_dim_latent) depends on the transformation:
           * None or CLR: A
           * ALR: A - 1
           * ILR: A(A-1)/2
@@ -354,11 +336,11 @@ class IGMRF2D(Prior2D):
         apply_inverse_transform : Apply inverse compositional transformation
         """
         tau = numpyro.sample(
-            "tau", dist.Gamma(2, 0.1), sample_shape=(self.event_dim_eff,)
+            "tau", dist.Gamma(2, 0.1), sample_shape=(self.event_dim_latent,)
         )
         f = numpyro.sample(
             "f", IGMRF2D_dist(self.num_nodes, self.order, cond_prec1=tau)
-        )
+        ).reshape((self.event_dim_latent, self.A, self.A))
         f = self.trans_loc + f
         return self.apply_inverse_transform(f)
 
@@ -374,22 +356,16 @@ class IGMRF2D(Prior2D):
 
         Returns
         -------
-        f : array, shape (event_dim_eff, A, A)
+        f : array, shape (event_dim_latent, A, A)
             Contact matrix after inverse transformation. Diagonal and off-diagonal
             elements are sampled independently then combined.
 
         Notes
         -----
-        - tau_diag ~ Gamma(2, 0.1) for diagonal elements (shape: event_dim_diag)
-        - tau_non_diag ~ Gamma(2, 0.1) for off-diagonal elements (shape: event_dim_non_diag)
-        - event_dim_diag = A (number of age groups)
-        - event_dim_non_diag = A² - A (number of off-diagonal elements)
+        - tau_diag ~ Gamma(2, 0.1) for diagonal elements (shape: event_dim_diag_eff)
+        - tau_non_diag ~ Gamma(2, 0.1) for off-diagonal elements (shape: event_dim_non_diag_eff)
         - f_diag and f_non_diag are sampled separately then combined using indexing
         - trans_loc is added before inverse transformation
-
-        The combined latent field f has dimensions:
-        - f[0:A, :, :] corresponds to diagonal elements
-        - f[A:A², :, :] corresponds to off-diagonal elements
 
         Examples
         --------
@@ -401,7 +377,7 @@ class IGMRF2D(Prior2D):
         >>> prior = IGMRF2D(
         ...     num_nodes=(10, 10),
         ...     order=(2, 2),
-        ...     transform='ilr',
+        ...     transform='alr',
         ...     prior_type='full'
         ... )
         >>> prior.set_age_bounds(0, 50)
@@ -425,22 +401,22 @@ class IGMRF2D(Prior2D):
         sample_global : Symmetric contact matrix
         """
         tau_diag = numpyro.sample(
-            "tau_diag", dist.Gamma(2, 0.1), sample_shape=(self.event_dim_diag,)
+            "tau_diag", dist.Gamma(2, 0.1), sample_shape=(self.event_dim_diag_eff,)
         )
         tau_non_diag = numpyro.sample(
             "tau_non_diag",
             dist.Gamma(2, 0.1),
-            sample_shape=(self.event_dim_non_diag,),
+            sample_shape=(self.event_dim_non_diag_eff,),
         )
 
         f_diag = numpyro.sample(
             "f_diag",
-            IGMRF2D_dist(
-                self.num_nodes,
-                self.order,
-                cond_prec1=tau_diag,
+            SymIGMRF2D(
+                self.num_nodes[0],
+                self.order[0],
+                cond_prec=tau_diag,
             ),
-        )  # shape: (event_dim_diag, A, A)
+        )[:, self.symm_tril_ix].reshape((self.event_dim_diag_eff, self.A, self.A))
         f_non_diag = numpyro.sample(
             "f_non_diag",
             IGMRF2D_dist(
@@ -448,18 +424,11 @@ class IGMRF2D(Prior2D):
                 self.order,
                 cond_prec1=tau_non_diag,
             ),
-        )  # shape: (event_dim_non_diag, A, A)
+        ).reshape((self.event_dim_non_diag_eff, self.A, self.A))
 
-        # Preallocate flat output: (event_dim_eff, A, A)
-        f = jnp.zeros((self.event_dim_eff, self.A, self.A))
+        # Assemble diagonal and off-diagonal blocks into full event grid
+        f = self._assemble_full_prior_blocks(f_diag, f_non_diag)
 
-        diag_idx = jnp.array([i * self.A + i for i in range(self.A)])
-        all_idx = jnp.arange(self.A * self.A)
-        non_diag_idx = jnp.setdiff1d(all_idx, diag_idx)
-
-        # Insert values
-        f = f.at[diag_idx, :, :].set(f_diag)
-        f = f.at[non_diag_idx, :, :].set(f_non_diag)
         f = self.trans_loc + f
         return self.apply_inverse_transform(f)
 
@@ -513,67 +482,3 @@ class IGMRF2D(Prior2D):
             return self.sample_full()
         else:
             raise ValueError(f"Unknown prior_type: {self.prior_type}")
-
-    def apply_inverse_transform(self, f):
-        """
-        Apply inverse compositional transformation to latent field.
-
-        Transforms the unconstrained latent field f back to the simplex (probability
-        space) using the specified inverse log-ratio transformation. This is the final
-        step in converting sampled IGMRF values to contact probabilities.
-
-        Parameters
-        ----------
-        f : array, shape (event_dim_eff, A, A)
-            Unconstrained latent field from IGMRF sampling
-
-        Returns
-        -------
-        transformed : array, shape (A, A, A)
-            Transformed field on the simplex. Each matrix transformed[:, :, j]
-            represents contact probabilities for age group j, with rows summing to 1.
-
-        Notes
-        -----
-        The transformation depends on the transform attribute:
-        - None: Returns f unchanged (no transformation)
-        - 'alr': Additive log-ratio inverse (adds reference category)
-        - 'clr': Centered log-ratio inverse (removes centering constraint)
-        - 'ilr': Isometric log-ratio inverse (orthonormal basis)
-
-        All transformations map from ℝᵈ to the simplex Δᴬ⁻¹ where d is event_dim_eff.
-
-        Examples
-        --------
-        >>> import jax.numpy as jnp
-        >>> from cntmosaic.models.priors._IGMRF2D import IGMRF2D
-        >>>
-        >>> prior = IGMRF2D(
-        ...     num_nodes=(5, 5),
-        ...     order=(1, 1),
-        ...     transform='clr',
-        ...     prior_type='partial'
-        ... )
-        >>> prior.set_age_bounds(0, 25)
-        >>>
-        >>> # Simulate latent field
-        >>> f = jnp.zeros((5, 5, 5))  # event_dim_eff = A = 5 for CLR
-        >>> transformed = prior.apply_inverse_transform(f)
-        >>> print(transformed.shape)  # (5, 5, 5)
-        >>> print(jnp.allclose(transformed.sum(axis=0), 1.0))  # True (on simplex)
-
-        See Also
-        --------
-        cntmosaic.models._math.inverse_alr : ALR inverse transformation
-        cntmosaic.models._math.inverse_clr : CLR inverse transformation
-        cntmosaic.models._math.inverse_ilr : ILR inverse transformation
-        """
-        # Optional transformations
-        if self.transform == "alr":
-            return inverse_alr(f, axis=0)
-        elif self.transform == "clr":
-            return inverse_clr(f, axis=0)
-        elif self.transform == "ilr":
-            return inverse_ilr(f, axis=0)
-        else:
-            return f

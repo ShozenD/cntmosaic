@@ -1,17 +1,15 @@
 from typing import Optional
 
-import numpy as np
 import jax.numpy as jnp
-from jax.typing import ArrayLike
-
+import numpy as np
 import numpyro
+from jax.typing import ArrayLike
 from numpyro import distributions as dist
 
-from .._utils import symm_from_tril_ix_col
-
-from ._Prior2D import Prior2D
 from ...distributions import IGMRF2D, SymIGMRF2D
 from ...utils import symm_from_tril_ix_col
+from .._utils import symm_from_tril_ix_col
+from ._Prior2D import Prior2D
 
 
 class vdKassteele(Prior2D):
@@ -293,9 +291,7 @@ class vdKassteele(Prior2D):
         f = numpyro.sample("f", SymIGMRF2D(self.A, order=2, cond_prec=tau))[
             self.symm_tril_ix
         ]
-        f = f.reshape(
-            (self.A, self.A), order="F"
-        )  # Column-major order to match SymIGMRF2D output
+        f = f.reshape((self.A, self.A))  # Column-major order to match SymIGMRF2D output
 
         return f
 
@@ -417,35 +413,50 @@ class vdKassteele(Prior2D):
             "f_diag",
             SymIGMRF2D(self.A, order=self.order, cond_prec=tau),
             sample_shape=(self.event_dim_diag,),
-        )[
-            ..., self.symm_tril_ix
-        ]  # shape: (event_dim_diag + 1, A*A)
+        )[..., self.symm_tril_ix].reshape((self.event_dim_diag, self.A, self.A))
 
         # Sample off-diagonal elements (asymmetric allowed)
         f_non_diag = numpyro.sample(
             "f_non_diag",
             IGMRF2D((self.A, self.A), order=(self.order, self.order), cond_prec1=tau),
             sample_shape=(self.event_dim_non_diag,),
-        )  # shape: (event_dim_non_diag, A*A)
+        ).reshape((self.event_dim_non_diag, self.A, self.A))
+
+        # Allocate diagonal and off-diagonal elements into full K×K contact matrix grid
+        sqrt_event_dim = jnp.sqrt(self.event_dim).astype(int)
+        diag_idx = jnp.array(
+            [(i * sqrt_event_dim + i) for i in range(sqrt_event_dim)]
+        )  # Flat index of (i,i) in row-major order
 
         # Preallocate flat output: (event_dim, A*A)
-        f = jnp.zeros((self.event_dim, self.A * self.A))
+        f = jnp.zeros((self.event_dim, self.A, self.A))
 
-        # Compute indices for diagonal and off-diagonal elements
-        # For event_dim = D², diagonal elements are at positions 0, D+1, 2D+2, ..., (D-1)D+D-1
-        sqrt_event_dim = int(jnp.sqrt(self.event_dim))
-        diag_idx = jnp.array([i * sqrt_event_dim + i for i in range(sqrt_event_dim)])
-        all_idx = jnp.arange(self.event_dim)
-        non_diag_idx = jnp.setdiff1d(all_idx, diag_idx)
+        # Allocate diagonal elements (within-group contacts)
+        f = f.at[diag_idx, :, :].set(f_diag)
 
-        # Insert diagonal and off-diagonal values
-        f = f.at[diag_idx, :].set(f_diag)
-        f = f.at[non_diag_idx, :].set(f_non_diag)
+        # Allocate off-diagonal elements (between-group contacts with reciprocity)
+        # We need to map f_non_diag[i] to pairs of positions in the K×K grid
+        # Get all non-diagonal flat indices in the K×K grid
+        all_indices = jnp.arange(self.event_dim)
+        non_diag_mask = jnp.isin(all_indices, diag_idx, invert=True)
+        non_diag_all = all_indices[non_diag_mask]
 
-        # Reshape to (event_dim, A, A)
-        # Note: SymIGMRF2D outputs are reshape-order-invariant (symmetric by design)
-        # IGMRF2D outputs use C-order, so default C-order reshape is appropriate
-        f = f.reshape((self.event_dim, self.A, self.A))
+        # Compute transpose indices for all non-diagonal positions
+        rows = non_diag_all // sqrt_event_dim
+        cols = non_diag_all % sqrt_event_dim
+        transpose_indices = cols * sqrt_event_dim + rows
+
+        # Keep only indices where idx < transpose_idx (lower half of reciprocal pairs)
+        lower_mask = non_diag_all < transpose_indices
+        flat_idx = non_diag_all[lower_mask]
+        transpose_flat_idx = transpose_indices[lower_mask]
+
+        # Allocate each sampled off-diagonal matrix to its position and transpose position
+        for i in range(self.event_dim_non_diag_eff):
+            idx = flat_idx[i]
+            idx_t = transpose_flat_idx[i]
+            f = f.at[idx, :, :].set(f_non_diag[i, :, :])
+            f = f.at[idx_t, :, :].set(f_non_diag[i, :, :].T)
 
         return f
 

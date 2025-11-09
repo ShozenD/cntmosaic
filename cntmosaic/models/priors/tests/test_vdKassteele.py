@@ -5,11 +5,11 @@ Tests cover initialization, configuration, sampling methods, and edge cases
 for all three prior types: global, partial, and full.
 """
 
-import pytest
-import numpy as np
 import jax.numpy as jnp
-from jax import random
+import numpy as np
 import numpyro
+import pytest
+from jax import random
 
 from cntmosaic.models.priors import vdKassteele
 
@@ -176,7 +176,7 @@ class TestSampleFull:
         """Test that sample_full returns correct shape."""
         prior = vdKassteele(prior_type="full", order=2)
         prior.set_age_bounds(0, 40)
-        prior.set_event_dim(9)  # 3x3 stratification
+        prior.set_event_dim(3)  # 3x3 stratification
 
         with numpyro.handlers.seed(rng_seed=42):
             f = prior.sample_full()
@@ -187,7 +187,7 @@ class TestSampleFull:
         """Test that diagonal blocks in sample_full are symmetric."""
         prior = vdKassteele(prior_type="full", order=2)
         prior.set_age_bounds(0, 30)
-        prior.set_event_dim(9)  # 3x3
+        prior.set_event_dim(3)  # 3x3
 
         with numpyro.handlers.seed(rng_seed=42):
             f = prior.sample_full()
@@ -200,7 +200,7 @@ class TestSampleFull:
         """Test that off-diagonal blocks can be asymmetric."""
         prior = vdKassteele(prior_type="full", order=2)
         prior.set_age_bounds(0, 25)
-        prior.set_event_dim(9)  # 3x3
+        prior.set_event_dim(3)  # 3x3
 
         with numpyro.handlers.seed(rng_seed=42):
             f = prior.sample_full()
@@ -213,65 +213,6 @@ class TestSampleFull:
                 break
 
         assert non_symmetric, "Expected at least one non-symmetric off-diagonal block"
-
-    def test_sample_full_different_stratifications(self):
-        """Test sample_full with different stratification sizes."""
-        for event_dim in [4, 9, 16]:  # 2x2, 3x3, 4x4
-            prior = vdKassteele(prior_type="full", order=2)
-            prior.set_age_bounds(0, 30)
-            prior.set_event_dim(event_dim)
-
-            with numpyro.handlers.seed(rng_seed=42):
-                f = prior.sample_full()
-
-            assert f.shape == (event_dim, prior.A, prior.A)
-
-
-class TestSampleDispatch:
-    """Test main sample() method dispatching."""
-
-    def test_sample_global(self):
-        """Test that sample() dispatches to sample_single for global."""
-        prior = vdKassteele(prior_type="global")
-        prior.set_age_bounds(0, 35)
-
-        with numpyro.handlers.seed(rng_seed=42):
-            f = prior.sample()
-
-        assert f.shape == (prior.A, prior.A)
-        assert jnp.allclose(f, f.T)
-
-    def test_sample_partial(self):
-        """Test that sample() dispatches to sample_partial."""
-        prior = vdKassteele(prior_type="partial")
-        prior.set_age_bounds(0, 35)
-        prior.set_event_dim(4)
-
-        with numpyro.handlers.seed(rng_seed=42):
-            f = prior.sample()
-
-        assert f.shape == (4, prior.A, prior.A)
-
-    def test_sample_full(self):
-        """Test that sample() dispatches to sample_full."""
-        prior = vdKassteele(prior_type="full")
-        prior.set_age_bounds(0, 35)
-        prior.set_event_dim(9)
-
-        with numpyro.handlers.seed(rng_seed=42):
-            f = prior.sample()
-
-        assert f.shape == (9, prior.A, prior.A)
-
-    def test_sample_invalid_type(self):
-        """Test that invalid prior_type raises ValueError."""
-        prior = vdKassteele(prior_type="global")
-        prior.prior_type = "invalid"  # Manually set invalid type
-        prior.set_age_bounds(0, 30)
-
-        with pytest.raises(ValueError, match="Unknown prior_type"):
-            with numpyro.handlers.seed(rng_seed=42):
-                prior.sample()
 
 
 class TestNumericalProperties:

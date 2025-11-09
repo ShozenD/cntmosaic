@@ -33,10 +33,11 @@ def test_basis_shape_partial():
 def test_basis_shape_full():
     prior = Spline2D(prior_type="full", transform="ilr")
     prior.set_age_bounds(0, 84)
-    prior.set_event_dim(9)
+    prior.set_event_dim(3)  # K=3 categories -> event_dim = 3*3 = 9 matrices
 
     assert prior.event_dim == 9
-    assert prior.event_dim_eff == 8
+    assert prior.event_dim_latent == 8  # ILR: latent space has event_dim - 1 dimensions
+    assert prior.event_dim_eff == 5  # Actually sampled: 2 diag + 3 off-diag
 
     # Check existence and dimension of indices
     assert prior.PHI_diag.shape == (85 * (85 + 1) / 2, 30 * 30)
@@ -76,12 +77,12 @@ def test_sample_full():
     """Test sampling from full prior."""
     prior = Spline2D(prior_type="full", transform="ilr")
     prior.set_age_bounds(0, 9)
-    prior.set_event_dim(4)
+    prior.set_event_dim(2)  # K=2 categories -> event_dim = 2*2 = 4 matrices
     prior.set_loc(0.0)  # Use scalar location instead
 
     with numpyro.handlers.seed(rng_seed=42):
         result = prior.sample()
 
-    # Check output shape
+    # Check output shape: event_dim = 4, but ILR reduces to event_dim - 1 = 3
     assert result.shape == (4, 10, 10)
     assert isinstance(result, jnp.ndarray)

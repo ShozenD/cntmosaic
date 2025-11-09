@@ -39,9 +39,34 @@ def basis_contrast_matrix(d: int) -> Array:
 
 
 def alr(x: ArrayLike, axis: int = 0) -> Array:
-    """Additive log ratio transformation"""
-    denom = 1 - jnp.sum(x, axis=axis, keepdims=True)
-    return jnp.log(x / denom)
+    """Additive log ratio transformation
+
+    Takes log-ratios of all components except the last (reference) with respect
+    to the last component, reducing the dimension by 1 along the specified axis.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        Compositional data (should sum to 1 along specified axis)
+    axis : int, default=0
+        Axis along which to apply the transformation
+
+    Returns
+    -------
+    Array
+        ALR-transformed data with dimension reduced by 1 along axis
+
+    Examples
+    --------
+    >>> x = jnp.array([[0.3], [0.7]])  # 2-part composition
+    >>> alr(x, axis=0)
+    Array([[-0.8472978]], dtype=float32)  # log(0.3/0.7), shape (1,1)
+    """
+    # Take all components except the last as numerator
+    numerator = jnp.take(x, indices=jnp.arange(x.shape[axis] - 1), axis=axis)
+    # Last component as denominator (reference)
+    denominator = jnp.take(x, indices=jnp.array([-1]), axis=axis)
+    return jnp.log(numerator / denominator)
 
 
 def clr(x: ArrayLike, axis: int = 0) -> Array:

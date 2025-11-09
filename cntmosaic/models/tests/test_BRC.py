@@ -13,23 +13,22 @@ Tests cover:
 - Error handling and edge cases
 """
 
-import pytest
-import numpy as np
-import jax.numpy as jnp
-from jax.random import PRNGKey
 import warnings
 
+import jax.numpy as jnp
+import numpy as np
 import numpyro
-from numpyro.infer.autoguide import AutoNormal
+import pytest
+from jax.random import PRNGKey
 from numpyro import distributions as dist
 from numpyro.handlers import scope
+from numpyro.infer.autoguide import AutoNormal
 
+from ...dataloader import CoordToColumns, DataLoader
 from ...datasets import load_age_distribution, load_template_patterns
-from ...sim import ParticipantGenerator, MatrixGenerator, ContactGenerator, Subgroup
-from ...dataloader import DataLoader, CoordToColumns
+from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator, Subgroup
 from .._BRC import BRC
-from ..priors import Spline2D, PSpline2D, HSGP2D
-
+from ..priors import HSGP2D, PSpline2D, Spline2D
 
 # ============================================================================
 # Mock BRC Implementation for Testing
@@ -570,7 +569,7 @@ class TestDifferentPriors:
     def test_with_hsgp_prior(self, sample_dataloader):
         """Test BRC initialization with HSGP2D prior."""
         # HSGP2D uses C parameter, not ell
-        priors = {"rate": HSGP2D(M=[20, 20], C=[1.5, 1.5])}
+        priors = {"rate": HSGP2D(prior_type="global", M=[20, 20], C=[1.5, 1.5])}
         model = MockBRC(sample_dataloader, priors, likelihood="poisson")
 
         assert model.priors["rate"].__class__.__name__ == "HSGP2D"

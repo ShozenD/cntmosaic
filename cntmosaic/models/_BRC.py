@@ -1,28 +1,26 @@
 import warnings
-from typing import Optional, Dict, Callable, Any
-
 from abc import ABC, abstractmethod
-
-import numpy as np
-from numpy.typing import NDArray
+from typing import Any, Callable, Dict, Optional
 
 import jax
 import jax.numpy as jnp
-from jax import random
-from jax.typing import ArrayLike
-from jax.random import PRNGKey
-
+import numpy as np
 import numpyro
+from jax import random
+from jax.random import PRNGKey
+from jax.typing import ArrayLike
+from numpy.typing import NDArray
 from numpyro.handlers import seed, trace
 
 from ..dataloader import DataLoader
-from .priors import Prior2D
+from ..dataloader.containers._ModelData import ModelData
 from ._numpyro import (
-    run_inference_mcmc,
-    run_inference_svi,
     posterior_predictive_mcmc,
     posterior_predictive_svi,
+    run_inference_mcmc,
+    run_inference_svi,
 )
+from .priors import Prior2D
 
 
 class BRC(ABC):
@@ -114,7 +112,7 @@ class BRC(ABC):
     ) -> None:
         self._validate_common_inputs(dataloader, priors, likelihood)
 
-        self.ds: DataLoader = dataloader.load()
+        self.data: ModelData = dataloader.load()
         self.priors: Dict[str, Prior2D] = priors
         self.likelihood: str = likelihood
 
@@ -128,7 +126,9 @@ class BRC(ABC):
         self._svi_result: Optional[numpyro.infer.SVI] = None
         self._guide: Optional[Callable] = None
 
-        self.set_age_dims(int(self.ds.age.values.min()), int(self.ds.age.values.max()))
+        self.set_age_dims(
+            int(self.data.base_data["age_min"]), int(self.data.base_data["age_max"])
+        )
 
     def _validate_common_inputs(
         self, dataloader: DataLoader, priors: Dict[str, Any], likelihood: str

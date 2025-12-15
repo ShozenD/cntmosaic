@@ -1,16 +1,16 @@
-from typing import Dict, Any, Optional
-from numpy.typing import NDArray
-import pandas as pd
-import jax.numpy as jnp
-from jax.typing import ArrayLike
 from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
+import jax.numpy as jnp
 import numpyro
+import pandas as pd
+from jax.typing import ArrayLike
+from numpy.typing import NDArray
 from numpyro import distributions as dist
 from numpyro.handlers import scope
 
-from ._BRC import BRC
 from ..dataloader import DataLoader
+from ._BRC import BRC
 from .priors import Hill
 
 
@@ -110,7 +110,7 @@ class BRCfine(BRC):
     ...     age_part="age_part",
     ...     age_cnt="age_cnt",
     ...     age_pop="age",
-    ...     size_pop="P"
+    ...     P="P"
     ... )
     >>> dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
     >>>
@@ -171,57 +171,24 @@ class BRCfine(BRC):
         self.inv_odist = inv_odist
         super().__init__(dataloader, priors, likelihood)
 
-        self._validate_inputs()
-
-        # Convert data to JAX arrays for efficient computation
-        self.y = jnp.array(self.ds.y.values)
-        self.aid = jnp.array(self.ds.aid.values, dtype=jnp.int32)
-        self.bid = jnp.array(self.ds.bid.values, dtype=jnp.int32)
-        self.log_N = jnp.array(self.ds.log_N.values)
-        self.log_P = jnp.array(self.ds.log_P.values)[jnp.newaxis, :]
+        # Convert to JAX arrays
+        self.y = jnp.array(self.data.base_data["y"])
+        self.aid = jnp.array(self.data.base_data["aid"], dtype=jnp.int32)
+        self.bid = jnp.array(self.data.base_data["bid"], dtype=jnp.int32)
+        self.log_N = jnp.array(self.data.base_data["log_N"])
+        self.log_P = jnp.array(self.data.base_data["log_P"][jnp.newaxis, :])
 
         # Optional offset for different settings (e.g., home, work, school)
         self.log_S = (
-            jnp.array(self.ds.log_S.values)
-            if hasattr(self.ds, "log_S")
+            jnp.array(self.data.base_data["log_S"])
+            if "log_S" in self.data.base_data
             else jnp.zeros_like(self.y)
         )
 
         # Optional repeat interview effect
-        if hasattr(self.ds, "rid"):
-            self.rid = jnp.array(self.ds.rid.values, dtype=jnp.int32)
-            self.hill = Hill(max_value=int(self.ds.rid.max()))
-
-    def _validate_inputs(self) -> None:
-        """
-        Validate that required data fields are present in the dataset.
-
-        The BRCfine model requires specific data fields for proper functioning:
-        - aid: Participant age indices
-        - bid: Contact age indices
-        - log_N: Log-transformed sample sizes
-        - log_P: Log-transformed population age distribution
-
-        Raises
-        ------
-        ValueError
-            If any required field is missing from the dataset.
-
-        Notes
-        -----
-        This validation is called automatically during initialization.
-        Additional optional fields (log_S, rid) are handled gracefully if absent.
-        """
-        required_fields = {
-            "aid": "Participant age indexes (aid)",
-            "bid": "Contact age indexes (bid)",
-            "log_N": "Log of sample size (log_N)",
-            "log_P": "Log of population age distribution (log_P)",
-        }
-
-        for field, description in required_fields.items():
-            if not hasattr(self.ds, field):
-                raise ValueError(f"{description} are missing from the dataset.")
+        if "rid" in self.data.base_data:
+            self.rid = jnp.array(self.data.base_data["rid"], dtype=jnp.int32)
+            self.hill = Hill(max_value=int(self.data.base_data["rid"].max()))
 
     def model(self, y: Optional[ArrayLike] = None) -> None:
         """

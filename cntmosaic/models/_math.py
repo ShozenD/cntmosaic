@@ -3,7 +3,7 @@ import math
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax import Array
+from jax import Array, jit
 from jax.typing import ArrayLike
 
 
@@ -138,3 +138,40 @@ def subdiag_permutation_matrix(K: int) -> Array:
                 P[t, s] = 1
 
     return jnp.array(P)
+
+
+@jit
+def kron_sum_mode_1(tensor_a, tensor_b):
+    """
+    Perform mode-1 Kronecker sum operation.
+
+    For matrices a (K_a, A, A) and b (K_b, A, A), computes:
+        result[i,j] = a[i] ⊗ I_K_b + I_K_a ⊗ b[j]
+
+    where ⊗ is the Kronecker product and I is the identity matrix.
+
+    Parameters
+    ----------
+    a : array, shape (K_a, A, A)
+        First term in the Kronecker sum
+    b : array, shape (K_b, A, A)
+        Second term in the Kronecker sum
+
+    Returns
+    -------
+    result : array, shape (K_a * K_b, A, A)
+        Result of the Kronecker sum, flattened in row-major order
+    """
+    K_a, A, _ = tensor_a.shape
+    K_b, _, _ = tensor_b.shape
+
+    # Broadcast to create all combinations
+    # a[None, :, :, :] has shape (K_a, 1, A, A)
+    # b[:, None, :, :] has shape (1, K_b, A, A)
+    # Broadcasting these gives (K_a, K_b, A, A)
+    result = tensor_a[:, None, :, :] + tensor_b[None, :, :, :]  # (K_a, K_b, A, A)
+
+    # Flatten to (K_b * K_a, A, A) in row-major order
+    # The intermediate shape is (K_b, K_a, A, A), so flattening gives
+    # flat_index = i * K_b + j where i indexes K_a and j indexes K_b
+    return result.reshape(K_b * K_a, A, A)

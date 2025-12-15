@@ -4,10 +4,15 @@ These containers hold processed data that are then passed to the models as input
 They make sure that the data is of the correct format and type required by the models.
 """
 
-from typing import Dict, List, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, TypedDict, Union
 
 import jax.numpy as jnp
 from numpy.typing import NDArray
+
+from ..._types import StratMode
+
+if TYPE_CHECKING:
+    from ._StratPropData import StratPropData
 
 
 class ModelBaseData(TypedDict, total=False):
@@ -43,7 +48,7 @@ class ModelBaseData(TypedDict, total=False):
     y: NDArray
     aid: NDArray
     log_N: NDArray
-    log_P: Union[Dict[str, NDArray], NDArray]
+    log_P: NDArray
     age_min: int
     age_max: int
 
@@ -56,12 +61,17 @@ class ModelBaseData(TypedDict, total=False):
 
 
 class ModelStratData(TypedDict):
-    """Metadata for hierarchical stratification (HiBRC models)."""
+    """Metadata for stratification (HiBRC models)."""
 
-    strat_vars: Dict[str, List[str]]  # {var_name: [category_names]}
-    strat_modes: Dict[str, str]  # {var_name: 'partial' | 'full'}
-    strat_vars_full: Dict[str, Dict[str, List[str]]]  # For FULL mode
-    strat_ix: Dict[str, NDArray]  # {var_name: categorical_codes}
+    vars: Dict[str, List[str]]  # {var_name: [category_names]}
+    modes: Dict[str, StratMode]  # {var_name: StratMode.PARTIAL | StratMode.FULL}
+    labels: Dict[str, str]  # {var_name: label}
+    ixs: Dict[str, NDArray]  # {var_name: categorical_codes}
+    flat_pixs: NDArray  # Combined flat population category indices
+    flat_ix: NDArray  # Combined flat indices
+    full_labels: List[str]
+    marginal_multipliers: Dict[str, NDArray]  # {var_name: NDArray}
+    multipliers: NDArray
 
 
 class ModelData:

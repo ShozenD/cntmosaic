@@ -39,7 +39,19 @@ class PopulationData:
     strat_var_cols : Optional[Union[List[str], str]], default=None
         Stratification variable column name(s) for population subgroups.
         Can be a single string or list of strings. Examples: 'gender', ['gender', 'region'].
-        Population sizes will be aggregated (summed) by these variables along with age.
+        
+        **Important**: If multiple variables are specified (e.g., ['gender', 'region']),
+        they will be **combined into a single composite stratification variable** by DataLoader.
+        For example, ['gender', 'region'] with categories ['M', 'F'] and ['North', 'South']
+        will create a combined variable with categories: ['M_North', 'M_South', 'F_North', 'F_South'].
+        
+        **Consistency requirement**: The same stratification variables must be specified across:
+        - ParticipantData (required if stratifying)
+        - ContactData (required if FULL stratification mode)
+        - PopulationData (required if using stratified population data)
+        - StratPropData (required, one object per composite stratification)
+        
+        Population sizes will be aggregated (summed) by the composite stratification variable along with age.
 
     Properties
     ----------

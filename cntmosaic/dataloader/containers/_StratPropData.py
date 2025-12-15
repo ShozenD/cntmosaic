@@ -18,6 +18,10 @@ class StratPropData:
     stratified by demographic variables (e.g., gender, occupation, region). These
     proportions are used to adjust contact matrices for demographic heterogeneity.
 
+    **New in v2.0**: Supports multiple stratification columns with automatic merging.
+    If multiple columns are provided, they will be automatically combined into a
+    composite variable (e.g., ['gender', 'region'] → 'gender_region').
+
     Attributes
     ----------
     data : pd.DataFrame
@@ -27,20 +31,36 @@ class StratPropData:
     age_col : str
         Name of the column containing age values in the dataframe.
         Should match or be compatible with the age range in the main dataset.
-    strat_col : str
-        Name of the column containing the stratification variable.
-        Examples: 'gender', 'occupation', 'region', 'setting'.
-        Must be present in the main contact data for proper alignment.
-    prop_col : str
+    strat_var_cols : Union[str, List[str]], optional
+        Name(s) of the stratification variable column(s) in the DataFrame.
+        - Single column: 'gender', 'occupation', 'region', etc.
+        - Multiple columns: ['gender', 'region'] will be merged into 'gender_region'
+        If not provided, will be auto-detected from data columns (excluding age_col and prop_col).
+    prop_col : str, default='proportion'
         Name of the column containing population proportions.
         Values must be in [0, 1] and sum to 1.0 within each age group.
+
+    Properties
+    ----------
+    var_name : str
+        The standardized name of the stratification variable (read-only).
+        - For single column: same as the column name
+        - For multiple columns: underscore-joined (e.g., 'gender_region')
+        This is automatically determined and used by DataLoader for matching.
+    strat_col : str
+        The final stratification column name in the processed data (read-only).
+        After merging, this contains the composite variable name.
 
     Methods
     -------
     validate()
         Validates the population proportion data structure and values.
-    from_counts(data, age_col, strat_col, count_col)
+    from_counts(data, age_col, strat_var_cols, count_col)
         Class method to create StratPropData from population counts.
+    compute_marginal_multipliers(strat_modes)
+        Computes marginal multipliers for each stratification variable.
+    compute_multipliers(strat_modes)
+        Computes stratified multipliers for contact modifier weighting.
 
     Raises
     ------
@@ -51,19 +71,41 @@ class StratPropData:
 
     Examples
     --------
-    >>> # From pre-computed proportions
+    >>> # Single stratification variable (auto-detected)
     >>> df_gender = pd.DataFrame({
     ...     'age': [0, 0, 1, 1, 2, 2],
     ...     'gender': ['M', 'F', 'M', 'F', 'M', 'F'],
     ...     'proportion': [0.51, 0.49, 0.51, 0.49, 0.50, 0.50]
     ... })
+    >>> pop_prop = StratPropData(data=df_gender, age_col='age', prop_col='proportion')
+    >>> pop_prop.var_name  # 'gender' (auto-detected)
+    'gender'
+    >>>
+    >>> # Explicit single column
     >>> pop_prop = StratPropData(
     ...     data=df_gender,
     ...     age_col='age',
-    ...     strat_col='gender',
+    ...     strat_var_cols='gender',
     ...     prop_col='proportion'
     ... )
-    >>> pop_prop.validate()
+    >>>
+    >>> # Multiple columns (automatic composite)
+    >>> df_composite = pd.DataFrame({
+    ...     'age': [0, 0, 0, 0, 1, 1, 1, 1],
+    ...     'gender': ['M', 'M', 'F', 'F', 'M', 'M', 'F', 'F'],
+    ...     'region': ['North', 'South', 'North', 'South', 'North', 'South', 'North', 'South'],
+    ...     'prop': [0.26, 0.24, 0.25, 0.25, 0.26, 0.24, 0.25, 0.25]
+    ... })
+    >>> pop_prop = StratPropData(
+    ...     data=df_composite,
+    ...     age_col='age',
+    ...     strat_var_cols=['gender', 'region'],
+    ...     prop_col='prop'
+    ... )
+    >>> pop_prop.var_name  # 'gender_region' (auto-generated composite)
+    'gender_region'
+    >>> pop_prop.data['gender_region'].unique()  # Merged column
+    ['M_North', 'M_South', 'F_North', 'F_South']
     >>>
     >>> # From population counts (auto-computes proportions)
     >>> df_counts = pd.DataFrame({
@@ -74,30 +116,53 @@ class StratPropData:
     >>> pop_prop = StratPropData.from_counts(
     ...     data=df_counts,
     ...     age_col='age',
-    ...     strat_col='gender',
     ...     count_col='count'
-    ... )
-    >>>
-    >>> # Multiple stratification variables (create separate StratPropData objects)
-    >>> pop_prop_gender = StratPropData(df_gender, 'age', 'gender', 'prop')
-    >>> pop_prop_region = StratPropData(df_region, 'age', 'region', 'prop')
-    >>> dataloader = DataLoader(..., pop_prop=[pop_prop_gender, pop_prop_region])
+    ... )  # strat_var_cols='gender' auto-detected
 
     Notes
     -----
     - Validation is performed automatically during initialization via __post_init__
     - Proportions must sum to 1.0 within each age group (tolerance: 1e-6)
-    - The stratification variable name must match the corresponding column in contact data
-    - For multiple stratifications, create separate StratPropData objects
+    - Multiple stratification columns are automatically merged into a composite variable
     """
 
     data: pd.DataFrame
     age_col: str
-    strat_col: str
-    prop_col: str
+    strat_var_cols: Optional[Union[str, List[str]]] = None
+    prop_col: str = "proportion"
+
+    # Internal working attribute (set in __post_init__)
+    strat_col: str = None
 
     def __post_init__(self) -> None:
-        """Validate the population proportion specification after initialization."""
+        """Process stratification columns and validate after initialization."""
+        # Convert single string to list for uniform processing
+        if isinstance(self.strat_var_cols, str):
+            self.strat_var_cols = [self.strat_var_cols]
+
+        # Validate columns exist
+        missing = [col for col in self.strat_var_cols if col not in self.data.columns]
+        if missing:
+            raise ValueError(
+                f"Stratification columns not found in data: {missing}\n"
+                f"Available columns: {list(self.data.columns)}"
+            )
+
+        # Merge multiple stratification columns into composite if needed
+        if len(self.strat_var_cols) > 1:
+            # Create composite column name from multiple variables
+            composite_name = "_".join(self.strat_var_cols)
+            object.__setattr__(self, "strat_col", composite_name)
+
+            # Merge columns into composite
+            self.data = self.data.copy()
+            self.data[self.strat_col] = self.data[self.strat_var_cols].apply(
+                lambda row: "_".join(row.astype(str)), axis=1
+            )
+        else:
+            # Single column - use it directly
+            object.__setattr__(self, "strat_col", self.strat_var_cols[0])
+
         self.validate()
 
     def validate(self) -> None:
@@ -157,8 +222,8 @@ class StratPropData:
         cls,
         data: pd.DataFrame,
         age_col: str,
-        strat_col: str,
-        count_col: str,
+        strat_var_cols: Optional[Union[str, List[str]]] = None,
+        count_col: str = "count",
         prop_col: str = "proportion",
     ) -> "StratPropData":
         """
@@ -174,9 +239,10 @@ class StratPropData:
             Dataframe with population counts stratified by age and category.
         age_col : str
             Name of age column.
-        strat_col : str
-            Name of stratification variable column (e.g., 'gender').
-        count_col : str
+        strat_var_cols : Union[str, List[str]], optional
+            Name(s) of stratification variable column(s) in the DataFrame.
+            If None, will be auto-detected from columns (excluding age_col and count_col).
+        count_col : str, default='count'
             Name of column containing population counts.
         prop_col : str, default='proportion'
             Name to assign to the computed proportion column.
@@ -188,6 +254,7 @@ class StratPropData:
 
         Examples
         --------
+        >>> # Single variable (auto-detected)
         >>> df = pd.DataFrame({
         ...     'age': [0, 0, 1, 1, 2, 2],
         ...     'gender': ['M', 'F', 'M', 'F', 'M', 'F'],
@@ -196,16 +263,45 @@ class StratPropData:
         >>> pop_prop = StratPropData.from_counts(
         ...     data=df,
         ...     age_col='age',
-        ...     strat_col='gender',
         ...     count_col='population'
+        ... )  # 'gender' auto-detected
+        >>>
+        >>> # Multiple variables (automatic composite)
+        >>> df_multi = pd.DataFrame({
+        ...     'age': [0, 0, 0, 0],
+        ...     'gender': ['M', 'M', 'F', 'F'],
+        ...     'region': ['North', 'South', 'North', 'South'],
+        ...     'count': [2600, 2400, 2500, 2500]
+        ... })
+        >>> pop_prop = StratPropData.from_counts(
+        ...     data=df_multi,
+        ...     age_col='age',
+        ...     strat_var_cols=['gender', 'region'],
+        ...     count_col='count'
         ... )
-        >>> # Proportions are automatically computed:
-        >>> # age 0: M=0.51, F=0.49
-        >>> # age 1: M=0.505, F=0.495
-        >>> # age 2: M=0.50, F=0.50
+        >>> pop_prop.var_name  # 'gender_region'
         """
+        # Auto-detect strat_var_cols if not provided
+        if strat_var_cols is None:
+            potential_cols = [
+                col for col in data.columns if col not in [age_col, count_col, prop_col]
+            ]
+            if len(potential_cols) == 0:
+                raise ValueError(
+                    f"Could not auto-detect stratification columns. "
+                    f"DataFrame only contains: {list(data.columns)}\n"
+                    f"After excluding age_col='{age_col}' and count_col='{count_col}', "
+                    f"no columns remain.\n"
+                    f"Please specify strat_var_cols explicitly."
+                )
+            strat_var_cols = potential_cols
+
+        # Convert to list for uniform processing
+        if isinstance(strat_var_cols, str):
+            strat_var_cols = [strat_var_cols]
+
         # Validate required columns
-        required_cols = [age_col, strat_col, count_col]
+        required_cols = [age_col, count_col] + strat_var_cols
         missing = [col for col in required_cols if col not in data.columns]
         if missing:
             raise ValueError(
@@ -222,13 +318,68 @@ class StratPropData:
         return cls(
             data=df_with_props,
             age_col=age_col,
-            strat_col=strat_col,
+            strat_var_cols=strat_var_cols,
             prop_col=prop_col,
         )
 
-    def compute_props(self, mode: StratMode) -> NDArray:
+    def compute_marginal_multipliers(
+        self, strat_modes: Dict[str, StratMode]
+    ) -> Dict[str, NDArray]:
         """
-        Compute stratum-specific proportions.
+        Compute the marginal multipliers for each stratification variable.
+        These marginals are used for centering the contact rate modifier priors in the latent space.
+
+        Parameters
+        ----------
+        strat_modes : Dict[str, StratMode]
+            Dictionary mapping stratification variable names to their StratMode (PARTIAL or FULL).
+
+        Returns
+        -------
+        Dict[str, NDArray]
+            Dictionary mapping each stratification variable to its marginal multipliers array.
+        """
+
+        strat_vars = list(strat_modes.keys())
+        marginal_multipliers = {}
+        for var in strat_vars:
+            mode = strat_modes[var]
+
+            # Sum over other stratification variables to get marginal proportions
+            df_marginal = (
+                self.data.groupby([self.age_col] + [var], observed=False)[self.prop_col]
+                .sum()
+                .reset_index()
+            )
+
+            # Sort by age and strat variable
+            df_marginal = df_marginal.sort_values(by=[self.age_col, var])
+            prop_array = df_marginal.pivot(
+                index=var, columns=self.age_col, values=self.prop_col
+            ).values  # shape (n_strata, A)
+
+            if mode == StratMode.PARTIAL:
+                marginal_multipliers[var] = prop_array[
+                    :, :, None
+                ]  # shape (n_strata, A, 1)
+            elif mode == StratMode.FULL:
+                mult_array = prop_array[:, None, :, None] * prop_array[None, :, None, :]
+                n_strata = prop_array.shape[0]
+                A = prop_array.shape[1]
+                marginal_multipliers[var] = mult_array.reshape(
+                    n_strata * n_strata, A, A
+                )  # shape (n_strata^2, A, A)
+            else:
+                raise ValueError(f"Unknown StratMode: {mode}")
+
+        return marginal_multipliers
+
+    def compute_multipliers(self, strat_modes: Dict[str, StratMode]) -> NDArray:
+        """
+        Compute stratified multipliers for contact modifier weighting.
+
+        This method takes the dictionary of stratification modes and computes the population proportion
+        offsets by age and stratification variables. It supports both PARTIAL, FULL, and mixed scenarios.
 
         Note
         ----
@@ -241,22 +392,61 @@ class StratPropData:
             - PARTIAL: shape (n_strata, A)
             - FULL: shape (n_strata, n_strata, A, A)
         """
-        if mode == StratMode.PARTIAL:
-            prop_sa = self.data.pivot(
-                index=self.strat_col, columns=self.age_col, values=self.prop_col
-            ).values
-            return prop_sa  # shape (n_strata, A)
+        strat_vars_source = list(strat_modes.keys())
+        strat_vars_target = [
+            var for var in strat_vars_source if strat_modes[var] == StratMode.FULL
+        ]
 
-        elif mode == StratMode.FULL:
-            # props[s, t, a, b] = (P[s, a] / P[a]) * (P[t, b] / P[b])
-            prop_sa = self.data.pivot(
-                index=self.strat_col, columns=self.age_col, values=self.prop_col
-            ).values  # shape (n_strata, A)
+        df_prop_source = self.data[[self.age_col] + strat_vars_source + [self.prop_col]]
+        sort_vars = [self.age_col] + strat_vars_source
+        df_prop_source = df_prop_source.sort_values(by=sort_vars)
 
-            # Outer product: prop[s, t, a, b] = prop[s, a] * prop[t, b]
-            # Reshape for broadcasting: (n_strata, 1, A, 1) * (1, n_strata, 1, A)
-            prop_full = prop_sa[:, None, :, None] * prop_sa[None, :, None, :]
-            return prop_full  # shape (n_strata, n_strata, A, A)
+        # Combine stratification variables into single column for grouping
+        if len(strat_vars_source) == 0:
+            raise ValueError("No stratification variables provided")
+
+        df_prop_source["strat_combined"] = df_prop_source[strat_vars_source].apply(
+            lambda row: "_".join(row.astype(str)), axis=1
+        )
+
+        # Aggregate and pivot to get source proportions
+        prop_sa = (
+            df_prop_source.groupby([self.age_col, "strat_combined"])[self.prop_col]
+            .sum()
+            .reset_index()
+            .pivot(index="strat_combined", columns=self.age_col, values=self.prop_col)
+            .values
+        )  # shape (n_strata_source, A)
+
+        # PARTIAL case: single variable stratification
+        if len(strat_vars_target) == 0:
+            return prop_sa
+
+        # FULL case: compute outer product for source × target
+        df_prop_target = self.data[[self.age_col] + strat_vars_target + [self.prop_col]]
+        sort_vars = [self.age_col] + strat_vars_target
+        df_prop_target = df_prop_target.sort_values(by=sort_vars)
+        df_prop_target["strat_combined"] = df_prop_target[strat_vars_target].apply(
+            lambda row: "_".join(row.astype(str)), axis=1
+        )
+
+        prop_tb = (
+            df_prop_target.groupby([self.age_col, "strat_combined"])[self.prop_col]
+            .sum()
+            .reset_index()
+            .pivot(index="strat_combined", columns=self.age_col, values=self.prop_col)
+            .values
+        )  # shape (n_strata_target, A)
+
+        # Compute outer product and reshape
+        prop_stab = prop_sa[:, None, :, None] * prop_tb[None, :, None, :]
+        n_strata_source, n_strata_target, A = (
+            prop_sa.shape[0],
+            prop_tb.shape[0],
+            prop_sa.shape[1],
+        )
+
+        return prop_stab.reshape(n_strata_source * n_strata_target, A, A)
 
     def validate_for_mode(self, mode: StratMode) -> None:
         """

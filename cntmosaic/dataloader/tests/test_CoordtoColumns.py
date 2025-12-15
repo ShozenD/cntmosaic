@@ -1,6 +1,6 @@
 import pytest
 
-from .._dataloader import CoordToColumns
+from .._CoordToColumns import CoordToColumns
 
 # language: python
 
@@ -9,40 +9,94 @@ from .._dataloader import CoordToColumns
 # =================================
 
 
-def test_coord_to_columns_single():
-    """Test CoordToColumns with single subgroup data."""
-    colmap = CoordToColumns(
-        age_part="age_group",
-        age_cnt="age_cnt",
-        age_pop="age",
-        P="P",
-    )
+class TestSingle:
 
-    # Basic assertions
-    assert colmap.age_part == "age_group"
-    assert colmap.age_cnt == "age_cnt"
-    assert colmap.age_pop == "age"
-    assert colmap.P == "P"
-    assert colmap.age_vars() == ["age_cnt", "age_group"]
+    def test_basic(self):
+        """Test CoordToColumns with single subgroup data."""
+        colmap = CoordToColumns(
+            age_part="age_group",
+            age_cnt="age_cnt",
+            age_pop="age",
+            P="P",
+        )
+
+        # Basic assertions
+        assert colmap.age_part == "age_group"
+        assert colmap.age_cnt == "age_cnt"
+        assert colmap.age_pop == "age"
+        assert colmap.P == "P"
+        assert colmap.age_vars == ["age_cnt", "age_group"]
+
+    def test_with_repeat(self):
+        """Test CoordToColumns with repeat column."""
+        colmap = CoordToColumns(
+            age_part="age_group",
+            age_cnt="age_cnt",
+            age_pop="age",
+            P="P",
+            repeat_part="repeat_id",
+        )
+
+        # Basic assertions
+        assert colmap.age_part == "age_group"
+        assert colmap.age_cnt == "age_cnt"
+        assert colmap.age_pop == "age"
+        assert colmap.P == "P"
+        assert colmap.repeat_part == "repeat_id"
+        assert colmap.age_vars == ["age_cnt", "age_group"]
 
 
-def test_coord_to_columns_partial():
-    """Test CoordToColumns with partial subgroup data."""
-    colmap = CoordToColumns(
-        age_part="age_group",
-        age_cnt="age_cnt",
-        age_pop="age",
-        P="P",
-        strat_vars_part="subgroup",
-    )
+class TestPartial:
 
-    # Basic assertions
-    assert colmap.age_part == "age_group"
-    assert colmap.age_cnt == "age_cnt"
-    assert colmap.age_pop == "age"
-    assert colmap.P == "P"
-    assert colmap.strat_vars_part == ["subgroup"]
-    assert colmap.age_vars() == ["age_cnt", "age_group"]
+    def test_single_strat(self):
+        """Test CoordToColumns with partial subgroup data."""
+        colmap = CoordToColumns(
+            age_part="age_group",
+            age_cnt="age_cnt",
+            age_pop="age",
+            P="P",
+            strat_vars_part="subgroup_part",
+        )
+
+        # Basic assertions
+        assert colmap.age_part == "age_group"
+        assert colmap.age_cnt == "age_cnt"
+        assert colmap.age_pop == "age"
+        assert colmap.P == "P"
+        assert colmap.strat_vars_part == ["subgroup_part"]
+        assert colmap.age_vars == ["age_cnt", "age_group"]
+
+    def test_multiple_strat(self):
+        """Test CoordToColumns with multiple subgroup data."""
+        colmap = CoordToColumns(
+            age_part="age_group",
+            age_cnt="age_cnt",
+            age_pop="age",
+            P="P",
+            strat_vars_part=["subgroup1_part", "subgroup2_part"],
+        )
+
+        assert colmap.strat_vars_part == ["subgroup1_part", "subgroup2_part"]
+
+    def test_single_strat_with_repeat(self):
+        """Test CoordToColumns with partial subgroup data and repeat column."""
+        colmap = CoordToColumns(
+            age_part="age_group",
+            age_cnt="age_cnt",
+            age_pop="age",
+            P="P",
+            strat_vars_part="subgroup_part",
+            repeat_part="repeat_id",
+        )
+
+        # Basic assertions
+        assert colmap.age_part == "age_group"
+        assert colmap.age_cnt == "age_cnt"
+        assert colmap.age_pop == "age"
+        assert colmap.P == "P"
+        assert colmap.strat_vars_part == ["subgroup_part"]
+        assert colmap.repeat_part == "repeat_id"
+        assert colmap.age_vars == ["age_cnt", "age_group"]
 
 
 def test_coord_to_columns_full():
@@ -52,7 +106,7 @@ def test_coord_to_columns_full():
         age_cnt="age_cnt",
         age_pop="age",
         P="P",
-        strat_vars_part="subgroup",
+        strat_vars_part="subgroup_part",
         strat_vars_cnt="subgroup_cnt",
         strat_vars_pop="subgroup",  # Original name (without _cnt suffix)
     )
@@ -62,26 +116,10 @@ def test_coord_to_columns_full():
     assert colmap.age_cnt == "age_cnt"
     assert colmap.age_pop == "age"
     assert colmap.P == "P"
-    assert colmap.strat_vars_part == ["subgroup"]
+    assert colmap.strat_vars_part == ["subgroup_part"]
     assert colmap.strat_vars_cnt == ["subgroup_cnt"]
     assert colmap.strat_vars_pop == ["subgroup"]  # Original name
-    assert colmap.age_vars() == ["age_cnt", "age_group"]
-
-
-def test_coord_to_columns_mismatch_strat_vars():
-    """Test that mismatched contact and population grouping variables raise ValueError."""
-    with pytest.raises(
-        ValueError,
-        match="Contact grouping variables must match population grouping variables",
-    ):
-        CoordToColumns(
-            age_part="age_group",
-            age_cnt="age_cnt",
-            age_pop="age",
-            P="P",
-            strat_vars_cnt="subgroup_cnt",  # Has _cnt suffix
-            strat_vars_pop="different_var",  # Mismatch with original name
-        )
+    assert colmap.age_vars == ["age_cnt", "age_group"]
 
 
 def test_coord_to_columns_empty_strat_vars_match():

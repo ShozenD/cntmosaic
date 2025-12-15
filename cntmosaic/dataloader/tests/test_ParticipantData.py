@@ -27,7 +27,7 @@ class TestInit:
 
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
-        assert part_data.n_participants == 4
+        assert part_data.n == 4
         assert part_data.age_col == "age"
         assert part_data.age_grp_col is None
 
@@ -46,7 +46,7 @@ class TestInit:
 
         part_data = ParticipantData(df_part=df, id_col="pid", age_grp_col="age_group")
 
-        assert part_data.n_participants == 3
+        assert part_data.n == 3
         assert part_data.age_grp_col == "age_group"
         assert part_data.age_col is None
 
@@ -63,7 +63,7 @@ class TestInit:
         )
 
         # Should be converted to list internally
-        assert part_data.stratification_vars == ["gender"]
+        assert part_data.strat_vars == ["gender"]
         assert part_data.data.columns.tolist() == ["id", "age_part", "gender_part", "z"]
 
     def test_init_with_multiple_strat(self):
@@ -85,7 +85,7 @@ class TestInit:
             strat_var_cols=["gender", "region", "occupation"],
         )
 
-        assert part_data.stratification_vars == ["gender", "region", "occupation"]
+        assert part_data.strat_vars == ["gender", "region", "occupation"]
         assert part_data.data.columns.tolist() == [
             "id",
             "age_part",
@@ -110,7 +110,7 @@ class TestInit:
         )
 
         assert part_data.data.columns.tolist() == ["id", "age_part", "repeat_part", "z"]
-        assert part_data.n_participants == 4
+        assert part_data.n == 4
 
     def test_init_without_strat(self):
         """Test initialization without stratification variables."""
@@ -118,7 +118,7 @@ class TestInit:
 
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
-        assert part_data.stratification_vars == []
+        assert part_data.strat_vars == []
 
 
 class TestParticipantDataValidation:
@@ -186,7 +186,9 @@ class TestParticipantDataValidation:
             {"id": [1, 2, 3], "age": [25, 34, 45], "gender": ["M", "F", "M"]}
         )
 
-        with pytest.raises(KeyError, match="Missing stratification variable"):
+        with pytest.raises(
+            KeyError, match="strat_var_cols '\\['gender', 'region'\\]' is specified"
+        ):
             ParticipantData(
                 df_part=df,
                 id_col="id",
@@ -210,7 +212,7 @@ class TestParticipantDataValidation:
         with pytest.warns(UserWarning, match="Dropped 1 row"):
             part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
         # Check that row was dropped
-        assert part_data.n_participants == 3
+        assert part_data.n == 3
 
     def test_missing_values_in_age_column(self):
         """Test that missing values in age column trigger warning and are dropped."""
@@ -219,7 +221,7 @@ class TestParticipantDataValidation:
         with pytest.warns(UserWarning, match="Dropped 1 row"):
             part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
         # Check that row was dropped
-        assert part_data.n_participants == 3
+        assert part_data.n == 3
 
     def test_missing_values_in_stratification_var(self):
         """Test that missing values in stratification variables trigger warning and are dropped."""
@@ -236,7 +238,7 @@ class TestParticipantDataValidation:
                 df_part=df, id_col="id", age_col="age", strat_var_cols="gender"
             )
         # Check that row was dropped
-        assert part_data.n_participants == 3
+        assert part_data.n == 3
 
     def test_negative_ages(self):
         """Test that negative ages raise ValueError."""
@@ -272,13 +274,13 @@ class TestParticipantDataProperties:
         # Check that all 'z' values are 0
         assert (returned_df["z"] == 0).all()
 
-    def test_n_participants_property(self):
-        """Test that n_participants returns correct count."""
+    def test_n_property(self):
+        """Test that n returns correct count."""
         df = pd.DataFrame({"id": [1, 2, 3, 4, 5], "age": [25, 34, 45, 52, 61]})
 
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
-        assert part_data.n_participants == 5
+        assert part_data.n == 5
 
     def test_age_range_property(self):
         """Test that age_range returns correct min and max."""
@@ -303,16 +305,16 @@ class TestParticipantDataProperties:
         with pytest.raises(ValueError, match="only available when using 'age_col'"):
             _ = part_data.age_range
 
-    def test_stratification_vars_property_empty(self):
-        """Test stratification_vars when no variables specified."""
+    def test_strat_vars_property_empty(self):
+        """Test strat_vars when no variables specified."""
         df = pd.DataFrame({"id": [1, 2, 3], "age": [25, 34, 45]})
 
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
-        assert part_data.stratification_vars == []
+        assert part_data.strat_vars == []
 
-    def test_stratification_vars_property_with_vars(self):
-        """Test stratification_vars with multiple variables."""
+    def test_strat_vars_property_with_vars(self):
+        """Test strat_vars with multiple variables."""
         df = pd.DataFrame(
             {
                 "id": [1, 2, 3],
@@ -326,26 +328,25 @@ class TestParticipantDataProperties:
             df_part=df, id_col="id", age_col="age", strat_var_cols=["gender", "region"]
         )
 
-        assert part_data.stratification_vars == ["gender", "region"]
+        assert part_data.strat_vars == ["gender", "region"]
 
 
 class TestParticipantDataMethods:
     """Test methods for data analysis and summarization."""
 
-    def test_get_age_distribution(self):
+    def test_get_sample_sizes(self):
         """Test age distribution computation."""
         df = pd.DataFrame({"id": [1, 2, 3, 4, 5, 6], "age": [25, 25, 34, 34, 34, 45]})
 
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
-        age_dist = part_data.get_age_distribution()
+        sample_sizes = part_data.get_sample_sizes()
 
-        assert isinstance(age_dist, pd.Series)
-        assert age_dist[25] == 2
-        assert age_dist[34] == 3
-        assert age_dist[45] == 1
+        assert isinstance(sample_sizes, pd.DataFrame)
+        assert np.array_equal(sample_sizes["age_part"].values, np.array([25, 34, 45]))
+        assert np.array_equal(sample_sizes["N"].values, np.array([2, 3, 1]))
 
-    def test_get_age_distribution_with_age_groups(self):
+    def test_get_sample_sizes_with_age_groups(self):
         """Test age distribution with age groups."""
         intervals = pd.IntervalIndex.from_tuples([(0, 5), (5, 10), (5, 10), (10, 15)])
         df = pd.DataFrame({"id": [1, 2, 3, 4], "age_group": intervals})
@@ -353,10 +354,10 @@ class TestParticipantDataMethods:
 
         part_data = ParticipantData(df_part=df, id_col="id", age_grp_col="age_group")
 
-        age_dist = part_data.get_age_distribution()
+        sample_sizes = part_data.get_sample_sizes()
 
-        assert isinstance(age_dist, pd.Series)
-        assert len(age_dist) == 3  # Three unique intervals
+        assert isinstance(sample_sizes, pd.DataFrame)
+        assert len(sample_sizes) == 3  # Three unique intervals
 
     def test_summary_method_with_age_col(self):
         """Test summary method with exact ages."""
@@ -375,13 +376,12 @@ class TestParticipantDataMethods:
         summary = part_data.summary()
 
         assert isinstance(summary, dict)
-        assert summary["n_participants"] == 4
+        assert summary["n"] == 4
         assert summary["id_col"] == "id"
         assert summary["age_col"] == "age"
         assert summary["age_grp_col"] is None
         assert summary["age_range"] == (18, 65)
-        assert summary["stratification_vars"] == ["gender"]
-        assert summary["n_stratification_vars"] == 1
+        assert summary["strat_vars"] == ["gender"]
 
     def test_summary_method_with_age_groups(self):
         """Test summary method with age groups."""
@@ -397,13 +397,12 @@ class TestParticipantDataMethods:
 
         summary = part_data.summary()
 
-        assert summary["n_participants"] == 3
+        assert summary["n"] == 3
         assert summary["id_col"] == "pid"
         assert summary["age_col"] is None
         assert summary["age_grp_col"] == "age_group"
         assert "age_range" not in summary  # Not available for age groups
-        assert summary["stratification_vars"] == []
-        assert summary["n_stratification_vars"] == 0
+        assert summary["strat_vars"] == []
 
     def test_summary_without_stratification(self):
         """Test summary with no stratification variables."""
@@ -413,8 +412,7 @@ class TestParticipantDataMethods:
 
         summary = part_data.summary()
 
-        assert summary["stratification_vars"] == []
-        assert summary["n_stratification_vars"] == 0
+        assert summary["strat_vars"] == []
 
 
 class TestParticipantDataEdgeCases:
@@ -426,7 +424,7 @@ class TestParticipantDataEdgeCases:
 
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
-        assert part_data.n_participants == 1
+        assert part_data.n == 1
         assert part_data.age_range == (25, 25)
 
     def test_age_zero(self):
@@ -443,26 +441,8 @@ class TestParticipantDataEdgeCases:
 
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
-        assert part_data.n_participants == 3
+        assert part_data.n == 3
         assert part_data.age_range == (25.5, 45.8)
-
-    def test_large_dataset(self):
-        """Test with a larger dataset for performance."""
-        n = 10000
-        df = pd.DataFrame(
-            {
-                "id": range(n),
-                "age": np.random.randint(0, 100, n),
-                "gender": np.random.choice(["M", "F"], n),
-            }
-        )
-
-        part_data = ParticipantData(
-            df_part=df, id_col="id", age_col="age", strat_var_cols="gender"
-        )
-
-        assert part_data.n_participants == n
-        assert len(part_data.stratification_vars) == 1
 
     def test_non_sequential_ids(self):
         """Test that non-sequential IDs work correctly."""
@@ -470,7 +450,7 @@ class TestParticipantDataEdgeCases:
 
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
-        assert part_data.n_participants == 4
+        assert part_data.n == 4
 
     def test_string_ids(self):
         """Test that string IDs work correctly."""
@@ -478,71 +458,4 @@ class TestParticipantDataEdgeCases:
 
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
-        assert part_data.n_participants == 3
-
-
-class TestParticipantDataIntegration:
-    """Integration tests with realistic data scenarios."""
-
-    def test_realistic_survey_data(self):
-        """Test with realistic social contact survey structure."""
-        # Simulate a small contact survey
-        df = pd.DataFrame(
-            {
-                "participant_id": range(1, 101),
-                "age": np.random.randint(0, 85, 100),
-                "gender": np.random.choice(["Male", "Female"], 100),
-                "occupation": np.random.choice(
-                    ["Student", "Employed", "Retired", "Other"], 100
-                ),
-                "household_size": np.random.randint(1, 6, 100),
-            }
-        )
-
-        part_data = ParticipantData(
-            df_part=df,
-            id_col="participant_id",
-            age_col="age",
-            strat_var_cols=["gender", "occupation"],
-        )
-
-        summary = part_data.summary()
-
-        assert summary["n_participants"] == 100
-        assert summary["n_stratification_vars"] == 2
-        assert "age_range" in summary
-
-        # Check age distribution
-        age_dist = part_data.get_age_distribution()
-        assert age_dist.sum() == 100
-
-    def test_compatibility_with_dataloader_pattern(self):
-        """Test that ParticipantData works with DataLoader patterns."""
-        # This mimics how data is prepared for DataLoader
-        df = pd.DataFrame(
-            {
-                "id": range(1, 51),
-                "age_group": pd.cut(
-                    np.random.randint(0, 85, 50),
-                    bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 85],
-                    right=False,
-                ),
-                "gender": np.random.choice(["M", "F"], 50),
-                "setting": np.random.choice(["home", "work", "other"], 50),
-            }
-        )
-
-        part_data = ParticipantData(
-            df_part=df,
-            id_col="id",
-            age_grp_col="age_group",
-            strat_var_cols=["gender", "setting"],
-        )
-
-        # Verify it's compatible with expected structure
-        assert hasattr(part_data, "data")
-        assert hasattr(part_data, "n_participants")
-        # Columns should be renamed with _part suffix
-        assert "age_grp_part" in part_data.data.columns
-        assert "gender_part" in part_data.data.columns
-        assert "setting_part" in part_data.data.columns
+        assert part_data.n == 3

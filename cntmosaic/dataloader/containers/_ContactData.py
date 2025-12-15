@@ -34,7 +34,17 @@ class ContactData:
     strat_var_cols : Optional[Union[List[str], str]], default=None
         Stratification variable column name(s) for contacts.
         Can be a single string or list of strings. Examples: 'setting', ['setting', 'duration'].
-        These variables allow for setting-specific or context-specific contact matrices.
+        
+        **Important**: If multiple variables are specified (e.g., ['setting', 'duration']),
+        they will be **combined into a single composite stratification variable** by DataLoader.
+        For example, ['setting', 'duration'] with categories ['home', 'work'] and ['short', 'long']
+        will create a combined variable with categories: ['home_short', 'home_long', 'work_short', 'work_long'].
+        
+        **Consistency requirement**: The same stratification variables must be specified across:
+        - ParticipantData (required if FULL stratification mode)
+        - ContactData (required if stratifying contacts)
+        - PopulationData (required if using stratified population data)
+        - StratPropData (required, one object per composite stratification)
     cnt_col : str, default='y'
         Name of the column for contact counts/indicators. If not present in df_cnt,
         it will be automatically created and initialized to 1 (one contact per row).

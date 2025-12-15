@@ -24,7 +24,13 @@ from numpyro import distributions as dist
 from numpyro.handlers import scope
 from numpyro.infer.autoguide import AutoNormal
 
-from ...dataloader import CoordToColumns, DataLoader
+from ...dataloader import (
+    ContactData,
+    DataLoader,
+    ParticipantData,
+    PopulationData,
+    StratPropData,
+)
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator, Subgroup
 from .._BRC import BRC
@@ -90,15 +96,14 @@ def sample_dataloader():
 
     part_gen = ParticipantGenerator(population)
     df_part = part_gen.generate(seed=42)
-    df_part["age_part"] = df_part["age_group"]
 
     cnt_gen = ContactGenerator(df_part, cint_matrices=contact_matrix, model="poisson")
     df_cnt = cnt_gen.generate(seed=42)
 
-    col_map = CoordToColumns(
-        age_part="age_part", age_cnt="age_cnt", age_pop="age", size_pop="P"
-    )
-    dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
+    part_data = ParticipantData(df_part, id_col="id", age_col="age_group")
+    cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
+    pop_data = PopulationData(df_pop=df_age_dist, age_col="age", size_col="P")
+    dataloader = DataLoader(part_data, cnt_data, pop_data)
 
     return dataloader
 
@@ -164,18 +169,12 @@ class TestInitialization:
         """Test that basic initialization works correctly."""
         model = mock_brc_model
 
-        assert model.ds is not None
+        assert model.data is not None
         assert model.priors is not None
         assert model.likelihood == "poisson"
         assert hasattr(model, "age_min")
         assert hasattr(model, "age_max")
         assert hasattr(model, "A")
-
-    def test_dataloader_loaded(self, mock_brc_model):
-        """Test that dataloader is properly loaded."""
-        model = mock_brc_model
-        assert model.ds is not None
-        assert hasattr(model.ds, "age")
 
     def test_priors_stored(self, mock_brc_model, valid_priors):
         """Test that priors are correctly stored."""

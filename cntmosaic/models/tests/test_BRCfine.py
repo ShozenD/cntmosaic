@@ -1,17 +1,13 @@
-import pytest
 import numpy as np
-
+import pytest
 from jax.random import PRNGKey
-import numpyro
 from numpyro.infer.autoguide import AutoNormal
 
+from ...dataloader import ContactData, DataLoader, ParticipantData, PopulationData
 from ...datasets import load_age_distribution, load_template_patterns
-from ...utils import AgeBins
-from ...sim import ParticipantGenerator, MatrixGenerator, ContactGenerator, Subgroup
-
-from ...dataloader import DataLoader, CoordToColumns
+from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator, Subgroup
 from .._BRCfine import BRCfine
-from ..priors import Spline2D, PSpline2D
+from ..priors import Spline2D
 
 # Language: python
 
@@ -25,7 +21,7 @@ templates = load_template_patterns("United_States")
 
 
 @pytest.fixture
-def generate_contact_data():
+def generate_data():
     population = Subgroup(
         n=1500, age_dist=df_age_dist.P.values, mean_cint_margin=15.0, label="general"
     )
@@ -35,57 +31,97 @@ def generate_contact_data():
 
     part_gen = ParticipantGenerator(population)
     df_part = part_gen.generate(seed=42)
-    df_part["age_part"] = df_part["age_group"]
 
     cnt_gen = ContactGenerator(df_part, cint_matrices=contact_matrix, model="poisson")
     df_cnt = cnt_gen.generate(seed=42)
 
-    col_map = CoordToColumns(
-        age_part="age_part", age_cnt="age_cnt", age_pop="age", size_pop="P"
+    part_data = ParticipantData(df_part, id_col="id", age_col="age_group")
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    pop_data = PopulationData(df_age_dist, age_col="age", size_col="P")
+
+    dataloader = DataLoader(part_data, cnt_data, pop_data)
+
+    return dataloader
+
+
+@pytest.fixture
+def generate_data_with_repeats():
+    population = Subgroup(
+        n=1500, age_dist=df_age_dist.P.values, mean_cint_margin=15.0, label="general"
     )
-    dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
+
+    matrix_gen = MatrixGenerator(templates)
+    contact_matrix = matrix_gen.generate_single(population, seed=42)
+
+    part_gen = ParticipantGenerator(population)
+    df_part = part_gen.generate(seed=42)
+    df_part["repeat"] = np.random.randint(0, 3, size=df_part.shape[0])  # 3 repeat max
+
+    cnt_gen = ContactGenerator(df_part, cint_matrices=contact_matrix, model="poisson")
+    df_cnt = cnt_gen.generate(seed=42)
+
+    part_data = ParticipantData(
+        df_part, id_col="id", age_col="age_group", repeat_col="repeat"
+    )
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    pop_data = PopulationData(df_age_dist, age_col="age", size_col="P")
+
+    dataloader = DataLoader(part_data, cnt_data, pop_data)
 
     return dataloader
 
 
 # Test initialization
-def test_initialization(generate_contact_data):
-    dataloader = generate_contact_data
-    priors = {"rate": Spline2D(prior_type="global")}
-    model = BRCfine(dataloader, priors, likelihood="poisson")
+class TestInit:
 
-    assert len(model.y) > 0
-    assert len(model.aid) == len(model.y)
-    assert len(model.bid) == len(model.y)
-    assert len(model.log_N) > 0
-    assert model.log_P.shape[1] == model.A
-    assert model.log_S.shape[0] == len(model.y)
+    def test_basic_init(self, generate_data):
+        dataloader = generate_data
+        priors = {"rate": Spline2D(prior_type="global")}
+        model = BRCfine(dataloader, priors, likelihood="poisson")
 
-    model = BRCfine(dataloader, priors, likelihood="negbin", inv_odist=2.0)
-    assert model.inv_odist == 2.0
-    assert model.likelihood == "negbin"
+        assert len(model.y) > 0
+        assert len(model.aid) == len(model.y)
+        assert len(model.bid) == len(model.y)
+        assert len(model.log_N) > 0
+        assert model.log_P.shape[1] == model.A
+        assert model.log_S.shape[0] == len(model.y)
+
+        model = BRCfine(dataloader, priors, likelihood="negbin", inv_odist=2.0)
+        assert model.inv_odist == 2.0
+        assert model.likelihood == "negbin"
+
+    def test_init_with_rid(self, generate_data_with_repeats):
+        dataloader = generate_data_with_repeats
+
+        priors = {"rate": Spline2D(prior_type="global")}
+        model = BRCfine(dataloader, priors, likelihood="poisson")
+
+        assert hasattr(model, "rid")
+        assert len(model.rid) == len(model.y)
+        assert model.hill.max_value == 2
 
 
 # Test SVI inference
-def test_svi_inference(generate_contact_data):
-    dataloader = generate_contact_data
-    priors = {"rate": Spline2D(prior_type="global")}
-    model = BRCfine(dataloader, priors, likelihood="poisson")
+class TestInference:
 
-    guide = AutoNormal(model.model)
-    prng_key = PRNGKey(0)
-    model.run_inference_svi(prng_key, guide, num_steps=1000, peak_lr=0.01)
+    def test_svi_inference(self, generate_data):
+        dataloader = generate_data
+        priors = {"rate": Spline2D(prior_type="global")}
+        model = BRCfine(dataloader, priors, likelihood="poisson")
 
-    assert model._svi_result is not None
+        prng_key = PRNGKey(0)
+        guide = AutoNormal(model.model)
+        model.run_inference_svi(prng_key, guide, num_steps=1000, peak_lr=0.01)
 
+        assert model._svi_result is not None
 
-# Test MCMC inference
-def test_mcmc_inference(generate_contact_data):
-    dataloader = generate_contact_data
-    priors = {"rate": Spline2D(prior_type="global")}
-    model = BRCfine(dataloader, priors, likelihood="poisson")
+    # Test MCMC inference
+    def test_mcmc_inference(self, generate_data):
+        dataloader = generate_data
+        priors = {"rate": Spline2D(prior_type="global")}
+        model = BRCfine(dataloader, priors, likelihood="poisson")
 
-    prng_key = PRNGKey(1)
-    model.run_inference_mcmc(prng_key, num_warmup=10, num_samples=10, num_chains=1)
+        prng_key = PRNGKey(1)
+        model.run_inference_mcmc(prng_key, num_warmup=10, num_samples=10, num_chains=1)
 
-    assert model._mcmc_result is not None
+        assert model._mcmc_result is not None

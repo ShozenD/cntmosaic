@@ -341,10 +341,10 @@ class BaseLoader(ABC):
             Log population distribution. If no stratification, shape (1, A). If stratified,
             shape (1, K*A) where K is the possible strata combinations.
         """
-        if self.col_map.strat_vars_cnt:
+        if self.col_map.strat_vars_pop:
             P = (
                 self.pop_data.pivot(
-                    index=self.col_map.strat_vars_cnt,
+                    index=self.col_map.strat_vars_pop,
                     columns=self.col_map.age_pop,
                     values=self.col_map.P,
                 )

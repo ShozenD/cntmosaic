@@ -1,13 +1,11 @@
-from typing import Optional, Union
+from typing import Union
 
-import jax.numpy as jnp
 import numpy as np
 import numpyro
 from numpy.typing import NDArray
 from numpyro import distributions as dist
 from scipy.interpolate import BSpline
 
-from .._math import inverse_alr, inverse_clr, inverse_ilr
 from .._utils import (
     age_age_grid,
     diff_age_age_grid,
@@ -121,12 +119,6 @@ class Spline2D(Prior2D):
     grid_type : {'age-age', 'diff-age'}, default='age-age'
         The type of age grid to use. The 'age-age' grid smoothes over age pairs, while the
         'diff-age' grid smoothes over age differences and contact ages.
-    transform : {None, 'alr', 'clr', 'ilr'}, default=None
-        Compositional transformation to use when mapping from the unconstrained space to the simplex:
-        - None: No transformation
-        - 'alr': Additive log-ratio transformation (recommended)
-        - 'clr': Centered log-ratio transformation
-        - 'ilr': Isometric log-ratio transformation
 
     Attributes
     ----------
@@ -193,7 +185,6 @@ class Spline2D(Prior2D):
     ...     prior_type='partial',
     ...     M=25,
     ...     degree=3,
-    ...     transform='alr',
     ...     grid_type='age-age'
     ... )
     >>> prior_partial.set_age_bounds(0, 60)  # 13 age groups
@@ -213,7 +204,6 @@ class Spline2D(Prior2D):
     ...     prior_type='full',
     ...     M=30,
     ...     degree=3,
-    ...     transform='alr'
     ... )
     >>> prior_full.set_age_bounds(0, 80)
     >>> prior_full.set_event_dim(9)  # 3x3 grid of settings
@@ -227,14 +217,6 @@ class Spline2D(Prior2D):
     - The number of basis functions is approximately M per dimension
     - Computational complexity: O(M² × A²) for basis construction
     - Memory usage: Φ has shape (A² or A(A+1)/2, M²)
-
-    Computational Efficiency
-    ------------------------
-    Compared to Gaussian processes:
-    - Faster: O(M²) vs O(A⁶) for full GP
-    - More scalable: Linear in data size after basis construction
-    - Stable: Well-conditioned basis matrices
-    - Flexible: Easy to adjust smoothness via M and degree
 
     See Also
     --------
@@ -259,16 +241,11 @@ class Spline2D(Prior2D):
     )
 
     def __init__(
-        self,
-        prior_type: str,
-        M: int = 30,
-        degree: int = 3,
-        grid_type: str = "age-age",
-        transform: Union[str, None] = None,
+        self, prior_type: str, M: int = 30, degree: int = 3, grid_type: str = "age-age"
     ):
 
         validate_init_params(M, degree)
-        super().__init__(grid_type, transform, prior_type)
+        super().__init__(grid_type, prior_type)
         self.M = M  # Number of basis functions (same for both dimensions)
         self.degree = degree  # Degree of B-splines (same for both dimensions)
         self.n_knots_inner = M + degree + 1
@@ -526,19 +503,18 @@ class Spline2D(Prior2D):
         beta = numpyro.sample(
             "spline_coefs",
             dist.Normal(0, 1),
-            sample_shape=(self.PHI.shape[-1], self.event_dim_eff),
+            sample_shape=(self.PHI.shape[-1], self.event_dim),
         )
         f = self.PHI @ beta
         f = f.swapaxes(0, 1)
-        f = f.reshape((self.event_dim_eff, self.A, self.A))
-        f = self.trans_loc + f
-        return self.apply_inverse_transform(f)
+        f = f.reshape((self.event_dim, self.A, self.A))
+        return self.loc + f
 
     def sample_full(self):
         beta_diag = numpyro.sample(
             "spline_coefs_diag",
             dist.Normal(0, 1),
-            sample_shape=(self.PHI_diag.shape[-1], self.event_dim_diag_eff),
+            sample_shape=(self.PHI_diag.shape[-1], self.event_dim_diag),
         )
         beta_non_diag = numpyro.sample(
             "spline_coefs_non_diag",
@@ -547,8 +523,8 @@ class Spline2D(Prior2D):
         )
 
         f_diag = self.PHI_diag @ beta_diag
-        f_diag = f_diag[self.symm_tril_idx, :].swapaxes(0, 1)
-        f_diag = f_diag.reshape((self.event_dim_diag_eff, self.A, self.A))
+        f_diag = f_diag[self.symm_tril_idx, :].swapaxes(0, 1)  # Must be symmetric
+        f_diag = f_diag.reshape((self.event_dim_diag, self.A, self.A))
 
         f_non_diag = self.PHI_non_diag @ beta_non_diag
         f_non_diag = f_non_diag.swapaxes(0, 1)
@@ -557,8 +533,7 @@ class Spline2D(Prior2D):
         # Assemble diagonal and off-diagonal blocks into full event grid
         f = self._assemble_full_prior_blocks(f_diag, f_non_diag)
 
-        f = self.trans_loc + f
-        return self.apply_inverse_transform(f)
+        return self.loc + f
 
     def sample(self):
         """
@@ -585,27 +560,21 @@ class Spline2D(Prior2D):
         - Computes: f = Φ β
         - Symmetrizes using lower triangular indices
         - Returns: (A, A) symmetric matrix
-        - No transformation applied
 
         **Partial Prior** (shared basis, dimension-specific coefficients):
-        - Samples: β ~ N(0, I_{M² × event_dim_eff})
+        - Samples: β ~ N(0, I_{M² × event_dim})
         - Computes: f = Φ β for each dimension
-        - Adds location parameter: f += trans_loc
-        - Applies inverse transformation (ALR/CLR/ILR if specified)
+        - Adds location parameter: f += loc
         - Returns: (event_dim, A, A)
 
         **Full Prior** (separate diagonal/off-diagonal):
         - Samples: β_diag ~ N(0, I_{M² × event_dim_diag})
-        - Samples: β_non_diag ~ N(0, I_{M² × event_dim_non_diag})
+        - Samples: β_non_diag ~ N(0, I_{M² × event_dim_non_diag_eff})
         - Computes: f_diag = Φ_diag β_diag (symmetrized)
         - Computes: f_non_diag = Φ_non_diag β_non_diag
         - Combines diagonal and off-diagonal elements
-        - Adds location parameter: f += trans_loc
-        - Applies inverse transformation
+        - Adds location parameter: f += loc
         - Returns: (event_dim, A, A)
-
-        For 'full' prior with ALR/ILR transformations, the last diagonal element
-        is excluded to maintain proper dimensionality for the log-ratio transformation.
 
         Raises
         ------

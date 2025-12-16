@@ -1,7 +1,8 @@
-import pytest
-from .._Spline2D import Spline2D
 import jax.numpy as jnp
 import numpyro
+import pytest
+
+from .._Spline2D import Spline2D
 
 
 def test_basis_shape_global():
@@ -11,33 +12,31 @@ def test_basis_shape_global():
 
     # Check that the event dimension is set correctly
     assert prior.event_dim == 1
-    assert prior.event_dim_eff == 1
 
     # Check if basis matrices are set correctly
     assert prior.PHI.shape == (85 * (85 + 1) / 2, 30 * 30)
 
 
 def test_basis_shape_partial():
-    prior = Spline2D(prior_type="partial", transform="ilr")
+    prior = Spline2D(prior_type="partial")
     prior.set_age_bounds(0, 84)
     prior.set_event_dim(4)
 
     # Check that the event dimension is set correctly
     assert prior.event_dim == 4
-    assert prior.event_dim_eff == 3
 
     # Check existence and dimension of indices
     assert prior.PHI.shape == (85 * 85, 30 * 30)
 
 
 def test_basis_shape_full():
-    prior = Spline2D(prior_type="full", transform="ilr")
+    prior = Spline2D(prior_type="full")
     prior.set_age_bounds(0, 84)
     prior.set_event_dim(3)  # K=3 categories -> event_dim = 3*3 = 9 matrices
 
     assert prior.event_dim == 9
-    assert prior.event_dim_latent == 8  # ILR: latent space has event_dim - 1 dimensions
-    assert prior.event_dim_eff == 5  # Actually sampled: 2 diag + 3 off-diag
+    # Actually sampled: 3 diag + 3 off-diag (halved due to reciprocity)
+    assert prior.event_dim_non_diag_eff == 3
 
     # Check existence and dimension of indices
     assert prior.PHI_diag.shape == (85 * (85 + 1) / 2, 30 * 30)
@@ -60,7 +59,7 @@ def test_sample_global():
 
 def test_sample_partial():
     """Test sampling from partial prior."""
-    prior = Spline2D(prior_type="partial", transform="ilr")
+    prior = Spline2D(prior_type="partial")
     prior.set_age_bounds(0, 9)
     prior.set_event_dim(3)
     prior.set_loc(0.0)  # Use scalar location instead
@@ -75,7 +74,7 @@ def test_sample_partial():
 
 def test_sample_full():
     """Test sampling from full prior."""
-    prior = Spline2D(prior_type="full", transform="ilr")
+    prior = Spline2D(prior_type="full")
     prior.set_age_bounds(0, 9)
     prior.set_event_dim(2)  # K=2 categories -> event_dim = 2*2 = 4 matrices
     prior.set_loc(0.0)  # Use scalar location instead

@@ -104,12 +104,6 @@ class HSGP2D(Prior2D):
     M: int or list[int], default=[30, 30]
         The number of eigenvalues and eigenfunctions to use in the HSGP approximation.
         A higher number increases accuracy but also computational cost.
-    transform : {None, 'alr', 'clr', 'ilr'}, default=None
-        Compositional transformation to use when mapping from the unconstrained space to the simplex:
-        - None: No transformation
-        - 'alr': Additive log-ratio transformation (recommended)
-        - 'clr': Centered log-ratio transformation
-        - 'ilr': Isometric log-ratio transformation
 
     Examples
     --------
@@ -155,10 +149,9 @@ class HSGP2D(Prior2D):
         nu: float = 5 / 2,
         C: Union[float, List[float]] = [2.0, 2.0],
         M: Union[int, List[int]] = [30, 30],
-        transform: Union[str, None] = None,
     ) -> None:
         validate_init_params(nu, C, M)
-        super().__init__(grid_type, transform, prior_type)
+        super().__init__(grid_type, prior_type)
         self.nu = nu
         self.C = C
         self.M = M
@@ -290,38 +283,37 @@ class HSGP2D(Prior2D):
     def sample_partial(self) -> ArrayLike:
         # Sample GP scale parameters for each event
         sigma = numpyro.sample(
-            "gp_scale", dist.HalfNormal(1.0), sample_shape=(self.event_dim_latent,)
+            "gp_scale", dist.HalfNormal(1.0), sample_shape=(self.event_dim,)
         )
         lenscale = numpyro.sample(
-            "gp_lenscale", dist.HalfNormal(1.0), sample_shape=(self.event_dim_latent,)
+            "gp_lenscale", dist.HalfNormal(1.0), sample_shape=(self.event_dim,)
         )
 
-        # Vectorized SPD (shape: (event_dim_latent, num_basis))
+        # Vectorized SPD (shape: (event_dim, num_basis))
         sqrt_spd = jnp.squeeze(vmap(self._compute_sqrt_diag_spd)(sigma, lenscale))
 
         # Sample eigenfunction coefficients
         beta = numpyro.sample(
             "gp_coefs",
             dist.Normal(0.0, 1.0),
-            sample_shape=(self.event_dim_latent, self.PHI.shape[-1]),
+            sample_shape=(self.event_dim, self.PHI.shape[-1]),
         )
 
-        f = (sqrt_spd * beta) @ self.PHI.T  # shape: (event_dim_latent, N)
-        f = f.reshape((self.event_dim_latent, self.A, self.A))
-        f = self.trans_loc + f
-        return self.apply_inverse_transform(f)
+        f = (sqrt_spd * beta) @ self.PHI.T  # shape: (event_dim, N)
+        f = f.reshape((self.event_dim, self.A, self.A))
+        return self.loc + f
 
     def sample_full(self) -> ArrayLike:
         # Sample GP scale parameters for diagonal and non-diagonal elements
         sigma_diag = numpyro.sample(
             "gp_scale_diag",
             dist.HalfNormal(1.0),
-            sample_shape=(self.event_dim_diag_eff,),
+            sample_shape=(self.event_dim_diag,),
         )
         lenscale_diag = numpyro.sample(
             "gp_lenscale_diag",
             dist.HalfNormal(1.0),
-            sample_shape=(self.event_dim_diag_eff,),
+            sample_shape=(self.event_dim_diag,),
         )
 
         sigma_non_diag = numpyro.sample(
@@ -347,7 +339,7 @@ class HSGP2D(Prior2D):
         beta_diag = numpyro.sample(
             "gp_coefs_diag",
             dist.Normal(0.0, 1.0),
-            sample_shape=(self.event_dim_diag_eff, self.PHI_diag.shape[-1]),
+            sample_shape=(self.event_dim_diag, self.PHI_diag.shape[-1]),
         )
         beta_non_diag = numpyro.sample(
             "gp_coefs_non_diag",
@@ -357,15 +349,14 @@ class HSGP2D(Prior2D):
 
         f_diag = (sqrt_spd_diag * beta_diag) @ self.PHI_diag.T
         f_diag = f_diag[:, self.symm_tril_ix]
-        f_diag = f_diag.reshape((self.event_dim_diag_eff, self.A, self.A))
+        f_diag = f_diag.reshape((self.event_dim_diag, self.A, self.A))
 
         f_non_diag = (sqrt_spd_non_diag * beta_non_diag) @ self.PHI_non_diag.T
         f_non_diag = f_non_diag.reshape((self.event_dim_non_diag_eff, self.A, self.A))
 
         # Allocate diagonal and off-diagonal elements into full K×K contact matrix grid
         f = self._assemble_full_prior_blocks(f_diag, f_non_diag)
-        f = self.trans_loc + f
-        return self.apply_inverse_transform(f)
+        return self.loc + f
 
     def sample(self) -> ArrayLike:
         """

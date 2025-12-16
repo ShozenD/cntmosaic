@@ -1,16 +1,11 @@
 from typing import Optional
 
-import jax
-import jax.numpy as jnp
-import numpy as np
 import numpyro
-from jax import vmap
 from jax.typing import ArrayLike
 from numpyro import distributions as dist
 
 from ...distributions._IGMRF2D import IGMRF2D as IGMRF2D_dist
 from ...distributions._SymIGMRF2D import SymIGMRF2D
-from .._math import inverse_alr, inverse_clr, inverse_ilr
 from .._utils import symm_from_tril_ix_col
 from ._Prior2D import Prior2D
 
@@ -71,14 +66,8 @@ class IGMRF2D(Prior2D):
         - (2, 2): Second-order differences (smoother, penalizes curvature)
         Higher orders produce progressively smoother fields.
     loc : float or array-like, default=0.0
-        Prior location (mean) parameter. Can be scalar or array of shape (event_dim_latent, A, A).
+        Prior location (mean) parameter. Can be scalar or array of shape (event_dim, A, A).
         After transformation is applied in Prior2D.set_loc().
-    transform : {None, 'alr', 'clr', 'ilr'}, default=None
-        Compositional data transformation:
-        - None: No transformation (simplex constraint via softmax)
-        - 'alr': Additive log-ratio transformation (recommended)
-        - 'clr': Centered log-ratio transformation
-        - 'ilr': Isometric log-ratio transformation
 
     Attributes
     ----------
@@ -90,10 +79,8 @@ class IGMRF2D(Prior2D):
         Number of age groups (set by set_age_bounds)
     sym_idx : array
         Indices for symmetrizing lower triangular elements (global prior only)
-    trans_loc : array
-        Transformed location parameter (partial/full priors)
-    event_dim_eff : int
-        Effective event dimension after transformation
+    loc : array
+        Location parameter (mean) (partial/full priors)
     event_dim_diag : int
         Dimension for diagonal elements (full prior only)
     event_dim_non_diag : int
@@ -111,8 +98,6 @@ class IGMRF2D(Prior2D):
         Sample asymmetric contact matrix with shared precision
     sample_full()
         Sample contact matrix with separate diagonal/off-diagonal priors
-    apply_inverse_transform(f)
-        Apply inverse compositional transformation to latent field
 
     Examples
     --------
@@ -181,9 +166,8 @@ class IGMRF2D(Prior2D):
         grid_type: Optional[str] = "age-age",
         order: tuple = (2, 2),
         loc: ArrayLike = 0.0,
-        transform: Optional[str] = None,
     ):
-        super().__init__(grid_type, transform, prior_type)
+        super().__init__(grid_type, prior_type)
         self.loc = loc
         self.order = order
 
@@ -288,22 +272,17 @@ class IGMRF2D(Prior2D):
         dimension and applies compositional transformations.
 
         The latent field f is sampled from IGMRF2D_dist with conditional precision
-        τ in the first dimension, then shifted by trans_loc and transformed to the
-        simplex (if transform is specified).
+        τ in the first dimension, then shifted by loc.
 
         Returns
         -------
-        f : array, shape (event_dim_latent, A, A)
-            Contact matrix after inverse transformation.
+        f : array, shape (event_dim, A, A)
+            Contact matrix.
 
         Notes
         -----
-        - Precision τ ~ Gamma(2, 0.1) independently for each effective dimension
-        - trans_loc is added to f before inverse transformation
-        - The effective dimension (event_dim_latent) depends on the transformation:
-          * None or CLR: A
-          * ALR: A - 1
-          * ILR: A(A-1)/2
+        - Precision τ ~ Gamma(2, 0.1) independently for each event dimension
+        - loc is added to f
 
         Examples
         --------
@@ -335,14 +314,12 @@ class IGMRF2D(Prior2D):
         sample_full : Separate priors for diagonal and off-diagonal elements
         apply_inverse_transform : Apply inverse compositional transformation
         """
-        tau = numpyro.sample(
-            "tau", dist.Gamma(2, 0.1), sample_shape=(self.event_dim_latent,)
-        )
+        tau = numpyro.sample("tau", dist.Gamma(2, 0.1), sample_shape=(self.event_dim,))
         f = numpyro.sample(
             "f", IGMRF2D_dist(self.num_nodes, self.order, cond_prec1=tau)
-        ).reshape((self.event_dim_latent, self.A, self.A))
-        f = self.trans_loc + f
-        return self.apply_inverse_transform(f)
+        ).reshape((self.event_dim, self.A, self.A))
+
+        return self.loc + f
 
     def sample_full(self):
         """
@@ -356,16 +333,16 @@ class IGMRF2D(Prior2D):
 
         Returns
         -------
-        f : array, shape (event_dim_latent, A, A)
-            Contact matrix after inverse transformation. Diagonal and off-diagonal
+        f : array, shape (event_dim, A, A)
+            Contact matrix. Diagonal and off-diagonal
             elements are sampled independently then combined.
 
         Notes
         -----
-        - tau_diag ~ Gamma(2, 0.1) for diagonal elements (shape: event_dim_diag_eff)
+        - tau_diag ~ Gamma(2, 0.1) for diagonal elements (shape: event_dim_diag)
         - tau_non_diag ~ Gamma(2, 0.1) for off-diagonal elements (shape: event_dim_non_diag_eff)
         - f_diag and f_non_diag are sampled separately then combined using indexing
-        - trans_loc is added before inverse transformation
+        - loc is added after assembly
 
         Examples
         --------
@@ -401,7 +378,7 @@ class IGMRF2D(Prior2D):
         sample_global : Symmetric contact matrix
         """
         tau_diag = numpyro.sample(
-            "tau_diag", dist.Gamma(2, 0.1), sample_shape=(self.event_dim_diag_eff,)
+            "tau_diag", dist.Gamma(2, 0.1), sample_shape=(self.event_dim_diag,)
         )
         tau_non_diag = numpyro.sample(
             "tau_non_diag",
@@ -416,7 +393,7 @@ class IGMRF2D(Prior2D):
                 self.order[0],
                 cond_prec=tau_diag,
             ),
-        )[:, self.symm_tril_ix].reshape((self.event_dim_diag_eff, self.A, self.A))
+        )[:, self.symm_tril_ix].reshape((self.event_dim_diag, self.A, self.A))
         f_non_diag = numpyro.sample(
             "f_non_diag",
             IGMRF2D_dist(
@@ -429,8 +406,7 @@ class IGMRF2D(Prior2D):
         # Assemble diagonal and off-diagonal blocks into full event grid
         f = self._assemble_full_prior_blocks(f_diag, f_non_diag)
 
-        f = self.trans_loc + f
-        return self.apply_inverse_transform(f)
+        return self.loc + f
 
     def sample(self):
         """

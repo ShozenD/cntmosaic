@@ -16,7 +16,13 @@ import pytest
 from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
 
-from ...dataloader import CoordToColumns, DataLoader, PopulationProportion
+from ...dataloader import (
+    ContactData,
+    DataLoader,
+    ParticipantData,
+    PopulationData,
+    StratPropData,
+)
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator, Subgroup
 from .._HiBRCfine import HiBRCfine
@@ -29,107 +35,179 @@ from ..priors import HSGP2D, PSpline2D
 df_age_dist = load_age_distribution("United_States")
 templates = load_template_patterns("United_States")
 
+SEED = 42
+
 
 @pytest.fixture
-def generate_unstratified_contact_data():
-    """Generate synthetic contact data without stratification (simplest case)."""
-    subgroup = Subgroup(
-        n=50,
-        age_dist=df_age_dist["P"].to_numpy(),  # Use 'P' column
-        mean_cint_margin=15.0,
+def generate_data_partial():
+    """
+    Generate contact data for the partial case (multiple subgroups, incomplete contact information)
+    """
+
+    # Define subgroups
+    subgroups = [
+        Subgroup(
+            n=300,
+            age_dist=df_age_dist.P.values,
+            mean_cint_margin=8,
+            label="A",
+        ),
+        Subgroup(
+            n=400,
+            age_dist=df_age_dist.P.values,
+            mean_cint_margin=12,
+            label="B",
+        ),
+    ]
+
+    # Generate participants
+    part_gen = ParticipantGenerator(subgroups)
+    df_part = part_gen.generate(SEED)
+    df_part["subgroup"] = pd.Categorical(
+        df_part["subgroup"], categories=["A", "B"], ordered=True
     )
 
-    # Generate participants and contacts
-    part_gen = ParticipantGenerator(subgroup)  # No min_age/max_age parameters
-    participants = part_gen.generate(seed=42)
+    # Generate contact matrix
+    matrix_gen = MatrixGenerator(templates)
+    contact_matrices = matrix_gen.generate_partial(subgroups, SEED)
 
-    mat_gen = MatrixGenerator(templates)
-    matrix = mat_gen.generate_single(subgroup, seed=42)
+    # Generate contacts
+    cnt_gen = ContactGenerator(df_part, contact_matrices)
+    df_cnt = cnt_gen.generate(SEED)
 
-    cnt_gen = ContactGenerator(participants, matrix)
-    contacts = cnt_gen.generate(seed=42)
-
-    # Create DataLoader
-    col_map = CoordToColumns(
-        age_part="age_group",  # Match ParticipantGenerator output
-        age_cnt="age_cnt",
-        id_var="id",
-        age_pop="age",
-        size_pop="P",  # Use 'P' column
+    # Population size offsets
+    df_pop_prop = pd.concat(
+        [
+            pd.DataFrame(
+                {"age": df_age_dist.age, "P": df_age_dist.P * 0.6, "subgroup": "A"}
+            ),
+            pd.DataFrame(
+                {"age": df_age_dist.age, "P": df_age_dist.P * 0.4, "subgroup": "B"}
+            ),
+        ]
+    )
+    df_pop_total = df_pop_prop.groupby("age")["P"].sum().reset_index()
+    df_pop_prop = df_pop_prop.merge(df_pop_total, on="age", suffixes=("", "_total"))
+    df_pop_prop["prop"] = df_pop_prop["P"] / df_pop_prop["P_total"]
+    df_pop_prop["subgroup"] = pd.Categorical(
+        df_pop_prop["subgroup"], categories=["A", "B"], ordered=True
     )
 
-    dataloader = DataLoader(participants, contacts, df_age_dist, col_map=col_map)
-    return dataloader
+    return df_part, df_cnt, df_pop_prop
 
 
-# ============================================================================
-# Test Class Structure and Docstrings
-# ============================================================================
+@pytest.fixture
+def generate_data_full():
+    """
+    Generate contact data for the full case (multiple subgroups, complete contact information)
+    """
+
+    # Define subgroups
+    subgroups = [
+        Subgroup(
+            n=300,
+            age_dist=df_age_dist.P.values,
+            mean_cint_margin=8,
+            label="A",
+        ),
+        Subgroup(
+            n=400,
+            age_dist=df_age_dist.P.values,
+            mean_cint_margin=12,
+            label="B",
+        ),
+    ]
+
+    # Generate participants
+    part_gen = ParticipantGenerator(subgroups)
+    df_part = part_gen.generate(SEED)
+
+    # Generate contact matrix
+    matrix_gen = MatrixGenerator(templates)
+    contact_matrices = matrix_gen.generate_full(subgroups, SEED)
+
+    # Generate contacts
+    cnt_gen = ContactGenerator(df_part, contact_matrices)
+    df_cnt = cnt_gen.generate(SEED)
+
+    # Population size offsets
+    df_strat_prop = pd.concat(
+        [
+            pd.DataFrame(
+                {"age": df_age_dist.age, "P": df_age_dist.P * 0.6, "subgroup": "A"}
+            ),
+            pd.DataFrame(
+                {"age": df_age_dist.age, "P": df_age_dist.P * 0.4, "subgroup": "B"}
+            ),
+        ]
+    )
+    df_pop_total = df_strat_prop.groupby("age")["P"].sum().reset_index()
+    df_strat_prop = df_strat_prop.merge(df_pop_total, on="age", suffixes=("", "_total"))
+    df_strat_prop["prop"] = df_strat_prop["P"] / df_strat_prop["P_total"]
+    df_strat_prop["subgroup"] = pd.Categorical(
+        df_strat_prop["subgroup"], categories=["A", "B"], ordered=True
+    )
+
+    return df_part, df_cnt, df_strat_prop
 
 
-def test_HiBRCfine_class_exists():
-    """Test that HiBRCfine class is properly defined."""
-    assert hasattr(HiBRCfine, "__init__")
-    assert hasattr(HiBRCfine, "model")
-    assert hasattr(HiBRCfine, "set_age_dims")
+class TestInit:
 
+    def test_init_minimal(self, generate_data_partial):
+        df_part, df_cnt, df_pop_prop = generate_data_partial
 
-def test_HiBRCfine_has_comprehensive_docstring():
-    """Test that HiBRCfine class has comprehensive documentation."""
-    docstring = HiBRCfine.__doc__
-    assert docstring is not None
-    assert len(docstring) > 500  # Should be comprehensive
-    assert "Hierarchical" in docstring
-    assert "Parameters" in docstring
-    assert "Examples" in docstring
+        part_data = ParticipantData(
+            df_part, id_col="id", age_col="age_group", strat_var_cols="subgroup"
+        )
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(df_age_dist, age_col="age", size_col="P")
+        strat_prop_data = StratPropData(
+            df_pop_prop, age_col="age", var_name="subgroup", prop_col="prop"
+        )
 
+        dataloader = DataLoader(
+            part_data=part_data,
+            cnt_data=cnt_data,
+            pop_data=pop_data,
+            strat_prop_data=strat_prop_data,
+        )
 
-def test_HiBRCfine_inherits_from_BRCfine():
-    """Test that HiBRCfine properly inherits from BRCfine."""
-    from .._BRCfine import BRCfine
+        priors = {
+            "rate": HSGP2D(prior_type="global"),
+            "subgroup": HSGP2D(prior_type="partial"),
+        }
 
-    assert issubclass(HiBRCfine, BRCfine)
+        model = HiBRCfine(dataloader, priors, "poisson")
 
+    def test_init_full(self, generate_data_full):
+        df_part, df_cnt, df_strat_prop = generate_data_full
 
-# ============================================================================
-# Test Initialization and Type Hints
-# ============================================================================
+        part_data = ParticipantData(
+            df_part, id_col="id", age_col="age_group", strat_var_cols="subgroup"
+        )
+        cnt_data = ContactData(
+            df_cnt, id_col="id", age_col="age_cnt", strat_var_cols="subgroup_cnt"
+        )
+        pop_data = PopulationData(
+            df_strat_prop, age_col="age", size_col="P", strat_var_cols="subgroup"
+        )
+        strat_prop_data = StratPropData(
+            df_strat_prop, age_col="age", var_name="subgroup", prop_col="prop"
+        )
 
+        dataloader = DataLoader(
+            part_data=part_data,
+            cnt_data=cnt_data,
+            pop_data=pop_data,
+            strat_prop_data=strat_prop_data,
+        )
 
-def test_init_type_hints():
-    """Test that __init__ method has proper type hints."""
-    import inspect
+        priors = {
+            "rate": HSGP2D(prior_type="global"),
+            "subgroup": HSGP2D(prior_type="full"),
+        }
 
-    sig = inspect.signature(HiBRCfine.__init__)
-
-    # Check parameter annotations
-    assert "dataloader" in sig.parameters
-    assert "priors" in sig.parameters
-    assert "likelihood" in sig.parameters
-    # Note: HiBRCfine doesn't have 'hill' parameter (inherited behavior)
-
-
-def test_init_with_minimal_args(generate_unstratified_contact_data):
-    """Test initialization with minimal required arguments."""
-    dataloader = generate_unstratified_contact_data
-
-    priors = {
-        "rate": HSGP2D(prior_type="global"),  # No 'A' parameter for HSGP2D
-    }
-
-    model = HiBRCfine(dataloader, priors=priors)
-
-    assert model.ds is not None
-    assert model.priors == priors
-    assert model.likelihood == "negbin"  # Default
-
-
-def test_init_with_stratified_data_raises_on_missing_priors(
-    generate_unstratified_contact_data,
-):
-    """Test that initialization requires priors for each stratification variable."""
-    # Placeholder - full test requires stratified fixture pending DataLoader support
-    pass
+        model = HiBRCfine(dataloader, priors, "poisson")
 
 
 # ============================================================================

@@ -11,7 +11,7 @@ from enum import Enum
 class StratMode(Enum):
     """
     Stratification configuration mode for a variable.
-    
+
     Attributes
     ----------
     PARTIAL : str

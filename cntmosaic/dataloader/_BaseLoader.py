@@ -455,11 +455,11 @@ class BaseLoader(ABC):
 
         for var, mode in strat_modes.items():
             if mode == StratMode.PARTIAL:
-                strat_ixs[var] = self.data[var + "_part"].cat.codes.to_numpy()
+                strat_ixs[var] = self.df_full[var + "_part"].cat.codes.to_numpy()
             elif mode == StratMode.FULL:
-                part_codes = self.data[var + "_part"].cat.codes.to_numpy()
-                cnt_codes = self.data[var + "_cnt"].cat.codes.to_numpy()
-                n_categories = len(self.data[var + "_part"].cat.categories)
+                part_codes = self.df_full[var + "_part"].cat.codes.to_numpy()
+                cnt_codes = self.df_full[var + "_cnt"].cat.codes.to_numpy()
+                n_categories = len(self.df_full[var + "_part"].cat.categories)
                 strat_ixs[var] = part_codes * n_categories + cnt_codes
 
         return strat_ixs
@@ -471,10 +471,10 @@ class BaseLoader(ABC):
         for var, mode in strat_modes.items():
             # Only relevanat for FULL mode
             if mode == StratMode.FULL:
-                cnt_codes = self.data[var + "_cnt"].cat.codes.to_numpy()
+                cnt_codes = self.df_full[var + "_cnt"].cat.codes.to_numpy()
                 strat_pixs[var] = cnt_codes
             else:
-                strat_pixs[var] = np.zeros(len(self.data), dtype=int)
+                strat_pixs[var] = np.zeros(len(self.df_full), dtype=int)
 
         # Create flat indices for population stratification
         n_obs = len(next(iter(strat_pixs.values())))
@@ -482,7 +482,7 @@ class BaseLoader(ABC):
         multiplier = 1
         for var, mode in reversed(strat_modes.items()):
             dim = (
-                len(self.data[var + "_part"].cat.categories)
+                len(self.df_full[var + "_part"].cat.categories)
                 if mode == StratMode.FULL
                 else 1
             )

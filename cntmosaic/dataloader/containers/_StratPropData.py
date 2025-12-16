@@ -389,8 +389,8 @@ class StratPropData:
         Returns
         -------
         NDArray
-            - PARTIAL: shape (n_strata, A)
-            - FULL: shape (n_strata, n_strata, A, A)
+            - PARTIAL: shape (n_strata, A, 1)
+            - FULL: shape (n_strata**2, A, A)
         """
         strat_vars_source = list(strat_modes.keys())
         strat_vars_target = [
@@ -420,7 +420,7 @@ class StratPropData:
 
         # PARTIAL case: single variable stratification
         if len(strat_vars_target) == 0:
-            return prop_sa
+            return prop_sa[:, :, None]  # shape (n_strata, A, 1)
 
         # FULL case: compute outer product for source × target
         df_prop_target = self.data[[self.age_col] + strat_vars_target + [self.prop_col]]

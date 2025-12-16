@@ -1,17 +1,15 @@
 import warnings
-
-import numpy as np
-from numpy.typing import NDArray
-import pandas as pd
-
-from typing import Optional, Tuple, Dict, Literal, Any
+from typing import Any, Dict, Literal, Optional, Tuple
 
 import jax
+import numpy as np
+import pandas as pd
 from jax.random import PRNGKey
+from numpy.typing import NDArray
 
-from ..models import SocialMix, BRCfine, BRCrefine, HiBRCfine, HiBRCrefine, Prem
-from ..utils import pixilate, depixilate, AgeBins
-from ..models._SocialMix import InputValidator, AgeBinProcessor
+from ..models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine, Prem, SocialMix
+from ..models._SocialMix import AgeBinProcessor, InputValidator
+from ..utils import AgeBins, depixilate, pixilate
 
 
 def validate_alpha(alpha: float) -> None:
@@ -91,7 +89,8 @@ class ModelSummariserBRC:
     post_cint_samples : NDArray | Dict
         Posterior contact intensity samples.
         - For BRC: NDArray of shape (n_samples, A, A)
-        - For HiBRC: Dict[str, Dict[str, NDArray]] for each stratification variable
+        - For HiBRC: Dict[str, NDArray] mapping full_labels to samples
+          where full_label is like "M_A->All" (shape: (n_samples, A, A) each)
 
     Raises
     ------
@@ -232,60 +231,78 @@ class ModelSummariserBRC:
             # Complex case: compute contact intensity for each stratification category
             self.post_cint_samples = self._compute_hibrc_contact_intensities()
 
-    def _compute_hibrc_contact_intensities(self) -> Dict[str, Dict[str, NDArray]]:
+    def _compute_hibrc_contact_intensities(self) -> Dict[str, NDArray]:
         """
         Compute stratified contact intensities for HiBRC models.
 
         Returns
         -------
-        Dict[str, Dict[str, NDArray]]
-            Nested dictionary: {var_name: {category: intensity_samples}}
-            where intensity_samples has shape (n_samples, A, A)
+        Dict[str, NDArray]
+            Dictionary mapping full_labels to intensity samples:
+            {label: intensity_samples} where intensity_samples has shape (n_samples, A, A)
+
+            For example: {"M_A->All": array(...), "F_B->All": array(...)}
 
         Notes
         -----
         Memory-efficient implementation:
         - Processes each category separately to avoid memory explosion
         - Uses float32 for intermediate computations
-        - Deletes intermediate arrays immediately after use
+        - Maps flat_ix categories to full_labels for intuitive access
+        - Handles log_P correctly for PARTIAL (shape (1, A)) vs FULL (shape (K, A)) stratification
         """
         log_rate = self.post_samples["log_rate"].astype(np.float32)
-        log_P = self.model.log_P.astype(np.float32)
+        log_delta = self.post_samples["log_delta"].astype(np.float32)
+        log_P = self.model.log_P.astype(np.float32)  # Shape (1, A) or (K, A)
+
+        # Get full labels sorted by flat_ix
+        full_labels = self.model.data.strat_data["full_labels"]
+
+        # Map flat_ix to flat_pixs for population stratification
+        # For each flat_ix, find the corresponding flat_pixs value
+        flat_ix_to_flat_pixs = {}
+        flat_ix_array = self.model.data.strat_data["flat_ix"]
+        flat_pixs_array = self.model.data.strat_data["flat_pixs"]
+        for flat_idx in np.unique(flat_ix_array):
+            # Get first occurrence of this flat_idx
+            mask = flat_ix_array == flat_idx
+            flat_pixs_val = flat_pixs_array[mask][0]
+            flat_ix_to_flat_pixs[flat_idx] = flat_pixs_val
 
         post_cint = {}
 
-        # Process each stratification variable
-        for name, site in self.post_samples.items():
-            if "log_delta" not in name:
-                continue
+        # Get unique flat_ix values
+        flat_ix_values = np.unique(flat_ix_array)
 
-            var = name.split("/")[0]
-            categories = self.model.ds.attrs["grp_vars"][var]
-            site = site.astype(np.float32)
+        # Process each stratum separately to save memory
+        for flat_idx in flat_ix_values:
+            label = full_labels[flat_idx]
 
-            # Initialize dict for this variable
-            post_cint[var] = {}
+            # Extract this stratum's offset: (n_samples, A, A)
+            log_delta_stratum = log_delta[:, flat_idx, :, :]
 
-            # Process each category separately to save memory
-            for i, category in enumerate(categories):
-                # Compute contact intensity for this category
-                # cint[c,d] = exp(log_rate[c,d] + log_delta[var,cat,c,d] + log_P[d])
-                log_rate_expanded = log_rate[
-                    :, np.newaxis, :, :
-                ]  # (n_samples, 1, A, A)
-                site_cat = site[:, i : i + 1, :, :]  # (n_samples, 1, A, A) - keep dims
-                log_P_expanded = log_P[np.newaxis, np.newaxis, :, :]  # (1, 1, A, A)
+            # Reshape log_rate from (n_samples, A*A) to (n_samples, A, A)
+            A = log_delta_stratum.shape[1]
+            log_rate_matrix = log_rate.reshape(-1, A, A)
 
-                # Compute log sum and exp
-                log_sum = log_rate_expanded + site_cat + log_P_expanded
-                cint = np.exp(log_sum, dtype=np.float32).squeeze(
-                    axis=1
-                )  # Remove singleton
+            # Get the appropriate row of log_P for this stratum
+            # log_P shape is (1, A) for PARTIAL or (K, A) for FULL stratification
+            flat_pixs_idx = flat_ix_to_flat_pixs[flat_idx]
+            log_P_vector = log_P[flat_pixs_idx, :]  # Shape (A,)
 
-                post_cint[var][category] = cint
+            # Broadcast log_P along contact age dimension: (A,) -> (A, A)
+            # by adding along axis 0 (participant age dimension)
+            log_P_matrix = log_P_vector[np.newaxis, :]  # Shape (1, A)
 
-                # Free memory immediately
-                del log_rate_expanded, site_cat, log_sum, cint
+            # Compute contact intensity: exp(log_rate + log_delta + log_P)
+            # Broadcasting: (n_samples, A, A) + (n_samples, A, A) + (1, A)
+            log_sum = log_rate_matrix + log_delta_stratum + log_P_matrix
+            cint = np.exp(log_sum, dtype=np.float32)  # (n_samples, A, A)
+
+            post_cint[label] = cint
+
+            # Free memory immediately
+            del log_delta_stratum, log_rate_matrix, log_sum, cint
 
         return post_cint
 
@@ -293,7 +310,7 @@ class ModelSummariserBRC:
         self,
         alpha: float = 0.05,
         probs: Optional[Tuple[float, ...]] = None,
-    ) -> NDArray | Dict[str, Dict[str, NDArray]]:
+    ) -> NDArray | Dict[str, NDArray]:
         """
         Compute summary statistics for contact rate matrix.
 
@@ -314,8 +331,8 @@ class ModelSummariserBRC:
         NDArray | Dict
             - For BRC models: NDArray of shape (3, A, A) or (len(probs), A, A)
               containing [lower, median, upper] quantiles (or custom quantiles)
-            - For HiBRC models: Dict[str, Dict[str, NDArray]] with structure
-              {var_name: {category: quantiles}}
+            - For HiBRC models: Dict[str, NDArray] with structure
+              {full_label: quantiles} where full_label is like "M_A->All"
 
         Raises
         ------
@@ -333,9 +350,7 @@ class ModelSummariserBRC:
         >>>
         >>> # HiBRC model
         >>> summary = summariser_hibrc.summarise_rate(alpha=0.05)
-        >>> for var, categories in summary.items():
-        ...     for cat, quantiles in categories.items():
-        ...         print(f"{var}={cat}: median = {quantiles[1]}")
+        >>> male_a_median = summary['M_A->All'][1]
 
         Notes
         -----
@@ -356,25 +371,19 @@ class ModelSummariserBRC:
             result = compute_quantiles(rate_samples, probs, axis=0)
 
         else:  # hibrc
-            # Compute rate for each category
+            # Compute rate for each stratum
             log_rate = self.post_samples["log_rate"]
+            log_delta = self.post_samples["log_delta"]
+            full_labels = self.model.data.strat_data["full_labels"]
+            flat_ix_values = np.unique(self.model.data.strat_data["flat_ix"])
+
             result = {}
-
-            for name, site in self.post_samples.items():
-                if "log_delta" not in name:
-                    continue
-
-                var = name.split("/")[0]
-                categories = self.model.ds.attrs["grp_vars"][var]
-                result[var] = {}
-
-                for i, category in enumerate(categories):
-                    # rate = exp(log_rate + log_delta)
-                    log_rate_cat = log_rate + site[:, i, :, :]
-                    rate_samples = np.exp(log_rate_cat)
-                    result[var][category] = compute_quantiles(
-                        rate_samples, probs, axis=0
-                    )
+            for flat_idx in flat_ix_values:
+                label = full_labels[flat_idx]
+                # rate = exp(log_rate + log_delta[flat_idx])
+                log_rate_stratum = log_rate + log_delta[:, flat_idx, :, :]
+                rate_samples = np.exp(log_rate_stratum)
+                result[label] = compute_quantiles(rate_samples, probs, axis=0)
 
         self._cache[cache_key] = result
         return result
@@ -383,7 +392,7 @@ class ModelSummariserBRC:
         self,
         alpha: float = 0.05,
         probs: Optional[Tuple[float, ...]] = None,
-    ) -> NDArray | Dict[str, Dict[str, NDArray]]:
+    ) -> NDArray | Dict[str, NDArray]:
         """
         Compute summary statistics for contact intensity matrix.
 
@@ -403,8 +412,8 @@ class ModelSummariserBRC:
         -------
         NDArray | Dict
             - For BRC models: NDArray of shape (3, A, A) or (len(probs), A, A)
-            - For HiBRC models: Dict[str, Dict[str, NDArray]] with structure
-              {var_name: {category: quantiles}}
+            - For HiBRC models: Dict[str, NDArray] with structure
+              {full_label: quantiles} where full_label is like "M_A->All"
 
         Raises
         ------
@@ -418,8 +427,8 @@ class ModelSummariserBRC:
         >>>
         >>> # For HiBRC with gender stratification
         >>> summary = summariser_hibrc.summarise_cint(alpha=0.05)
-        >>> male_median = summary['gender']['Male'][1]
-        >>> female_median = summary['gender']['Female'][1]
+        >>> male_median = summary['M_A->All'][1]
+        >>> female_median = summary['F_B->All'][1]
 
         Notes
         -----
@@ -439,12 +448,10 @@ class ModelSummariserBRC:
             result = compute_quantiles(self.post_cint_samples, probs, axis=0)
 
         else:  # hibrc
-            # Compute quantiles for each category
+            # Compute quantiles for each stratum
             result = {}
-            for var, categories_dict in self.post_cint_samples.items():
-                result[var] = {}
-                for category, samples in categories_dict.items():
-                    result[var][category] = compute_quantiles(samples, probs, axis=0)
+            for label, samples in self.post_cint_samples.items():
+                result[label] = compute_quantiles(samples, probs, axis=0)
 
         self._cache[cache_key] = result
         return result
@@ -453,7 +460,7 @@ class ModelSummariserBRC:
         self,
         alpha: float = 0.05,
         probs: Optional[Tuple[float, ...]] = None,
-    ) -> NDArray | Dict[str, Dict[str, NDArray]]:
+    ) -> NDArray | Dict[str, NDArray]:
         """
         Compute summary statistics for marginal contact intensity.
 
@@ -473,14 +480,18 @@ class ModelSummariserBRC:
         -------
         NDArray | Dict
             - For BRC models: NDArray of shape (3, A) or (len(probs), A)
-            - For HiBRC models: Dict[str, Dict[str, NDArray]] with structure
-              {var_name: {category: quantiles}}
+            - For HiBRC models: Dict[str, NDArray] with structure
+              {full_label: quantiles} where full_label is like "M_A->All"
 
         Examples
         --------
         >>> summary = summariser.summarise_mcint(alpha=0.05)
         >>> lower, median, upper = summary[0], summary[1], summary[2]
         >>> # median[age] gives median total contacts for that age
+        >>>
+        >>> # For HiBRC
+        >>> summary = summariser_hibrc.summarise_mcint(alpha=0.05)
+        >>> male_median = summary['M_A->All'][1]  # shape (A,)
 
         Notes
         -----
@@ -501,15 +512,12 @@ class ModelSummariserBRC:
             result = compute_quantiles(mcint_samples, probs, axis=0)
 
         else:  # hibrc
-            # Compute marginals for each category
+            # Compute marginal for each stratum
             result = {}
-            for var, categories_dict in self.post_cint_samples.items():
-                result[var] = {}
-                for category, samples in categories_dict.items():
-                    mcint_samples = samples.sum(axis=-1)
-                    result[var][category] = compute_quantiles(
-                        mcint_samples, probs, axis=0
-                    )
+            for label, samples in self.post_cint_samples.items():
+                # Sum over contact age dimension
+                mcint_samples = samples.sum(axis=-1)
+                result[label] = compute_quantiles(mcint_samples, probs, axis=0)
 
         self._cache[cache_key] = result
         return result
@@ -517,7 +525,7 @@ class ModelSummariserBRC:
     def get_posterior_samples(
         self,
         quantity: Literal["rate", "cint", "mcint"] = "cint",
-    ) -> NDArray | Dict[str, Dict[str, NDArray]]:
+    ) -> NDArray | Dict[str, NDArray]:
         """
         Get raw posterior samples for specified quantity.
 
@@ -535,7 +543,8 @@ class ModelSummariserBRC:
         -------
         NDArray | Dict
             - For BRC models: NDArray of shape (n_samples, A, A) or (n_samples, A)
-            - For HiBRC models: Dict[str, Dict[str, NDArray]]
+            - For HiBRC models: Dict[str, NDArray] with structure
+              {full_label: samples} where full_label is like "M_A->All"
 
         Examples
         --------
@@ -548,6 +557,10 @@ class ModelSummariserBRC:
         >>> import matplotlib.pyplot as plt
         >>> samples = summariser.get_posterior_samples("mcint")
         >>> plt.hist(samples[:, 25])  # Distribution for age 25
+        >>>
+        >>> # For HiBRC
+        >>> samples = summariser_hibrc.get_posterior_samples("cint")
+        >>> male_samples = samples['M_A->All']  # shape (n_samples, A, A)
         """
         if quantity == "rate":
             if self.model_type == "brc":
@@ -555,15 +568,14 @@ class ModelSummariserBRC:
             else:  # hibrc
                 result = {}
                 log_rate = self.post_samples["log_rate"]
-                for name, site in self.post_samples.items():
-                    if "log_delta" not in name:
-                        continue
-                    var = name.split("/")[0]
-                    categories = self.model.ds.attrs["grp_vars"][var]
-                    result[var] = {}
-                    for i, category in enumerate(categories):
-                        log_rate_cat = log_rate + site[:, i, :, :]
-                        result[var][category] = np.exp(log_rate_cat)
+                log_delta = self.post_samples["log_delta"]
+                full_labels = self.model.data.strat_data["full_labels"]
+                flat_ix_values = np.unique(self.model.data.strat_data["flat_ix"])
+
+                for flat_idx in flat_ix_values:
+                    label = full_labels[flat_idx]
+                    log_rate_stratum = log_rate + log_delta[:, flat_idx, :, :]
+                    result[label] = np.exp(log_rate_stratum)
                 return result
 
         elif quantity == "cint":
@@ -574,10 +586,8 @@ class ModelSummariserBRC:
                 return self.post_cint_samples.sum(axis=-1)
             else:  # hibrc
                 result = {}
-                for var, categories_dict in self.post_cint_samples.items():
-                    result[var] = {}
-                    for category, samples in categories_dict.items():
-                        result[var][category] = samples.sum(axis=-1)
+                for label, samples in self.post_cint_samples.items():
+                    result[label] = samples.sum(axis=-1)
                 return result
 
         else:
@@ -588,7 +598,7 @@ class ModelSummariserBRC:
     def get_point_estimates(
         self,
         quantity: Literal["rate", "cint", "mcint"] = "cint",
-    ) -> Dict[str, NDArray] | Dict[str, Dict[str, Dict[str, NDArray]]]:
+    ) -> Dict[str, NDArray] | Dict[str, Dict[str, NDArray]]:
         """
         Get point estimates (mean and std) for specified quantity.
 
@@ -601,7 +611,8 @@ class ModelSummariserBRC:
         -------
         Dict
             - For BRC models: {'mean': array, 'std': array}
-            - For HiBRC models: {var: {category: {'mean': array, 'std': array}}}
+            - For HiBRC models: {full_label: {'mean': array, 'std': array}}
+              where full_label is like "M_A->All"
 
         Examples
         --------
@@ -611,8 +622,8 @@ class ModelSummariserBRC:
         >>>
         >>> # For HiBRC
         >>> estimates = summariser_hibrc.get_point_estimates("cint")
-        >>> male_mean = estimates['gender']['Male']['mean']
-        >>> male_std = estimates['gender']['Male']['std']
+        >>> male_mean = estimates['M_A->All']['mean']
+        >>> male_std = estimates['M_A->All']['std']
         """
         samples = self.get_posterior_samples(quantity)
 
@@ -623,13 +634,11 @@ class ModelSummariserBRC:
             }
         else:  # hibrc
             result = {}
-            for var, categories_dict in samples.items():
-                result[var] = {}
-                for category, cat_samples in categories_dict.items():
-                    result[var][category] = {
-                        "mean": cat_samples.mean(axis=0),
-                        "std": cat_samples.std(axis=0, ddof=1),
-                    }
+            for label, label_samples in samples.items():
+                result[label] = {
+                    "mean": label_samples.mean(axis=0),
+                    "std": label_samples.std(axis=0, ddof=1),
+                }
             return result
 
     def clear_cache(self) -> None:

@@ -1,26 +1,21 @@
-import pandas as pd
-import numpy as np
-from numpy.typing import NDArray
-
-from typing import Optional, Dict, Literal
 import warnings
+from typing import Dict, Literal, Optional
 
+import numpy as np
+import pandas as pd
+from numpy.typing import NDArray
 from sklearn.metrics import (
-    root_mean_squared_error,
     mean_absolute_error,
     mean_absolute_percentage_error,
+    root_mean_squared_error,
 )
-from ..utils import pixilate, depixilate, AgeBins
-from ..models import (
-    BRCfine,
-    BRCrefine,
-    HiBRCfine,
-    HiBRCrefine,
-)
+
+from ..models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine
+from ..utils import AgeBins, depixilate, pixilate
 from ._summariser import (
-    ModelSummariserSocialMix,
-    ModelSummariserPrem,
     ModelSummariserBRC,
+    ModelSummariserPrem,
+    ModelSummariserSocialMix,
 )
 
 
@@ -53,19 +48,20 @@ def compute_metrics(y_true, y_est, y_low, y_high):
     return rmse, mae, mape, int_score, coverage
 
 
-def process_variable_metrics(var, data_eval, data_est):
+def process_variable_metrics(
+    data_eval: Dict[str, NDArray], data_est: Dict[str, NDArray]
+):
     """
     Compute metrics for a single variable across its categories and overall.
     """
     metrics = []
-    for cat, values in data_est[var].items():
+    for key, values in data_est.items():
         rmse, mae, mape, int_score, coverage = compute_metrics(
-            data_eval[var][cat], values[1], values[0], values[2]
+            data_eval[key], values[1], values[0], values[2]
         )
         metrics.append(
             {
-                "var": var,
-                "cat": cat,
+                "cat": key,
                 "rmse": rmse,
                 "mae": mae,
                 "mape": mape,
@@ -75,16 +71,15 @@ def process_variable_metrics(var, data_eval, data_est):
         )
 
     # Compute overall metrics for the variable
-    y_true = np.vstack([data_eval[var][cat] for cat in data_est[var].keys()])
-    y_est = np.vstack([values[1] for values in data_est[var].values()])
-    y_low = np.vstack([values[0] for values in data_est[var].values()])
-    y_high = np.vstack([values[2] for values in data_est[var].values()])
+    y_true = np.vstack([data_eval[key] for key in data_est.keys()])
+    y_est = np.vstack([values[1] for values in data_est.values()])
+    y_low = np.vstack([values[0] for values in data_est.values()])
+    y_high = np.vstack([values[2] for values in data_est.values()])
 
     rmse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
 
     metrics.append(
         {
-            "var": var,
             "cat": "all",
             "rmse": rmse,
             "mae": mae,
@@ -97,32 +92,24 @@ def process_variable_metrics(var, data_eval, data_est):
     return metrics
 
 
-def aggregate_metrics(data_eval, data_est):
+def aggregate_metrics(
+    data_eval: Dict[str, NDArray], data_est: Dict[str, NDArray]
+) -> pd.DataFrame:
     """
     Aggregate metrics for all variables and categories, and compute overall metrics.
     """
     all_metrics = []
-    for var in data_est.keys():
-        all_metrics.extend(process_variable_metrics(var, data_eval, data_est))
+    all_metrics.extend(process_variable_metrics(data_eval, data_est))
 
     # Compute overall metrics across all variables and categories
-    y_true = np.vstack(
-        [data_eval[var][cat] for var in data_est.keys() for cat in data_est[var].keys()]
-    )
-    y_est = np.vstack(
-        [values[1] for var in data_est.keys() for values in data_est[var].values()]
-    )
-    y_low = np.vstack(
-        [values[0] for var in data_est.keys() for values in data_est[var].values()]
-    )
-    y_high = np.vstack(
-        [values[2] for var in data_est.keys() for values in data_est[var].values()]
-    )
+    y_true = np.vstack([data_eval[cat] for cat in data_est.keys()])
+    y_est = np.vstack([values[1] for values in data_est.values()])
+    y_low = np.vstack([values[0] for values in data_est.values()])
+    y_high = np.vstack([values[2] for values in data_est.values()])
 
     rmse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
     all_metrics.append(
         {
-            "var": "all",
             "cat": "all",
             "rmse": rmse,
             "mae": mae,
@@ -230,7 +217,7 @@ class ModelEvaluatorBRC:
     def __init__(
         self,
         summariser: ModelSummariserBRC,
-        cint_matrix_true: NDArray[np.float64] | Dict,
+        cint_matrix_true: NDArray[np.float64] | Dict[str, NDArray],
         alpha: float = 0.05,
     ) -> None:
         """
@@ -240,7 +227,7 @@ class ModelEvaluatorBRC:
         ----------
         summariser : ModelSummariserBRC
             Summariser with posterior samples from fitted BRC model
-        cint_matrix_true : NDArray or dict
+        cint_matrix_true : NDArray or dict[str, NDArray]
             True contact intensity matrix (for BRC) or dict of matrices (for HiBRC)
         alpha : float, default=0.05
             Significance level for interval metrics (must be in (0, 1))
@@ -286,18 +273,17 @@ class ModelEvaluatorBRC:
                 "Ensure MCMC or SVI inference was run on the BRC model."
             )
 
-    def _validate_true_matrix(self, cint_true: NDArray | Dict) -> None:
+    def _validate_true_matrix(self, cint_true: NDArray | Dict[str, NDArray]) -> None:
         """Validate true matrix dimensions and values."""
         if isinstance(cint_true, dict):
-            # HiBRC case: validate nested structure
-            for var, categories in cint_true.items():
-                if not isinstance(categories, dict):
+            # HiBRC case: Dictionary of NDArrays
+            for key, values in cint_true.items():
+                if not isinstance(values, np.ndarray):
                     raise TypeError(
                         f"For HiBRC models, cint_true must be dict of dicts. "
-                        f"Variable '{var}' is not a dict."
+                        f"Variable '{key}' is not a dict."
                     )
-                for cat, matrix in categories.items():
-                    self._validate_single_matrix(matrix, f"{var}.{cat}")
+                self._validate_single_matrix(values, f"{key}")
         else:
             # BRC case: validate single matrix
             self._validate_single_matrix(cint_true, "cint_true")
@@ -321,15 +307,15 @@ class ModelEvaluatorBRC:
         if np.any(matrix < 0):
             raise ValueError(f"{name} contains negative values")
 
-    def _compute_marginals(self, cint: NDArray | Dict) -> NDArray | Dict:
+    def _compute_marginals(
+        self, cint: NDArray | Dict[str, NDArray]
+    ) -> NDArray | Dict[str, NDArray]:
         """Compute marginal contact intensities by summing over contact age."""
         if isinstance(cint, dict):
             # HiBRC case: compute for each category
             mcint = {}
-            for var in cint.keys():
-                mcint[var] = {
-                    cat: matrix.sum(axis=1) for cat, matrix in cint[var].items()
-                }
+            for key in cint.keys():
+                mcint[key] = cint[key].sum(axis=1)
             return mcint
         else:
             # BRC case: simple sum

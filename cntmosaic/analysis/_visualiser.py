@@ -1,3 +1,8 @@
+"""Visualization utilities for Bayesian contact matrix models.
+
+This module provides visualization tools for analyzing and presenting
+contact matrix estimation results from BRC model family.
+"""
 import numpy as np
 import pandas as pd
 import altair as alt
@@ -9,6 +14,28 @@ from ..vis._visuals import plot_mosaic
 
 
 def count_leaf_elements(d):
+    """Count the number of leaf (non-dictionary) elements in a nested dictionary.
+
+    Recursively traverses a nested dictionary structure and counts all terminal
+    values that are not themselves dictionaries.
+
+    Parameters
+    ----------
+    d : dict
+        A possibly nested dictionary structure.
+
+    Returns
+    -------
+    int
+        Total count of leaf elements in the dictionary.
+
+    Examples
+    --------
+    >>> count_leaf_elements({'a': 1, 'b': {'c': 2, 'd': 3}})
+    3
+    >>> count_leaf_elements({'x': np.array([1, 2, 3])})
+    1
+    """
     count = 0
     for value in d.values():
         if isinstance(value, dict):
@@ -19,6 +46,47 @@ def count_leaf_elements(d):
 
 
 def df_from_dict(d):
+    """Convert model summary arrays to pandas DataFrame for plotting.
+
+    Transforms model output dictionaries containing contact matrices or vectors
+    into a long-form DataFrame suitable for Altair visualization. Handles both
+    3D arrays (matrices with median/quantiles) and 2D arrays (vectors with 
+    lower/median/upper bounds).
+
+    Parameters
+    ----------
+    d : dict or numpy.ndarray
+        Model summary output. Can be:
+        - numpy.ndarray of shape (3, m, n): Matrix with [lower, median, upper]
+        - numpy.ndarray of shape (3, n): Vector with [lower, median, upper]
+        - dict: Nested structure mapping labels to arrays (for stratified models)
+
+    Returns
+    -------
+    pandas.DataFrame
+        Long-form DataFrame with columns:
+        - For matrices: 'x' (row index), 'y' (column index), 'z' (median value), 
+          'label' (stratification category)
+        - For vectors: 'x' (index), 'y' (median), 'l' (lower bound), 
+          'u' (upper bound), 'label' (stratification category)
+
+    Notes
+    -----
+    Arrays are flattened in Fortran order (column-major) to match contact matrix
+    indexing conventions where age groups vary fastest along columns.
+
+    Examples
+    --------
+    >>> matrix = np.random.rand(3, 10, 10)  # [lower, median, upper]
+    >>> df = df_from_dict(matrix)
+    >>> df.columns
+    Index(['x', 'y', 'z', 'label'], dtype='object')
+    
+    >>> stratified = {'male': matrix, 'female': matrix}
+    >>> df = df_from_dict(stratified)
+    >>> df['label'].unique()
+    array(['male', 'female'], dtype=object)
+    """
     dfs = []
     # case with no sub-category
     if not isinstance(d, dict):
@@ -68,6 +136,45 @@ def df_from_dict(d):
 
 
 class ModelVisualiser:
+    """Visualization interface for BRC family contact matrix models.
+
+    Provides publication-ready plots for model outputs including contact rates,
+    contact intensities, and marginal contact intensities with credible intervals.
+    Uses Altair for declarative visualization with consistent styling.
+
+    Parameters
+    ----------
+    summariser : ModelSummariserBRC
+        Model summariser instance containing posterior summaries of the fitted model.
+
+    Attributes
+    ----------
+    summariser : ModelSummariserBRC
+        The model summariser used to extract posterior statistics.
+    default_config : dict
+        Default styling configuration for plot axes, titles, and legends.
+        Contains nested dicts for 'x_axis', 'y_axis', 'title', and 'legend'.
+
+    Examples
+    --------
+    >>> from cntmosaic.analysis import ModelSummariserBRC, ModelVisualiser
+    >>> from cntmosaic.models import BRCfine
+    >>> 
+    >>> # After fitting a model
+    >>> summariser = ModelSummariserBRC(model)
+    >>> visualiser = ModelVisualiser(summariser)
+    >>> 
+    >>> # Generate plots
+    >>> rate_chart = visualiser.plot_rate()
+    >>> cint_chart = visualiser.plot_cint()
+
+    Notes
+    -----
+    All plotting methods return Altair Chart objects which can be:
+    - Displayed in Jupyter notebooks
+    - Saved to file: `chart.save('output.html')` or `chart.save('output.png')`
+    - Composed with other charts using Altair operators (+, |, &)
+    """
     default_config = {
         "x_axis": {
             "labelFontSize": 10,
@@ -92,10 +199,43 @@ class ModelVisualiser:
         },
     }
 
+
     def __init__(self, summariser: ModelSummariserBRC):
         self.summariser = summariser
 
     def plot_rate(self, width=250, height=250, style_config=None):
+        """Plot posterior median contact rate matrix as a heatmap.
+
+        Creates a heatmap visualization of the estimated contact rate matrix,
+        showing the median posterior rate of contacts between age groups.
+
+        Parameters
+        ----------
+        width : int, optional
+            Width of the plot in pixels, by default 250.
+        height : int, optional
+            Height of the plot in pixels, by default 250.
+        style_config : dict, optional
+            Custom style configuration to override defaults. Should contain
+            keys like 'x_axis', 'y_axis', 'title', 'legend' with nested style
+            parameters, by default None.
+
+        Returns
+        -------
+        altair.Chart
+            Altair chart object displaying the contact rate heatmap.
+
+        Examples
+        --------
+        >>> visualiser = ModelVisualiser(summariser)
+        >>> chart = visualiser.plot_rate(width=400, height=400)
+        >>> chart.save('contact_rate.html')
+
+        Notes
+        -----
+        The rate matrix represents the expected number of contacts per person
+        per day between age groups, estimated from the model's posterior distribution.
+        """
         chart = plot_mosaic(
             self.summariser.summarise_rate()[1],
             title="Estimated contact rate",
@@ -107,6 +247,50 @@ class ModelVisualiser:
         return chart
 
     def plot_cint(self, width=250, height=250, facet_columns=3, style_config=None):
+        """Plot posterior median contact intensity matrix as a heatmap.
+
+        Visualizes the estimated contact intensity matrix (rate adjusted for
+        population structure). For hierarchical models (HiBRCfine, HiBRCrefine),
+        returns separate plots for each stratification level.
+
+        Parameters
+        ----------
+        width : int, optional
+            Width of each plot in pixels, by default 250.
+        height : int, optional
+            Height of each plot in pixels, by default 250.
+        facet_columns : int, optional
+            Number of columns for faceted plots in hierarchical models,
+            by default 3.
+        style_config : dict, optional
+            Custom style configuration to override defaults. Should contain
+            keys like 'x_axis', 'y_axis', 'title', 'legend' with nested style
+            parameters, by default None.
+
+        Returns
+        -------
+        altair.Chart or dict of altair.Chart
+            For BRCfine/BRCrefine: Single Altair chart object.
+            For HiBRCfine/HiBRCrefine: Dictionary mapping stratification
+            levels to their respective chart objects.
+
+        Examples
+        --------
+        >>> # For non-hierarchical models
+        >>> chart = visualiser.plot_cint(width=400, height=400)
+        >>> chart.save('contact_intensity.html')
+        
+        >>> # For hierarchical models
+        >>> charts = visualiser.plot_cint(facet_columns=2)
+        >>> for level, chart in charts.items():
+        ...     chart.save(f'cint_{level}.html')
+
+        Notes
+        -----
+        Contact intensity differs from contact rate by accounting for the
+        population age distribution, making it more suitable for comparing
+        contact patterns across different populations or subgroups.
+        """
         if style_config:
             for key, conf in style_config.items():
                 self.default_config.setdefault(key, {}).update(conf)
@@ -205,6 +389,55 @@ class ModelVisualiser:
         height=250,
         style_config=None,
     ):
+        """Plot marginal contact intensity by age with credible intervals.
+
+        Generates line plots showing the age-specific marginal contact intensity
+        (total contacts per age group) with 95% credible intervals. Optionally
+        overlays ground truth values if an evaluator is provided.
+
+        Parameters
+        ----------
+        evaluator : ModelEvaluatorBRC or None, optional
+            Model evaluator containing ground truth contact patterns for 
+            comparison. If provided, true values are overlaid in red,
+            by default None.
+        width : int, optional
+            Width of each plot in pixels, by default 250.
+        height : int, optional
+            Height of each plot in pixels, by default 250.
+        style_config : dict, optional
+            Custom style configuration to override defaults. Should contain
+            keys like 'x_axis', 'y_axis', 'title', 'legend' with nested style
+            parameters, by default None.
+
+        Returns
+        -------
+        altair.Chart or dict of altair.Chart
+            For BRCfine/BRCrefine: Single Altair chart with line + error band.
+            For HiBRCfine/HiBRCrefine: Dictionary mapping stratification
+            levels to faceted chart objects.
+
+        Examples
+        --------
+        >>> # Plot without ground truth
+        >>> chart = visualiser.plot_mcint(width=500, height=300)
+        >>> chart.save('marginal_intensity.html')
+        
+        >>> # Plot with ground truth comparison
+        >>> from cntmosaic.analysis import ModelEvaluatorBRC
+        >>> evaluator = ModelEvaluatorBRC(model, true_data)
+        >>> chart = visualiser.plot_mcint(evaluator=evaluator)
+        >>> chart.save('marginal_intensity_comparison.html')
+
+        Notes
+        -----
+        Marginal contact intensity represents the total expected number of
+        contacts for individuals of each age, summed across all contact ages.
+        This provides a summary view of age-specific contact levels.
+        
+        The error band represents the 95% credible interval from the posterior
+        distribution, quantifying uncertainty in the estimates.
+        """
 
         if style_config:
             for key, conf in style_config.items():

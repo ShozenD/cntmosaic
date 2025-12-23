@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 
 from ..models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine, Prem, SocialMix
 from ..models._SocialMix import AgeBinProcessor, InputValidator
+from ..models._vdKassteele import vdKassteele
 from ..utils import AgeBins, depixilate, pixilate
 
 
@@ -63,14 +64,14 @@ class ModelSummariserBRC:
     """
     Statistical summariser for BRC model inference results (MCMC or SVI).
 
-    Unified summariser for BRCfine, BRCrefine, HiBRCfine, and HiBRCrefine models.
+    Unified summariser for BRCfine, BRCrefine, HiBRCfine, HiBRCrefine, and vdKassteele models.
     Computes quantiles and credible intervals for contact matrices from MCMC or SVI
     posterior samples, with automatic detection of inference method and model type.
 
     Parameters
     ----------
-    model : BRCfine | BRCrefine | HiBRCfine | HiBRCrefine
-        Fitted BRC model with MCMC or SVI results.
+    model : BRCfine | BRCrefine | HiBRCfine | HiBRCrefine | vdKassteele
+        Fitted BRC or vdKassteele model with MCMC or SVI results.
     num_samples : int, default=3000
         Number of posterior samples to draw if using SVI.
 
@@ -152,8 +153,8 @@ class ModelSummariserBRC:
 
         Parameters
         ----------
-        model : BRCfine | BRCrefine | HiBRCfine | HiBRCrefine
-            BRC model with completed MCMC or SVI inference.
+        model : BRCfine | BRCrefine | HiBRCfine | HiBRCrefine | vdKassteele
+            BRC or vdKassteele model with completed MCMC or SVI inference.
         num_samples : int, default=3000
             Number of posterior samples to draw if using SVI.
 
@@ -165,11 +166,14 @@ class ModelSummariserBRC:
             If model is not a BRC-family model.
         """
         # Validate model type
-        from ..models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine
+        from ..models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine, vdKassteele
 
-        if not isinstance(model, (BRCfine, BRCrefine, HiBRCfine, HiBRCrefine)):
+        if not isinstance(
+            model, (BRCfine, BRCrefine, HiBRCfine, HiBRCrefine, vdKassteele)
+        ):
             raise TypeError(
-                f"Model must be a BRC-family model (BRCfine, BRCrefine, HiBRCfine, HiBRCrefine), "
+                f"Model must be a BRC-family model (BRCfine, BRCrefine, HiBRCfine, HiBRCrefine) or"
+                "vdKassteele, "
                 f"got {type(model).__name__}"
             )
 
@@ -189,7 +193,13 @@ class ModelSummariserBRC:
         self.num_samples = num_samples
 
         # Detect model type
-        if isinstance(model, (HiBRCfine, HiBRCrefine)):
+        # vdKassteele can be either BRC or HIBRC depending on prior_type
+        if isinstance(model, vdKassteele):
+            if model.prior_type == "global":
+                self.model_type: Literal["brc", "hibrc"] = "brc"
+            else:
+                self.model_type: Literal["brc", "hibrc"] = "hibrc"
+        elif isinstance(model, (HiBRCfine, HiBRCrefine)):
             self.model_type: Literal["brc", "hibrc"] = "hibrc"
         else:
             self.model_type: Literal["brc", "hibrc"] = "brc"
@@ -217,6 +227,7 @@ class ModelSummariserBRC:
 
         For BRC models: contact intensity = exp(log_cint)
         For HiBRC models: contact intensity = exp(log_rate + log_delta + log_P)
+        For vdKassteele models (stratified): contact intensity = exp(log_rate + log_P)
         """
         if self.model_type == "brc":
             # Simple case: contact intensity is directly available
@@ -227,9 +238,78 @@ class ModelSummariserBRC:
                     "Posterior samples must contain 'log_cint' field for BRC models"
                 )
 
-        else:  # hibrc
+        else:  # hibrc or vdKassteele
             # Complex case: compute contact intensity for each stratification category
-            self.post_cint_samples = self._compute_hibrc_contact_intensities()
+            if isinstance(self.model, vdKassteele):
+                self.post_cint_samples = self._compute_vdKassteele_contact_intensities()
+            else:
+                self.post_cint_samples = self._compute_hibrc_contact_intensities()
+
+    def _compute_vdKassteele_contact_intensities(self) -> Dict[str, NDArray]:
+        """
+        Compute stratified contact intensities for vdKassteele models.
+
+        Returns
+        -------
+        Dict[str, NDArray]
+            Dictionary mapping full_labels to intensity samples:
+            {label: intensity_samples} where intensity_samples has shape (n_samples, A, A)
+
+            For example: {"M_A->All": array(...), "F_B->All": array(...)}
+
+        Notes
+        -----
+        vdKassteele differs from HiBRC models:
+        - log_rate is 4D (n_samples, n_strata, A, A) when stratified
+        - No separate log_delta parameter
+        - Stratification is encoded directly in log_rate
+        """
+        log_rate = self.post_samples["log_rate"].astype(np.float32)
+        log_P = self.model.log_P.astype(np.float32)  # Shape (1, A) or (K, A)
+
+        # Get full labels sorted by flat_ix
+        full_labels = self.model.data.strat_data["full_labels"]
+
+        # Map flat_ix to flat_pixs for population stratification
+        flat_ix_to_flat_pixs = {}
+        flat_ix_array = self.model.data.strat_data["flat_ix"]
+        flat_pixs_array = self.model.data.strat_data["flat_pixs"]
+        for flat_idx in np.unique(flat_ix_array):
+            mask = flat_ix_array == flat_idx
+            flat_pixs_val = flat_pixs_array[mask][0]
+            flat_ix_to_flat_pixs[flat_idx] = flat_pixs_val
+
+        post_cint = {}
+        flat_ix_values = np.unique(flat_ix_array)
+
+        # log_rate has shape (n_samples, n_strata, A, A)
+        A = log_rate.shape[2]
+
+        # Process each stratum separately
+        for flat_idx in flat_ix_values:
+            label = full_labels[flat_idx]
+
+            # Extract log_rate for this stratum: (n_samples, A, A)
+            log_rate_matrix = log_rate[:, flat_idx, :, :]
+
+            # Get the appropriate row of log_P for this stratum
+            flat_pixs_idx = flat_ix_to_flat_pixs[flat_idx]
+            log_P_vector = log_P[flat_pixs_idx, :]  # Shape (A,)
+
+            # Broadcast log_P along contact age dimension
+            log_P_matrix = log_P_vector[np.newaxis, :]  # Shape (1, A)
+
+            # Compute contact intensity: exp(log_rate + log_P)
+            # vdKassteele does NOT use log_delta
+            log_sum = log_rate_matrix + log_P_matrix
+            cint = np.exp(log_sum, dtype=np.float32)  # (n_samples, A, A)
+
+            post_cint[label] = cint
+
+            # Free memory
+            del log_rate_matrix, log_sum, cint
+
+        return post_cint
 
     def _compute_hibrc_contact_intensities(self) -> Dict[str, NDArray]:
         """

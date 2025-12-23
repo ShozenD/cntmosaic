@@ -9,8 +9,6 @@ population proportions, which is currently being developed. Basic tests verify
 the refactored code structure and type hints.
 """
 
-import numpy as np
-import numpyro
 import pandas as pd
 import pytest
 from jax.random import PRNGKey

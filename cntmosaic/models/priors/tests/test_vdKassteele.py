@@ -11,7 +11,7 @@ import numpyro
 import pytest
 from jax import random
 
-from cntmosaic.models.priors import vdKassteele
+from cntmosaic.models.priors import vdKassteele2D
 
 
 class TestInitialization:
@@ -19,17 +19,16 @@ class TestInitialization:
 
     def test_basic_initialization(self):
         """Test basic initialization with default parameters."""
-        prior = vdKassteele(prior_type="global")
+        prior = vdKassteele2D(prior_type="global")
 
         assert prior.prior_type == "global"
         assert prior.order == 2
         assert prior.tau_shape == 2.0
         assert prior.tau_rate == 0.1
-        assert prior.transform is None
 
     def test_custom_parameters(self):
         """Test initialization with custom parameters."""
-        prior = vdKassteele(
+        prior = vdKassteele2D(
             prior_type="partial",
             order=1,
             tau_shape=3.0,
@@ -44,7 +43,7 @@ class TestInitialization:
     def test_invalid_order(self):
         """Test that invalid order raises ValueError."""
         with pytest.raises(ValueError, match="order must be 1 or 2"):
-            vdKassteele(order=3)
+            vdKassteele2D(order=3)
 
 
 class TestAgeBounds:
@@ -52,7 +51,7 @@ class TestAgeBounds:
 
     def test_valid_age_bounds(self):
         """Test setting valid age bounds."""
-        prior = vdKassteele(prior_type="global")
+        prior = vdKassteele2D(prior_type="global")
         prior.set_age_bounds(0, 80)
 
         assert prior.min_age == 0
@@ -61,14 +60,14 @@ class TestAgeBounds:
 
     def test_negative_min_age(self):
         """Test that negative min_age raises ValueError."""
-        prior = vdKassteele(prior_type="global")
+        prior = vdKassteele2D(prior_type="global")
 
         with pytest.raises(ValueError, match="min_age must be non-negative"):
             prior.set_age_bounds(-5, 80)
 
     def test_invalid_age_range(self):
         """Test that max_age <= min_age raises ValueError."""
-        prior = vdKassteele(prior_type="global")
+        prior = vdKassteele2D(prior_type="global")
 
         with pytest.raises(ValueError, match="max_age must be greater than min_age"):
             prior.set_age_bounds(50, 50)
@@ -78,7 +77,7 @@ class TestAgeBounds:
 
     def test_grid_initialization(self):
         """Test that grid structures are initialized."""
-        prior = vdKassteele(prior_type="global")
+        prior = vdKassteele2D(prior_type="global")
         prior.set_age_bounds(0, 20)
 
         # Check that symmetrization indices are created
@@ -91,7 +90,7 @@ class TestSampleSingle:
 
     def test_sample_single_shape(self):
         """Test that sample_single returns correct shape."""
-        prior = vdKassteele(prior_type="global", order=2)
+        prior = vdKassteele2D(prior_type="global", order=2)
         prior.set_age_bounds(0, 40)
 
         with numpyro.handlers.seed(rng_seed=42):
@@ -101,7 +100,7 @@ class TestSampleSingle:
 
     def test_sample_single_symmetric(self):
         """Test that sample_single produces symmetric matrix."""
-        prior = vdKassteele(prior_type="global", order=2)
+        prior = vdKassteele2D(prior_type="global", order=2)
         prior.set_age_bounds(0, 30)
 
         with numpyro.handlers.seed(rng_seed=42):
@@ -112,7 +111,7 @@ class TestSampleSingle:
 
     def test_sample_single_first_order(self):
         """Test sample_single with first-order penalty."""
-        prior = vdKassteele(prior_type="global", order=1)
+        prior = vdKassteele2D(prior_type="global", order=1)
         prior.set_age_bounds(0, 25)
 
         with numpyro.handlers.seed(rng_seed=42):
@@ -127,7 +126,7 @@ class TestSamplePartial:
 
     def test_sample_partial_shape(self):
         """Test that sample_partial returns correct shape."""
-        prior = vdKassteele(prior_type="partial", order=2)
+        prior = vdKassteele2D(prior_type="partial", order=2)
         prior.set_age_bounds(0, 40)
         prior.set_event_dim(4)
 
@@ -139,7 +138,7 @@ class TestSamplePartial:
 
     def test_sample_partial_not_symmetric(self):
         """Test that sample_partial can produce asymmetric matrices."""
-        prior = vdKassteele(prior_type="partial", order=2)
+        prior = vdKassteele2D(prior_type="partial", order=2)
         prior.set_age_bounds(0, 30)
         prior.set_event_dim(3)
 
@@ -159,7 +158,7 @@ class TestSamplePartial:
     def test_sample_partial_multiple_realizations(self):
         """Test sample_partial with different event dimensions."""
         for event_dim in [2, 4, 9]:
-            prior = vdKassteele(prior_type="partial", order=2)
+            prior = vdKassteele2D(prior_type="partial", order=2)
             prior.set_age_bounds(0, 30)
             prior.set_event_dim(event_dim)
 
@@ -174,7 +173,7 @@ class TestSampleFull:
 
     def test_sample_full_shape(self):
         """Test that sample_full returns correct shape."""
-        prior = vdKassteele(prior_type="full", order=2)
+        prior = vdKassteele2D(prior_type="full", order=2)
         prior.set_age_bounds(0, 40)
         prior.set_event_dim(3)  # 3x3 stratification
 
@@ -185,7 +184,7 @@ class TestSampleFull:
 
     def test_sample_full_diagonal_symmetric(self):
         """Test that diagonal blocks in sample_full are symmetric."""
-        prior = vdKassteele(prior_type="full", order=2)
+        prior = vdKassteele2D(prior_type="full", order=2)
         prior.set_age_bounds(0, 30)
         prior.set_event_dim(3)  # 3x3
 
@@ -198,7 +197,7 @@ class TestSampleFull:
 
     def test_sample_full_off_diagonal_asymmetric(self):
         """Test that off-diagonal blocks can be asymmetric."""
-        prior = vdKassteele(prior_type="full", order=2)
+        prior = vdKassteele2D(prior_type="full", order=2)
         prior.set_age_bounds(0, 25)
         prior.set_event_dim(3)  # 3x3
 
@@ -220,7 +219,7 @@ class TestNumericalProperties:
 
     def test_sample_values_finite(self):
         """Test that samples contain finite values."""
-        prior = vdKassteele(prior_type="global", order=2)
+        prior = vdKassteele2D(prior_type="global", order=2)
         prior.set_age_bounds(0, 30)
 
         with numpyro.handlers.seed(rng_seed=42):
@@ -230,11 +229,11 @@ class TestNumericalProperties:
 
     def test_sample_reproducibility(self):
         """Test that samples are reproducible with same seed."""
-        prior1 = vdKassteele(prior_type="partial", order=2)
+        prior1 = vdKassteele2D(prior_type="partial", order=2)
         prior1.set_age_bounds(0, 30)
         prior1.set_event_dim(4)
 
-        prior2 = vdKassteele(prior_type="partial", order=2)
+        prior2 = vdKassteele2D(prior_type="partial", order=2)
         prior2.set_age_bounds(0, 30)
         prior2.set_event_dim(4)
 
@@ -248,7 +247,7 @@ class TestNumericalProperties:
 
     def test_different_seeds_different_samples(self):
         """Test that different seeds produce different samples."""
-        prior = vdKassteele(prior_type="global", order=2)
+        prior = vdKassteele2D(prior_type="global", order=2)
         prior.set_age_bounds(0, 30)
 
         with numpyro.handlers.seed(rng_seed=42):

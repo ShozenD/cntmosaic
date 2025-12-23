@@ -65,13 +65,14 @@ class ModelStratData(TypedDict):
 
     vars: Dict[str, List[str]]  # {var_name: [category_names]}
     modes: Dict[str, StratMode]  # {var_name: StratMode.PARTIAL | StratMode.FULL}
+    dims: Dict[str, int]  # {var_name: [number of dimensions]}
     labels: Dict[str, str]  # {var_name: label}
     ixs: Dict[str, NDArray]  # {var_name: categorical_codes}
     flat_pixs: NDArray  # Combined flat population category indices
     flat_ix: NDArray  # Combined flat indices
     full_labels: List[str]
-    marginal_multipliers: Dict[str, NDArray]  # {var_name: NDArray}
-    multipliers: NDArray
+    marginal_multipliers: Optional[Dict[str, NDArray]] = None  # {var_name: NDArray}
+    multipliers: Optional[NDArray] = None
 
 
 class ModelData:

@@ -5,6 +5,7 @@ ensuring consistency of stratification variables and categorical encodings
 across participant, contact, population, and stratification proportion data.
 """
 
+import warnings
 from typing import Optional, Set, Tuple
 
 import pandas as pd
@@ -141,20 +142,21 @@ class DataValidator:
 
         # Validate PARTIAL mode: Participant stratification requires StratPropData
         if not self.strat_prop_data:
-            raise ValueError(
-                "StratPropData is required when ParticipantData has stratification variables.\n"
-                f"ParticipantData defines strat_var_cols: {sorted(self.part_vars)}\n"
-                "Please provide StratPropData with matching stratification structure."
+            warnings.warn(
+                "StratPropData is not provided. Continuing without stratified population proportions. "
+                "Some models (e.g., BRC) may not be available.",
+                UserWarning,
+                stacklevel=3,
             )
-
-        # StratPropData variables must match participant variables exactly
-        if self.strat_prop_vars != self.part_vars:
-            raise ValueError(
-                "Stratification variables in StratPropData must match ParticipantData.\n"
-                f"ParticipantData strat_var_cols: {sorted(self.part_vars)}\n"
-                f"StratPropData strat_var_cols: {sorted(self.strat_prop_vars)}\n"
-                "These must be identical for proper demographic weighting."
-            )
+        else:
+            # StratPropData variables must match participant variables exactly
+            if self.strat_prop_vars != self.part_vars:
+                raise ValueError(
+                    "Stratification variables in StratPropData must match ParticipantData.\n"
+                    f"ParticipantData strat_var_cols: {sorted(self.part_vars)}\n"
+                    f"StratPropData strat_var_cols: {sorted(self.strat_prop_vars)}\n"
+                    "These must be identical for proper demographic weighting."
+                )
 
         # Validate FULL mode: Contact-level stratification
         if not self.cnt_vars:

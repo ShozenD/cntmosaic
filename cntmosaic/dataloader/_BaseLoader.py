@@ -535,20 +535,35 @@ class BaseLoader(ABC):
         flat_pixs = self.infer_strat_pixs(modes)
         flat_ix = self.make_flat_ix(ixs, dims)
         full_labels = self.infer_full_strat_labels(flat_ix, dims, labels)
-        marginal_multipliers = self.strat_prop_data.compute_marginal_multipliers(modes)
-        multipliers = self.strat_prop_data.compute_multipliers(modes)
 
-        return ModelStratData(
-            modes=modes,
-            dims=dims,
-            labels=labels,
-            ixs=ixs,
-            flat_pixs=flat_pixs,
-            flat_ix=flat_ix,
-            full_labels=full_labels,
-            marginal_multipliers=marginal_multipliers,
-            multipliers=multipliers,
-        )
+        if self.strat_prop_data is not None:
+            marginal_multipliers = self.strat_prop_data.compute_marginal_multipliers(
+                modes
+            )
+            multipliers = self.strat_prop_data.compute_multipliers(modes)
+
+            return ModelStratData(
+                modes=modes,
+                dims=dims,
+                labels=labels,
+                ixs=ixs,
+                flat_pixs=flat_pixs,
+                flat_ix=flat_ix,
+                full_labels=full_labels,
+                marginal_multipliers=marginal_multipliers,
+                multipliers=multipliers,
+            )
+        else:
+            # Multipliers are not needed for vdKassteele models
+            return ModelStratData(
+                modes=modes,
+                dims=dims,
+                labels=labels,
+                ixs=ixs,
+                flat_pixs=flat_pixs,
+                flat_ix=flat_ix,
+                full_labels=full_labels,
+            )
 
     def load(self) -> ModelData:
         """

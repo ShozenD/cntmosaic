@@ -279,12 +279,52 @@ class Prior2D(ABC):
 
             self.event_dim_non_diag_eff = self.event_dim_non_diag // 2
 
+            # Pre-compute static indices for assembly (avoid JAX tracing issues)
+            self._compute_full_prior_indices()
+
         elif self.prior_type == "partial":
             self.event_dim = K
 
         else:  # global
             # Global prior: single shared parameter
             self.event_dim = 1
+
+    def _compute_full_prior_indices(self) -> None:
+        """
+        Pre-compute static indices for assembling full prior blocks.
+
+        This method computes all the indices needed for `_assemble_full_prior_blocks`
+        as static numpy arrays to avoid JAX tracing issues. Called automatically
+        by `set_event_dim` when `prior_type='full'`.
+
+        Sets the following attributes:
+        - _diag_idx: Diagonal indices in flattened K×K grid
+        - _flat_idx: Lower-triangular off-diagonal indices
+        - _transpose_flat_idx: Corresponding transpose indices
+        """
+        sqrt_event_dim = self.event_dim_diag
+
+        # Diagonal indices: [0, K+1, 2(K+1), ..., (K-1)(K+1)]
+        self._diag_idx = np.array(
+            [(i * sqrt_event_dim + i) for i in range(sqrt_event_dim)]
+        )
+
+        # All indices in the K×K grid
+        all_indices = np.arange(self.event_dim)
+
+        # Non-diagonal indices (all except diagonal)
+        non_diag_mask = np.isin(all_indices, self._diag_idx, invert=True)
+        non_diag_all = all_indices[non_diag_mask]
+
+        # Compute transpose indices: if idx = row*K + col, transpose = col*K + row
+        rows = non_diag_all // sqrt_event_dim
+        cols = non_diag_all % sqrt_event_dim
+        transpose_indices = cols * sqrt_event_dim + rows
+
+        # Keep only lower-triangular pairs (idx < transpose_idx)
+        lower_mask = non_diag_all < transpose_indices
+        self._flat_idx = non_diag_all[lower_mask]
+        self._transpose_flat_idx = transpose_indices[lower_mask]
 
     def _assemble_full_prior_blocks(
         self, f_diag: ArrayLike, f_non_diag: ArrayLike
@@ -334,36 +374,15 @@ class Prior2D(ABC):
         Diagonal indices: [0, 4, 8]
         Reciprocal pairs: (1,3), (2,6), (5,7)
         """
-        # Compute diagonal indices in the flattened K×K grid
-        sqrt_event_dim = jnp.sqrt(self.event_dim).astype(int)
-        diag_idx = jnp.array([(i * sqrt_event_dim + i) for i in range(sqrt_event_dim)])
-
+        # Use pre-computed static indices (set during set_event_dim)
         # Initialize array
         f = jnp.zeros((self.event_dim, self.A, self.A))
-        f = f.at[diag_idx, :, :].set(f_diag)
-
-        # Allocate off-diagonal elements (between-group contacts with reciprocity)
-        # Get all non-diagonal flat indices in the K×K grid
-        all_indices = jnp.arange(self.event_dim)
-        non_diag_mask = jnp.isin(all_indices, diag_idx, invert=True)
-        non_diag_all = all_indices[non_diag_mask]
-
-        # Compute transpose indices for all non-diagonal positions
-        # If flat index is row*K + col, its transpose is col*K + row
-        rows = non_diag_all // sqrt_event_dim
-        cols = non_diag_all % sqrt_event_dim
-        transpose_indices = cols * sqrt_event_dim + rows
-
-        # Keep only indices where idx < transpose_idx (lower half of reciprocal pairs)
-        # This ensures we process each pair only once
-        lower_mask = non_diag_all < transpose_indices
-        flat_idx = non_diag_all[lower_mask]
-        transpose_flat_idx = transpose_indices[lower_mask]
+        f = f.at[self._diag_idx, :, :].set(f_diag)
 
         # Allocate each sampled off-diagonal matrix to its position and transpose position
         for i in range(self.event_dim_non_diag_eff):
-            idx = flat_idx[i]
-            idx_t = transpose_flat_idx[i]
+            idx = self._flat_idx[i]
+            idx_t = self._transpose_flat_idx[i]
             f = f.at[idx, :, :].set(f_non_diag[i, :, :])
             f = f.at[idx_t, :, :].set(f_non_diag[i, :, :].T)
 

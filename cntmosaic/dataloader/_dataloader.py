@@ -184,6 +184,26 @@ class DataLoader(BaseLoader):
         # Merge contact and participant data on 'id' column
         data = pd.merge(self.cnt_data.data, self.part_data.data, on="id")
 
+        # Restore categorical dtypes that may have been lost during merge
+        # This ensures stratification variables remain categorical
+        for col in data.columns:
+            # Check if column exists in participant data and is categorical
+            if col in self.part_data.data.columns:
+                if pd.api.types.is_categorical_dtype(self.part_data.data[col]):
+                    data[col] = pd.Categorical(
+                        data[col],
+                        categories=self.part_data.data[col].cat.categories,
+                        ordered=self.part_data.data[col].cat.ordered,
+                    )
+            # Check if column exists in contact data and is categorical
+            elif col in self.cnt_data.data.columns:
+                if pd.api.types.is_categorical_dtype(self.cnt_data.data[col]):
+                    data[col] = pd.Categorical(
+                        data[col],
+                        categories=self.cnt_data.data[col].cat.categories,
+                        ordered=self.cnt_data.data[col].cat.ordered,
+                    )
+
         # Initialize parent class with merged data
         super().__init__(data, self.pop_data.data, col_map, self.strat_prop_data)
 

@@ -290,6 +290,88 @@ class DataValidator:
                     ordered=True,
                 )
 
+    def _ensure_categorical_dtype(self) -> None:
+        """Ensure all stratification variables have categorical dtype.
+
+        Automatically converts stratification variables to categorical dtype if they
+        are not already categorical. Issues a warning to inform users about the
+        conversion and that the ordering is determined by sorted unique values.
+
+        Notes
+        -----
+        - Modifies dataframes in-place
+        - Uses sorted unique values to determine category ordering
+        - Should be called before _check_stratum_categories()
+        """
+        # Skip if no stratification variables
+        if not self.part_data.strat_var_cols:
+            return
+
+        converted_vars = []
+
+        # Check and convert ParticipantData
+        for col in self.part_vars:
+            if col in self.part_data.df_part.columns:
+                if not pd.api.types.is_categorical_dtype(self.part_data.df_part[col]):
+                    self.part_data.df_part[col] = pd.Categorical(
+                        self.part_data.df_part[col],
+                        categories=sorted(self.part_data.df_part[col].unique()),
+                        ordered=True,
+                    )
+                    converted_vars.append(f"ParticipantData.{col}")
+
+        # Check and convert ContactData
+        for col in self.cnt_vars:
+            if col in self.cnt_data.df_cnt.columns:
+                if not pd.api.types.is_categorical_dtype(self.cnt_data.df_cnt[col]):
+                    self.cnt_data.df_cnt[col] = pd.Categorical(
+                        self.cnt_data.df_cnt[col],
+                        categories=sorted(self.cnt_data.df_cnt[col].unique()),
+                        ordered=True,
+                    )
+                    converted_vars.append(f"ContactData.{col}")
+
+        # Check and convert PopulationData
+        for col in self.pop_vars:
+            if col in self.pop_data.df_pop.columns:
+                if not pd.api.types.is_categorical_dtype(self.pop_data.df_pop[col]):
+                    self.pop_data.df_pop[col] = pd.Categorical(
+                        self.pop_data.df_pop[col],
+                        categories=sorted(self.pop_data.df_pop[col].unique()),
+                        ordered=True,
+                    )
+                    converted_vars.append(f"PopulationData.{col}")
+
+        # Check and convert StratPropData
+        if self.strat_prop_data:
+            for col in self.strat_prop_vars:
+                # StratPropData uses base variable names without suffix
+                base_col = col.replace("_part", "")
+                if base_col in self.strat_prop_data.data.columns:
+                    if not pd.api.types.is_categorical_dtype(
+                        self.strat_prop_data.data[base_col]
+                    ):
+                        self.strat_prop_data.data[base_col] = pd.Categorical(
+                            self.strat_prop_data.data[base_col],
+                            categories=sorted(
+                                self.strat_prop_data.data[base_col].unique()
+                            ),
+                            ordered=True,
+                        )
+                        converted_vars.append(f"StratPropData.{base_col}")
+
+        # Warn user if any variables were converted
+        if converted_vars:
+            warnings.warn(
+                f"Automatically converted the following stratification variables to categorical dtype: "
+                f"{', '.join(converted_vars)}. "
+                f"Categories are ordered alphabetically/numerically by sorted unique values. "
+                f"If you need a specific ordering, please convert to pd.Categorical with explicit "
+                f"category ordering before creating the DataLoader.",
+                UserWarning,
+                stacklevel=4,
+            )
+
     def _check_stratum_categories(self) -> None:
         """Validate and consolidate categorical encodings across all datasets.
 
@@ -317,7 +399,7 @@ class DataValidator:
 
         Notes
         -----
-        - Must be called after _check_strat_var_consistency()
+        - Must be called after _check_strat_var_consistency() and _ensure_categorical_dtype()
         - Modifies categorical columns in-place
         - Handles both PARTIAL (participant-only) and FULL (participant+contact) modes
         - Missing categories in downstream data are allowed (will be added)
@@ -376,6 +458,7 @@ class DataValidator:
         consistency, which is essential for proper array broadcasting in JAX/NumPyro.
         """
         self._check_strat_var_consistency()
+        self._ensure_categorical_dtype()
         self._check_stratum_categories()
 
         return (

@@ -322,6 +322,35 @@ class BaseLoader(ABC):
         df_full = pd.merge(df_full, df_n, on=self.col_map.strat_vars_n, how="left")
         df_full = pd.merge(df_full, df_S, on=self.col_map.strat_vars_n, how="left")
 
+        # Restore categorical dtypes after merges (they can be lost during merge operations)
+        if self.col_map.age_grp_cnt and self.col_map.age_grp_cnt in df_full.columns:
+            if isinstance(
+                self.data[self.col_map.age_grp_cnt].dtype, pd.CategoricalDtype
+            ):
+                df_full[self.col_map.age_grp_cnt] = pd.Categorical(
+                    df_full[self.col_map.age_grp_cnt],
+                    categories=self.data[self.col_map.age_grp_cnt].cat.categories,
+                    ordered=True,
+                )
+        if self.col_map.strat_vars_part:
+            for var in self.col_map.strat_vars_part:
+                if var in df_full.columns:
+                    if isinstance(self.data[var].dtype, pd.CategoricalDtype):
+                        df_full[var] = pd.Categorical(
+                            df_full[var],
+                            categories=self.data[var].cat.categories,
+                            ordered=True,
+                        )
+        if self.col_map.strat_vars_cnt:
+            for var in self.col_map.strat_vars_cnt:
+                if var in df_full.columns:
+                    if isinstance(self.data[var].dtype, pd.CategoricalDtype):
+                        df_full[var] = pd.Categorical(
+                            df_full[var],
+                            categories=self.data[var].cat.categories,
+                            ordered=True,
+                        )
+
         # [Do] Finalise the data
         df_full = df_full.dropna(subset=["N"])
         df_full = df_full[df_full["N"] > 0]
@@ -353,7 +382,7 @@ class BaseLoader(ABC):
             )  # shape (K, A)
 
         else:
-            P = self.pop_data[self.col_map.P].to_numpy()
+            P = self.pop_data[self.col_map.P].to_numpy()[np.newaxis, :]  # shape (1, A)
 
         return np.log(P)
 

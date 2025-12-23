@@ -325,11 +325,14 @@ class HiBRCfine(BRCfine):
         for var, prior in self.priors.items():
             if var == "rate":
                 continue  # Skip baseline prior
-            if Omega is None:
-                Omega = prior.sample()
-            else:
-                # Recursively build Kronecker sum for multiple strat variables
-                Omega = kron_sum_mode_1(Omega, prior.sample())
+
+            # Use scope to ensure unique parameter names for each stratification variable
+            with scope(prefix=var):
+                if Omega is None:
+                    Omega = prior.sample()
+                else:
+                    # Recursively build Kronecker sum for multiple strat variables
+                    Omega = kron_sum_mode_1(Omega, prior.sample())
 
         # Apply inverse CLR transformation
         delta = inverse_clr(Omega)

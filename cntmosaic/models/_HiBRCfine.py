@@ -167,6 +167,9 @@ class HiBRCfine(BRCfine):
         # Initialize parent class (BRCfine) - this calls BRC.__init__ internally
         super().__init__(dataloader, priors, likelihood)
 
+        # Override log_P for stratified case (already has shape (K, A), no need for newaxis)
+        self.log_P = jnp.array(self.data.base_data["log_P"])
+
         # Validate hierarchical-specific requirements
         self._validate_hierarchical_inputs()
 

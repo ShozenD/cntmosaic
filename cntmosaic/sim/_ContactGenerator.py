@@ -222,7 +222,10 @@ class ContactGenerator:
 
             # Check if this is a full case (tuple keys) or partial case (scalar keys)
             first_key = next(iter(self.cint_matrices.keys()))
-            self.is_full_case = isinstance(first_key, tuple)
+            if "->All" in str(first_key):
+                self.is_full_case = False
+            else:
+                self.is_full_case = True
 
             if self.is_full_case:
                 # Full case - validate all subgroups have all required matrices
@@ -231,15 +234,15 @@ class ContactGenerator:
                 # Check that we have all (k, l) pairs
                 for k in subgroups:
                     for l in subgroups:
-                        if (k, l) not in self.cint_matrices:
+                        if f"{k}->{l}" not in self.cint_matrices:
                             raise ValueError(
-                                f"Missing matrix for ({k}, {l}) in full case matrices"
+                                f"Missing matrix for {k}->{l} in full case matrices"
                             )
 
                 self.subgroup_labels = subgroups
             else:
                 # Partial case - use matrices as-is
-                subgroups = set(self.df_part["subgroup"].unique())
+                subgroups = set(self.df_part["subgroup"].astype(str).unique())
                 matrix_labels = set(
                     [label.replace("->All", "") for label in self.cint_matrices.keys()]
                 )
@@ -440,7 +443,7 @@ class ContactGenerator:
             # Generate contacts with each target subgroup
             for target_label in self.subgroup_labels:
                 # Get the appropriate contact matrix
-                matrix = self.cint_matrices[(source_label, target_label)]
+                matrix = self.cint_matrices[f"{source_label}->{target_label}"]
 
                 # Generate contacts from source to target
                 df_contacts = self._generate_single(

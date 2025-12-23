@@ -159,7 +159,7 @@ class MatrixGenerator:
             P_k = np.diag(subgroup.age_dist)
             M_k = self._enforce_reciprocity(M_k, P_k)
 
-            matrices[subgroup.label + "->All"] = M_k
+            matrices[str(subgroup.label) + "->All"] = M_k
 
         return matrices
 
@@ -176,15 +176,15 @@ class MatrixGenerator:
         Parameters
         ----------
         subgroups : list of Subgroup
-                        List of Subgroup objects, labeled automatically as 0, 1, 2, ...
+            List of Subgroup objects, labeled automatically as 0, 1, 2, ...
         seed : int, optional
-                        Random seed for reproducibility
+            Random seed for reproducibility
 
         Returns
         -------
         dict
-                        Maps (source, target) tuples to contact matrices
-                        {(k, l): M_kl} where M_kl represents contacts from k to l
+            Maps (source, target) strings to contact matrices
+            {"k->l": M_kl} where M_kl represents contacts from k to l
 
         Examples
         --------
@@ -193,8 +193,8 @@ class MatrixGenerator:
         ...     Subgroup(old_dist, 10.0)
         ... ]
         >>> matrices = generator.generate_full(subgroups, seed=42)
-        >>> young_to_old = matrices[(0, 1)]
-        >>> old_to_young = matrices[(1, 0)]
+        >>> young_to_old = matrices["0->1"]
+        >>> old_to_young = matrices["1->0"]
         """
         rng = np.random.default_rng(seed)
 
@@ -209,7 +209,7 @@ class MatrixGenerator:
             P_k = np.diag(subgroup.age_dist)
             M_kk = self._enforce_reciprocity(M_kk, P_k)
 
-            matrices[(subgroup.label, subgroup.label)] = M_kk
+            matrices[str(subgroup.label) + "->" + str(subgroup.label)] = M_kk
 
         # Step 2: Generate off-diagonal blocks (between-subgroup contacts)
         for i, subgroup_k in enumerate(subgroups):
@@ -230,8 +230,8 @@ class MatrixGenerator:
 
                 M_lk = P_l_inv @ M_kl.T @ P_k
 
-                matrices[subgroup_k.label + "->" + subgroup_l.label] = M_kl
-                matrices[subgroup_l.label + "->" + subgroup_k.label] = M_lk
+                matrices[str(subgroup_k.label) + "->" + str(subgroup_l.label)] = M_kl
+                matrices[str(subgroup_l.label) + "->" + str(subgroup_k.label)] = M_lk
 
         return matrices
 

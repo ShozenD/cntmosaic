@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Union
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -18,30 +18,38 @@ class ContactGenerator:
     - MatrixGenerator: provides contact intensity matrices (cint_matrices)
 
     Three modes of operation:
-    1. Single population: One matrix for all participants
-    2. Partial case: One matrix per subgroup (contacts with general population)
-    3. Full case: All pairwise matrices (contacts between all subgroup pairs)
+    1. Single population: One matrix for all participants (key: "All->All")
+    2. Partial case: One matrix per stratum to general population (keys: "{label}->All")
+    3. Full case: All pairwise stratum matrices (keys: "{source}->{target}")
 
     Examples
     --------
     >>> import numpy as np
-    >>> from cntmosaic.sim import MatrixGenerator, ParticipantGenerator, ContactGenerator, Subgroup
+    >>> from cntmosaic.sim import (
+    ...     Stratification, PopulationConstructor, MatrixGenerator,
+    ...     ParticipantGenerator, ContactGenerator
+    ... )
     >>> from cntmosaic.datasets import load_template_patterns
 
     **Example 1: Single population**
 
-    >>> templates = load_template_patterns('USA')
-    >>> subgroup = Subgroup(n=100, age_dist=np.array([100, 200, 300, 400, 500]), mean_cint_margin=15.0)
+    >>> templates = load_template_patterns('United_States', max_age=50)
+    >>> n_ages = templates['household'].shape[0]
+    >>> ref_age_dist = np.random.rand(n_ages) * 1000
+    >>>
+    >>> # Create stratification and population
+    >>> strat = Stratification('group', 1, ref_age_dist, labels=['All'], seed=42)
+    >>> pop = PopulationConstructor(strat)
     >>>
     >>> # Generate participants and matrix
-    >>> part_gen = ParticipantGenerator(subgroup)
+    >>> part_gen = ParticipantGenerator(pop, n_participants=100)
     >>> participants = part_gen.generate(seed=42)
     >>>
     >>> mat_gen = MatrixGenerator(templates)
-    >>> contact_matrix = mat_gen.generate_single(subgroup, seed=42)
+    >>> matrices = mat_gen.generate_single(pop, mean_intensity=15.0, seed=42)
     >>>
     >>> # Generate contacts
-    >>> contact_gen = ContactGenerator(participants, contact_matrix)
+    >>> contact_gen = ContactGenerator(participants, matrices)
     >>> contacts = contact_gen.generate(seed=42)
     >>> print(contacts.head())
        id  age_cnt   y
@@ -51,18 +59,21 @@ class ContactGenerator:
     3   2        1   5
     4   2        3  15
 
-    **Example 2: Multiple subgroups (Partial case)**
+    **Example 2: Multiple strata (Partial case)**
 
-    >>> subgroups = [
-    ...     Subgroup(n=100, age_dist=np.array([150, 250, 350, 250, 100]), mean_cint_margin=18.0, label='urban'),
-    ...     Subgroup(n=50, age_dist=np.array([100, 150, 200, 300, 250]), mean_cint_margin=12.0, label='rural')
-    ... ]
+    >>> # Create stratification
+    >>> region_strat = Stratification(
+    ...     'region', 2, ref_age_dist, labels=['Urban', 'Rural'], seed=42
+    ... )
+    >>> pop = PopulationConstructor(region_strat)
     >>>
-    >>> part_gen = ParticipantGenerator(subgroups)
+    >>> # Generate participants and matrices
+    >>> part_gen = ParticipantGenerator(pop, n_participants=150)
     >>> participants = part_gen.generate(seed=42)
     >>>
     >>> mat_gen = MatrixGenerator(templates)
-    >>> matrices = mat_gen.generate_partial(subgroups, seed=42)
+    >>> matrices = mat_gen.generate_partial(pop, mean_intensity=15.0, seed=42)
+    >>> # matrices = {"Urban->All": M_urban, "Rural->All": M_rural}
     >>>
     >>> contact_gen = ContactGenerator(participants, matrices)
     >>> contacts = contact_gen.generate(seed=42)
@@ -73,36 +84,40 @@ class ContactGenerator:
     2   2        1   6
     3   3        0  12
     4   3        2   8
-    >>> # Note: No 'subgroup' column because contacts are with general population
+    >>> # Note: No 'region' column because contacts are with general population
 
-    **Example 3: Full case (All subgroup interactions)**
+    **Example 3: Full case (All stratum interactions)**
 
-    >>> subgroups = [
-    ...     Subgroup(n=100, age_dist=np.array([150, 250, 350, 250, 100]), mean_cint_margin=18.0, label='urban'),
-    ...     Subgroup(n=50, age_dist=np.array([100, 150, 200, 300, 250]), mean_cint_margin=12.0, label='rural')
-    ... ]
+    >>> # Create stratification
+    >>> region_strat = Stratification(
+    ...     'region', 2, ref_age_dist, labels=['Urban', 'Rural'], seed=42
+    ... )
+    >>> pop = PopulationConstructor(region_strat)
     >>>
-    >>> part_gen = ParticipantGenerator(subgroups)
+    >>> # Generate participants and matrices
+    >>> part_gen = ParticipantGenerator(pop, n_participants=150)
     >>> participants = part_gen.generate(seed=42)
     >>>
     >>> mat_gen = MatrixGenerator(templates)
-    >>> matrices = mat_gen.generate_full(subgroups, seed=42)  # Full case
+    >>> matrices = mat_gen.generate_full(pop, mean_intensity=15.0, seed=42)
+    >>> # matrices = {"Urban->Urban": M_uu, "Urban->Rural": M_ur,
+    >>> #            "Rural->Urban": M_ru, "Rural->Rural": M_rr}
     >>>
     >>> contact_gen = ContactGenerator(participants, matrices)
     >>> contacts = contact_gen.generate(seed=42)
     >>> print(contacts.head())
-       id  age_cnt subgroup_cnt   y
-    0   1        2        urban  12
-    1   1        3        urban   8
-    2   1        1        rural   3
-    3   2        0        urban   7
-    4   2        2        rural   5
+       id  age_cnt region_cnt   y
+    0   1        2      Urban  12
+    1   1        3      Urban   8
+    2   1        1      Rural   3
+    3   2        0      Urban   7
+    4   2        2      Rural   5
     >>>
-    >>> # Urban participants have contacts with both urban and rural subgroups
-    >>> print(contacts[contacts['id'] == 1]['subgroup_cnt'].value_counts())
-    subgroup_cnt
-    urban    3
-    rural    2
+    >>> # Urban participants have contacts with both Urban and Rural strata
+    >>> print(contacts[contacts['id'] == 1]['region_cnt'].value_counts())
+    region_cnt
+    Urban    3
+    Rural    2
     """
 
     ALLOWED_MODELS = ["poisson", "negbin"]
@@ -110,9 +125,7 @@ class ContactGenerator:
     def __init__(
         self,
         df_part: pd.DataFrame,
-        cint_matrices: Union[
-            NDArray, Dict[Union[int, str], NDArray], Dict[Tuple, NDArray]
-        ],
+        cint_matrices: Dict[str, NDArray],
         model: str = "poisson",
         odisp: float = None,
         random_effects: bool = False,
@@ -128,17 +141,17 @@ class ContactGenerator:
                 Participant data from ParticipantGenerator.generate().
                 Must contain columns:
                 - 'id': Unique participant identifier
-                - 'age_group': Age group index
-                - 'subgroup': Subgroup label (only if multiple subgroups)
+                - 'age': Participant age (continuous)
+                - Stratification columns (e.g., 'gender', 'region') if using stratified matrices
 
-        cint_matrices : NDArray or dict
+        cint_matrices : dict of str to NDArray
                 Contact intensity matrices from MatrixGenerator.
-                Can be:
-                - NDArray: Single matrix for homogeneous population (from generate_single)
-                - dict mapping labels to NDArray: Subgroup-specific matrices (from generate_partial)
-                  Keys must match the 'subgroup' values in df_part
-                - dict mapping (source, target) tuples to NDArray: Full case matrices (from generate_full)
-                  Only diagonal matrices (k, k) will be used for contact generation
+                Dictionary mapping string keys to contact matrices:
+                - Single case: {"All->All": matrix}
+                - Partial case: {"{label}->All": matrix} for each stratum
+                  (e.g., {"Urban->All": M_urban, "Rural->All": M_rural})
+                - Full case: {"{source}->{target}": matrix} for all stratum pairs
+                  (e.g., {"Urban->Urban": M_uu, "Urban->Rural": M_ur, ...})
 
         model : str, default='poisson'
                 Contact count sampling distribution. Options:
@@ -200,64 +213,151 @@ class ContactGenerator:
 
     def _validate_matrices(self) -> None:
         """Validate that matrices match participant data structure."""
-        has_subgroups = "subgroup" in self.df_part.columns
+        if not isinstance(self.cint_matrices, dict):
+            raise TypeError(
+                f"cint_matrices must be a dictionary with string keys, got {type(self.cint_matrices)}"
+            )
 
-        # Single population case
-        if isinstance(self.cint_matrices, np.ndarray):
-            if has_subgroups:
+        if len(self.cint_matrices) == 0:
+            raise ValueError("cint_matrices cannot be empty")
+
+        # Check if all keys are strings
+        if not all(isinstance(k, str) for k in self.cint_matrices.keys()):
+            raise TypeError("All keys in cint_matrices must be strings")
+
+        # Determine case based on key format
+        first_key = next(iter(self.cint_matrices.keys()))
+        
+        # Single population case: "All->All"
+        if first_key == "All->All":
+            if len(self.cint_matrices) != 1:
                 raise ValueError(
-                    "df_part contains multiple subgroups but cint_matrices is a single matrix. "
-                    "Expected a dictionary of matrices."
+                    "Single population case should have exactly one key: 'All->All'"
                 )
             self.is_full_case = False
+            self.is_single_case = True
+            self.strat_column = None
+            self.strat_columns = []  # No stratification columns
             return
 
-        # Multiple subgroups case
-        if isinstance(self.cint_matrices, dict):
-            if not has_subgroups:
+        # Check for partial case: "{label}->All"
+        if "->All" in first_key:
+            self.is_full_case = False
+            self.is_single_case = False
+            
+            # Extract stratum labels from keys
+            matrix_labels = set(
+                key.replace("->All", "") for key in self.cint_matrices.keys()
+            )
+            
+            # Find stratification column in df_part
+            # Look for columns that match the extracted labels
+            strat_cols = [col for col in self.df_part.columns 
+                         if col not in ['id', 'age', 'age_group']]
+            
+            if len(strat_cols) == 0:
                 raise ValueError(
-                    "cint_matrices is a dictionary but df_part has no 'subgroup' column. "
-                    "Expected a single matrix."
+                    "Partial case matrices provided but df_part has no stratification columns"
                 )
-
-            # Check if this is a full case (tuple keys) or partial case (scalar keys)
-            first_key = next(iter(self.cint_matrices.keys()))
-            if "->All" in str(first_key):
-                self.is_full_case = False
-            else:
-                self.is_full_case = True
-
-            if self.is_full_case:
-                # Full case - validate all subgroups have all required matrices
-                subgroups = list(self.df_part["subgroup"].unique())
-
-                # Check that we have all (k, l) pairs
-                for k in subgroups:
-                    for l in subgroups:
-                        if f"{k}->{l}" not in self.cint_matrices:
-                            raise ValueError(
-                                f"Missing matrix for {k}->{l} in full case matrices"
-                            )
-
-                self.subgroup_labels = subgroups
-            else:
-                # Partial case - use matrices as-is
-                subgroups = set(self.df_part["subgroup"].astype(str).unique())
-                matrix_labels = set(
-                    [label.replace("->All", "") for label in self.cint_matrices.keys()]
+            
+            # For multi-stratification, labels are combined with underscores
+            # We need to find which combination of columns produces these labels
+            found_match = False
+            for col in strat_cols:
+                part_labels = set(self.df_part[col].astype(str).unique())
+                if part_labels == matrix_labels:
+                    self.strat_column = col
+                    self.strat_columns = [col]  # Single stratification
+                    self.strat_labels = list(matrix_labels)
+                    found_match = True
+                    break
+            
+            # Try multi-stratification (combined labels)
+            if not found_match and len(strat_cols) > 1:
+                # Create combined labels from df_part
+                df_temp = self.df_part.copy()
+                combined_labels = df_temp[strat_cols].astype(str).agg('_'.join, axis=1)
+                part_labels_combined = set(combined_labels.unique())
+                
+                if part_labels_combined == matrix_labels:
+                    self.strat_column = '_'.join(strat_cols)
+                    self.strat_columns = strat_cols  # Multiple stratifications
+                    self.strat_labels = list(matrix_labels)
+                    # Add combined column to df_part for easier processing
+                    self.df_part[self.strat_column] = combined_labels
+                    found_match = True
+            
+            if not found_match:
+                raise ValueError(
+                    f"Cannot match matrix labels {matrix_labels} with participant stratifications. "
+                    f"Available columns: {strat_cols}"
                 )
-
-                if subgroups != matrix_labels:
-                    raise ValueError(
-                        f"Mismatch between subgroups in df_part {subgroups} "
-                        f"and matrix labels {matrix_labels}"
-                    )
-
-                self.subgroup_labels = list(subgroups)
             return
 
-        raise TypeError(
-            f"cint_matrices must be NDArray or dict, got {type(self.cint_matrices)}"
+        # Full case: "{source}->{target}"
+        if "->" in first_key and "->All" not in first_key:
+            self.is_full_case = True
+            self.is_single_case = False
+            
+            # Extract unique stratum labels from keys
+            all_labels = set()
+            for key in self.cint_matrices.keys():
+                source, target = key.split("->", 1)
+                all_labels.add(source)
+                all_labels.add(target)
+            
+            # Find stratification column(s) in df_part
+            strat_cols = [col for col in self.df_part.columns 
+                         if col not in ['id', 'age', 'age_group']]
+            
+            if len(strat_cols) == 0:
+                raise ValueError(
+                    "Full case matrices provided but df_part has no stratification columns"
+                )
+            
+            # Try to match labels
+            found_match = False
+            for col in strat_cols:
+                part_labels = set(self.df_part[col].astype(str).unique())
+                if part_labels == all_labels:
+                    self.strat_column = col
+                    self.strat_columns = [col]  # Single stratification
+                    self.strat_labels = list(all_labels)
+                    found_match = True
+                    break
+            
+            # Try multi-stratification
+            if not found_match and len(strat_cols) > 1:
+                df_temp = self.df_part.copy()
+                combined_labels = df_temp[strat_cols].astype(str).agg('_'.join, axis=1)
+                part_labels_combined = set(combined_labels.unique())
+                
+                if part_labels_combined == all_labels:
+                    self.strat_column = '_'.join(strat_cols)
+                    self.strat_columns = strat_cols  # Multiple stratifications
+                    self.strat_labels = list(all_labels)
+                    self.df_part[self.strat_column] = combined_labels
+                    found_match = True
+            
+            if not found_match:
+                raise ValueError(
+                    f"Cannot match matrix labels {all_labels} with participant stratifications. "
+                    f"Available columns: {strat_cols}"
+                )
+            
+            # Validate all stratum pairs exist
+            for source in self.strat_labels:
+                for target in self.strat_labels:
+                    key = f"{source}->{target}"
+                    if key not in self.cint_matrices:
+                        raise ValueError(
+                            f"Missing matrix for {key} in full case matrices"
+                        )
+            return
+
+        raise ValueError(
+            f"Cannot determine matrix case from key format: {first_key}. "
+            "Expected 'All->All', '{label}->All', or '{source}->{target}'"
         )
 
     def _generate_single(
@@ -265,7 +365,8 @@ class ContactGenerator:
         df_part: pd.DataFrame,
         cint_matrix: NDArray,
         rng: np.random.Generator,
-        target_label: Union[str, int] = None,
+        target_label: str = None,
+        strat_col_name: str = None,
     ) -> pd.DataFrame:
         """
         Generate contact counts for a single group of participants.
@@ -278,19 +379,21 @@ class ContactGenerator:
                 Contact intensity matrix (A×A)
         rng : np.random.Generator
                 Random number generator
-        target_label : str or int, optional
-                Subgroup label of contacts (for full case only)
+        target_label : str, optional
+                Stratum label of contacts (for full case only)
                 If None, contacts are with general population (single or partial case)
+        strat_col_name : str, optional
+                Name of stratification column for output (for full case only)
 
         Returns
         -------
         pd.DataFrame
                 Contact data with columns:
                 - ['id', 'age_cnt', 'y'] for single or partial case
-                - ['id', 'age_cnt', 'subgroup_cnt', 'y'] for full case
+                - ['id', 'age_cnt', '{strat_col_name}_cnt', 'y'] for full case
         """
         # Get age groups for all participants
-        age_groups = df_part["age_group"].astype(int).values
+        age_groups = df_part["age"].astype(int).values
 
         # Extract contact intensities for each participant's age group
         # lambda_[i, j] = expected contacts from participant i to age group j
@@ -330,15 +433,30 @@ class ContactGenerator:
 
                 # Determine columns based on case
                 if target_label is not None:
-                    # Full case: include subgroup_cnt
-                    data.append([participant_id, age_cnt, target_label, contact_count])
+                    # Full case: include stratification column(s)
+                    # For multi-stratification, split combined label
+                    if '_' in target_label and len(self.strat_columns) > 1:
+                        # Multi-stratification: split label and create separate columns
+                        label_parts = target_label.split('_')
+                        row_data = [participant_id, age_cnt] + label_parts + [contact_count]
+                    else:
+                        # Single stratification
+                        row_data = [participant_id, age_cnt, target_label, contact_count]
+                    data.append(row_data)
                 else:
-                    # Single or partial case: no subgroup info
+                    # Single or partial case: no stratum info
                     data.append([participant_id, age_cnt, contact_count])
 
         # Create DataFrame
         if target_label is not None:
-            columns = ["id", "age_cnt", "subgroup_cnt", "y"]
+            # For multi-stratification, create separate columns
+            if len(self.strat_columns) > 1:
+                strat_cnt_cols = [f"{col}_cnt" for col in self.strat_columns]
+                columns = ["id", "age_cnt"] + strat_cnt_cols + ["y"]
+            else:
+                # Single stratification
+                strat_cnt_col = f"{strat_col_name}_cnt" if strat_col_name else "stratum_cnt"
+                columns = ["id", "age_cnt", strat_cnt_col, "y"]
         else:
             columns = ["id", "age_cnt", "y"]
 
@@ -410,44 +528,57 @@ class ContactGenerator:
         rng = np.random.default_rng(seed)
 
         # Single population case
-        if isinstance(self.cint_matrices, np.ndarray):
-            return self._generate_single(self.df_part, self.cint_matrices, rng)
+        if self.is_single_case:
+            return self._generate_single(
+                self.df_part, 
+                self.cint_matrices["All->All"], 
+                rng,
+                target_label=None,
+                strat_col_name=None
+            )
 
-        # Multiple subgroups - Partial case
+        # Partial case - stratified participants, contacts with general population
         if not self.is_full_case:
             dfs = []
-            for label in self.subgroup_labels:
-                # Filter participants for this subgroup
-                df_part_sub = self.df_part[self.df_part["subgroup"] == label].copy()
+            for label in self.strat_labels:
+                # Filter participants for this stratum
+                df_part_sub = self.df_part[
+                    self.df_part[self.strat_column] == label
+                ].copy()
 
-                # Generate contacts for this subgroup (with general population)
+                # Generate contacts for this stratum (with general population)
                 df_contacts = self._generate_single(
                     df_part_sub,
-                    self.cint_matrices[label + "->All"],
+                    self.cint_matrices[f"{label}->All"],
                     rng,
-                    target_label=None,  # No target label for partial case
+                    target_label=None,
+                    strat_col_name=None
                 )
                 dfs.append(df_contacts)
 
-            # Combine all subgroups
+            # Combine all strata
             return pd.concat(dfs, ignore_index=True)
 
-        # Multiple subgroups - Full case
+        # Full case - all stratum pair interactions
         dfs = []
-        for source_label in self.subgroup_labels:
-            # Filter participants for this source subgroup
+        for source_label in self.strat_labels:
+            # Filter participants for this source stratum
             df_part_source = self.df_part[
-                self.df_part["subgroup"] == source_label
+                self.df_part[self.strat_column] == source_label
             ].copy()
 
-            # Generate contacts with each target subgroup
-            for target_label in self.subgroup_labels:
+            # Generate contacts with each target stratum
+            for target_label in self.strat_labels:
                 # Get the appropriate contact matrix
                 matrix = self.cint_matrices[f"{source_label}->{target_label}"]
 
                 # Generate contacts from source to target
                 df_contacts = self._generate_single(
-                    df_part_source, matrix, rng, target_label=target_label
+                    df_part_source, 
+                    matrix, 
+                    rng, 
+                    target_label=target_label,
+                    strat_col_name=self.strat_column
                 )
 
                 dfs.append(df_contacts)
@@ -587,7 +718,7 @@ class ContactGenerator:
 
     def get_contact_matrix_empirical(
         self, contacts: pd.DataFrame = None, normalize: bool = False
-    ) -> Union[NDArray, Dict[Union[str, int], NDArray], Dict[Tuple, NDArray]]:
+    ) -> Dict[str, NDArray]:
         """
         Calculate empirical contact matrix from generated contact data.
 
@@ -603,115 +734,123 @@ class ContactGenerator:
 
         Returns
         -------
-        NDArray or dict of NDArray
+        dict of str to NDArray
                 Empirical contact matrix/matrices where element [i,j] represents
                 total (or average if normalized) contacts from age group i to age group j
 
-                - For single case: returns NDArray
-                - For partial case: returns dict mapping subgroup labels to NDArray
-                - For full case: returns dict with (source, target) tuple keys
+                - For single case: {"All->All": matrix}
+                - For partial case: {"{label}->All": matrix} for each stratum
+                - For full case: {"{source}->{target}": matrix} for all stratum pairs
 
         Examples
         --------
         >>> # Single case
         >>> contacts = contact_gen.generate(seed=42)
         >>> empirical = contact_gen.get_contact_matrix_empirical(contacts, normalize=True)
-        >>> print(f"Empirical contacts from age 0 to age 1: {empirical[0, 1]:.2f}")
+        >>> matrix = empirical["All->All"]
+        >>> print(f"Empirical contacts from age 0 to age 1: {matrix[0, 1]:.2f}")
 
         >>> # Partial case
         >>> contacts = contact_gen.generate(seed=42)
         >>> empirical = contact_gen.get_contact_matrix_empirical(contacts, normalize=True)
-        >>> urban_matrix = empirical['urban']
+        >>> urban_matrix = empirical['Urban->All']
         >>> print(f"Urban contacts (age 0→1): {urban_matrix[0, 1]:.2f}")
 
         >>> # Full case
         >>> contacts = contact_gen.generate(seed=42)
         >>> empirical = contact_gen.get_contact_matrix_empirical(contacts, normalize=True)
-        >>> urban_to_rural = empirical[('urban', 'rural')]
+        >>> urban_to_rural = empirical['Urban->Rural']
         >>> print(f"Urban to rural contacts (age 0→1): {urban_to_rural[0, 1]:.2f}")
         """
         if contacts is None:
             contacts = self.generate()
 
         # Determine number of age groups from contact matrix
-        if isinstance(self.cint_matrices, np.ndarray):
-            n_age_groups = self.cint_matrices.shape[0]
-        else:
-            first_matrix = next(iter(self.cint_matrices.values()))
-            n_age_groups = first_matrix.shape[0]
+        first_matrix = next(iter(self.cint_matrices.values()))
+        n_age_groups = first_matrix.shape[0]
 
         # Single population case
-        if isinstance(self.cint_matrices, np.ndarray):
+        if self.is_single_case:
             # Create empirical matrix
             empirical = np.zeros((n_age_groups, n_age_groups))
 
             # Merge with participant ages
             contacts_with_age = contacts.merge(
-                self.df_part[["id", "age_group"]], on="id"
+                self.df_part[["id", "age"]], on="id"
             )
 
             # Aggregate contacts
             for _, row in contacts_with_age.iterrows():
-                age_from = int(row["age_group"])
+                age_from = int(row["age"])
                 age_to = int(row["age_cnt"])
                 empirical[age_from, age_to] += row["y"]
 
             # Normalize if requested
             if normalize:
-                age_counts = self.df_part["age_group"].value_counts().sort_index()
+                age_counts = self.df_part["age"].value_counts().sort_index()
                 for i in range(n_age_groups):
                     if i in age_counts.index and age_counts[i] > 0:
                         empirical[i, :] /= age_counts[i]
 
-            return empirical
+            return {"All->All": empirical}
 
         # Full case - create matrices for each (source, target) pair
         if self.is_full_case:
             empirical_matrices = {}
 
-            for source_label in self.subgroup_labels:
-                for target_label in self.subgroup_labels:
+            for source_label in self.strat_labels:
+                for target_label in self.strat_labels:
                     # Create empirical matrix for this pair
                     empirical = np.zeros((n_age_groups, n_age_groups))
 
                     # Filter participants from source subgroup
                     df_part_source = self.df_part[
-                        self.df_part["subgroup"] == source_label
+                        self.df_part[self.strat_column] == source_label
                     ]
 
-                    # Filter contacts to target subgroup
-                    contacts_pair = contacts[contacts["subgroup_cnt"] == target_label]
+                    # Filter contacts to target subgroup based on stratification structure
+                    if len(self.strat_columns) > 1:
+                        # Multi-stratification: filter by each column
+                        target_parts = target_label.split('_')
+                        contacts_pair = contacts.copy()
+                        for i, col in enumerate(self.strat_columns):
+                            col_cnt = f"{col}_cnt"
+                            contacts_pair = contacts_pair[contacts_pair[col_cnt] == target_parts[i]]
+                    else:
+                        # Single stratification
+                        strat_col_name = f"{self.strat_column}_cnt"
+                        contacts_pair = contacts[contacts[strat_col_name] == target_label]
 
                     # Merge with participant ages
                     contacts_with_age = contacts_pair.merge(
-                        df_part_source[["id", "age_group"]], on="id"
+                        df_part_source[["id", "age"]], on="id"
                     )
 
                     # Aggregate contacts
                     for _, row in contacts_with_age.iterrows():
-                        age_from = int(row["age_group"])
+                        age_from = int(row["age"])
                         age_to = int(row["age_cnt"])
                         empirical[age_from, age_to] += row["y"]
 
                     # Normalize if requested
                     if normalize:
                         age_counts = (
-                            df_part_source["age_group"].value_counts().sort_index()
+                            df_part_source["age"].value_counts().sort_index()
                         )
                         for i in range(n_age_groups):
                             if i in age_counts.index and age_counts[i] > 0:
                                 empirical[i, :] /= age_counts[i]
 
-                    empirical_matrices[(source_label, target_label)] = empirical
+                    empirical_matrices[f"{source_label}->{target_label}"] = empirical
 
             return empirical_matrices
 
         # Partial case - create matrices for each subgroup
         empirical_matrices = {}
 
-        for label in self.subgroup_labels:
+        for label in self.strat_labels:
             # Filter participants for this subgroup
-            df_part_sub = self.df_part[self.df_part["subgroup"] == label]
+            df_part_sub = self.df_part[self.df_part[self.strat_column] == label]
 
             # Filter contacts for this subgroup
             # Note: In partial case, we need to get contacts for participants in this subgroup
@@ -722,22 +861,22 @@ class ContactGenerator:
 
             # Merge with participant ages
             contacts_with_age = contacts_sub.merge(
-                df_part_sub[["id", "age_group"]], on="id"
+                df_part_sub[["id", "age"]], on="id"
             )
 
             # Aggregate contacts
             for _, row in contacts_with_age.iterrows():
-                age_from = int(row["age_group"])
+                age_from = int(row["age"])
                 age_to = int(row["age_cnt"])
                 empirical[age_from, age_to] += row["y"]
 
             # Normalize if requested
             if normalize:
-                age_counts = df_part_sub["age_group"].value_counts().sort_index()
+                age_counts = df_part_sub["age"].value_counts().sort_index()
                 for i in range(n_age_groups):
                     if i in age_counts.index and age_counts[i] > 0:
                         empirical[i, :] /= age_counts[i]
 
-            empirical_matrices[label] = empirical
+            empirical_matrices[f"{label}->All"] = empirical
 
         return empirical_matrices

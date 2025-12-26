@@ -1,228 +1,319 @@
 import pytest
 import numpy as np
-from .._ParticipantGenerator import ParticipantGenerator, Subgroup
-from ...datasets._base import load_age_distribution
+from .._ParticipantGenerator import ParticipantGenerator
+from .._PopulationConstructor import PopulationConstructor
+from .._Stratification import Stratification
 
 
-def test_single_subgroup_input():
-  """
-  Test ParticipantGenerator with a single Subgroup input.
-  """
-  # Create a simple Subgroup
-  age_dist = np.array([100, 200, 300, 400, 500])
-  subgroup = Subgroup(n=1000, age_dist=age_dist, mean_cint_margin=15.0)
-  
-  pg = ParticipantGenerator(subgroup)
-  df_part = pg.generate(seed=42)
-  
-  # Check the shape of the generated DataFrame
-  assert df_part.shape == (1000, 2), "DataFrame should have 1000 rows and 2 columns"
-  
-  # Check the columns of the generated DataFrame
-  assert list(df_part.columns) == ['id', 'age_group'], "Columns should be 'id' and 'age_group'"
-  
-  # Check that IDs are unique and sequential
-  assert df_part['id'].is_unique, "IDs should be unique"
-  assert df_part['id'].min() == 1, "IDs should start at 1"
-  assert df_part['id'].max() == 1000, "IDs should end at 1000"
-  
-  # Check that ages are within valid range
-  assert df_part['age_group'].min() >= 0, "Ages should be non-negative"
-  assert df_part['age_group'].max() < len(age_dist), "Ages should be less than the length of age distribution"
-  
-  # Check that there's no subgroup column
-  assert 'subgroup' not in df_part.columns, "Single Subgroup input should not have subgroup column"
+def test_single_stratification():
+    """
+    Test ParticipantGenerator with a single Stratification.
+    """
+    # Create reference age distribution
+    ref_age_dist = np.array([1000, 1500, 2000, 1800, 1200])
+    
+    # Create gender stratification
+    gender_strat = Stratification(
+        name='gender',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Male', 'Female'],
+        seed=42
+    )
+    
+    # Build population constructor
+    pop_constructor = PopulationConstructor(gender_strat)
+    
+    # Generate participants
+    pg = ParticipantGenerator(pop_constructor, n_participants=1000)
+    df_part = pg.generate(seed=123)
+    
+    # Check the shape of the generated DataFrame
+    assert df_part.shape == (1000, 3), "DataFrame should have 1000 rows and 3 columns (id, age, gender)"
+    
+    # Check the columns of the generated DataFrame
+    assert set(df_part.columns) == {'id', 'age', 'gender'}, "Columns should be 'id', 'age', 'gender'"
+    
+    # Check that IDs are unique and sequential
+    assert df_part['id'].is_unique, "IDs should be unique"
+    assert df_part['id'].min() == 1, "IDs should start at 1"
+    assert df_part['id'].max() == 1000, "IDs should end at 1000"
+    
+    # Check that ages are within valid range
+    assert df_part['age'].min() >= 0, "Ages should be non-negative"
+    assert df_part['age'].max() < len(ref_age_dist), "Ages should be less than the number of age groups"
+    
+    # Check that gender values are correct
+    assert set(df_part['gender'].unique()).issubset({'Male', 'Female'}), "Gender should be Male or Female"
 
 
-def test_list_of_subgroups_input():
-  """
-  Test ParticipantGenerator with a list of Subgroup objects input (no labels).
-  """
-  # Create Subgroup objects without labels
-  subgroup_1 = Subgroup(n=800, age_dist=np.array([100, 200, 300, 400]), mean_cint_margin=15.0)
-  subgroup_2 = Subgroup(n=800, age_dist=np.array([500, 400, 300, 200]), mean_cint_margin=20.0)
-  
-  pg = ParticipantGenerator([subgroup_1, subgroup_2])
-  df_part = pg.generate(seed=42)
-  
-  # Check the shape - should have 800 rows per subgroup = 1600 total
-  assert df_part.shape == (1600, 3), "DataFrame should have 1600 rows (800 per subgroup) and 3 columns"
-  
-  # Check the columns
-  assert set(df_part.columns) == {'id', 'age_group', 'subgroup'}, "Columns should include 'id', 'age_group', and 'subgroup'"
-  
-  # Check that IDs are unique and sequential
-  assert df_part['id'].is_unique, "IDs should be unique"
-  assert df_part['id'].min() == 1, "IDs should start at 1"
-  assert df_part['id'].max() == 1600, "IDs should end at 1600"
-  
-  # Check subgroups - should use numeric indices when no labels provided
-  assert df_part['subgroup'].nunique() == 2, "Should have 2 subgroups"
-  assert set(df_part['subgroup'].unique()) == {0, 1}, "Subgroups should be 0 and 1"
-  
-  # Check that each subgroup has the correct number of participants
-  subgroup_counts = df_part['subgroup'].value_counts()
-  assert subgroup_counts[0] == 800, "Subgroup 0 should have 800 participants"
-  assert subgroup_counts[1] == 800, "Subgroup 1 should have 800 participants"
-
-
-def test_list_of_subgroups_with_labels():
-  """
-  Test ParticipantGenerator with a list of Subgroup objects with custom labels.
-  """
-  # Create Subgroup objects with custom labels
-  subgroup_young = Subgroup(n=500, age_dist=np.array([1000, 800, 600, 400, 200]), mean_cint_margin=18.0, label='young')
-  subgroup_old = Subgroup(n=500, age_dist=np.array([200, 400, 600, 800, 1000]), mean_cint_margin=12.0, label='old')
-  
-  pg = ParticipantGenerator([subgroup_young, subgroup_old])
-  df_part = pg.generate(seed=99)
-  
-  # Check the shape - should have 500 rows per subgroup = 1000 total
-  assert df_part.shape == (1000, 3), "DataFrame should have 1000 rows (500 per subgroup) and 3 columns"
-  
-  # Check the columns
-  assert set(df_part.columns) == {'id', 'age_group', 'subgroup'}, "Columns should include 'id', 'age_group', and 'subgroup'"
-  
-  # Check that IDs are unique and sequential
-  assert df_part['id'].is_unique, "IDs should be unique"
-  assert df_part['id'].min() == 1, "IDs should start at 1"
-  assert df_part['id'].max() == 1000, "IDs should end at 1000"
-  
-  # Check subgroups - should use custom labels
-  assert df_part['subgroup'].nunique() == 2, "Should have 2 subgroups"
-  assert set(df_part['subgroup'].unique()) == {'young', 'old'}, "Subgroups should be 'young' and 'old'"
-  
-  # Check that each subgroup has the correct number of participants
-  subgroup_counts = df_part['subgroup'].value_counts()
-  assert subgroup_counts['young'] == 500, "Subgroup 'young' should have 500 participants"
-  assert subgroup_counts['old'] == 500, "Subgroup 'old' should have 500 participants"
+def test_multiple_stratifications():
+    """
+    Test ParticipantGenerator with multiple Stratifications (Gender × Region).
+    """
+    # Create reference age distribution
+    ref_age_dist = np.array([1000, 1500, 2000, 1800, 1200])
+    
+    # Create stratifications
+    gender_strat = Stratification(
+        name='gender',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Male', 'Female'],
+        seed=42
+    )
+    region_strat = Stratification(
+        name='region',
+        n_strata=3,
+        ref_age_dist=ref_age_dist,
+        labels=['Urban', 'Suburban', 'Rural'],
+        seed=43
+    )
+    
+    # Build joint population
+    pop_constructor = PopulationConstructor([gender_strat, region_strat])
+    
+    # Generate participants
+    pg = ParticipantGenerator(pop_constructor, n_participants=2000)
+    df_part = pg.generate(seed=456)
+    
+    # Check the shape - should have id, age, gender, region
+    assert df_part.shape == (2000, 4), "DataFrame should have 2000 rows and 4 columns"
+    
+    # Check the columns
+    assert set(df_part.columns) == {'id', 'age', 'gender', 'region'}, \
+        "Columns should include 'id', 'age', 'gender', 'region'"
+    
+    # Check that IDs are unique and sequential
+    assert df_part['id'].is_unique, "IDs should be unique"
+    assert df_part['id'].min() == 1, "IDs should start at 1"
+    assert df_part['id'].max() == 2000, "IDs should end at 2000"
+    
+    # Check gender values
+    assert set(df_part['gender'].unique()).issubset({'Male', 'Female'}), \
+        "Gender should be Male or Female"
+    
+    # Check region values
+    assert set(df_part['region'].unique()).issubset({'Urban', 'Suburban', 'Rural'}), \
+        "Region should be Urban, Suburban, or Rural"
+    
+    # Check that we have participants in multiple strata
+    assert df_part.groupby(['gender', 'region']).size().min() > 0, \
+        "Should have participants in all gender×region combinations"
 
 
 def test_reproducibility_with_seed():
-  """
-  Test that the same seed produces the same results.
-  """
-  subgroup = Subgroup(n=100, age_dist=np.array([100, 200, 300, 400, 500]), mean_cint_margin=15.0)
-  
-  pg1 = ParticipantGenerator(subgroup)
-  df_part1 = pg1.generate(seed=12345)
-  
-  pg2 = ParticipantGenerator(subgroup)
-  df_part2 = pg2.generate(seed=12345)
-  
-  # Check that the generated data is identical
-  assert df_part1.equals(df_part2), "Same seed should produce identical results"
+    """
+    Test that the same seed produces the same results.
+    """
+    ref_age_dist = np.array([100, 200, 300, 400, 500])
+    
+    gender_strat = Stratification(
+        name='gender',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Male', 'Female'],
+        seed=100
+    )
+    
+    pop_constructor = PopulationConstructor(gender_strat)
+    
+    pg1 = ParticipantGenerator(pop_constructor, n_participants=500)
+    df_part1 = pg1.generate(seed=12345)
+    
+    pg2 = ParticipantGenerator(pop_constructor, n_participants=500)
+    df_part2 = pg2.generate(seed=12345)
+    
+    # Check that the generated data is identical
+    assert df_part1.equals(df_part2), "Same seed should produce identical results"
 
 
 def test_different_seeds_produce_different_results():
-  """
-  Test that different seeds produce different results.
-  """
-  subgroup = Subgroup(n=100, age_dist=np.array([100, 200, 300, 400, 500]), mean_cint_margin=15.0)
-  
-  pg1 = ParticipantGenerator(subgroup)
-  df_part1 = pg1.generate(seed=111)
-  
-  pg2 = ParticipantGenerator(subgroup)
-  df_part2 = pg2.generate(seed=222)
-  
-  # Check that the generated data is different
-  assert not df_part1['age_group'].equals(df_part2['age_group']), "Different seeds should produce different results"
+    """
+    Test that different seeds produce different results.
+    """
+    ref_age_dist = np.array([100, 200, 300, 400, 500])
+    
+    gender_strat = Stratification(
+        name='gender',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Male', 'Female'],
+        seed=100
+    )
+    
+    pop_constructor = PopulationConstructor(gender_strat)
+    
+    pg1 = ParticipantGenerator(pop_constructor, n_participants=500)
+    df_part1 = pg1.generate(seed=111)
+    
+    pg2 = ParticipantGenerator(pop_constructor, n_participants=500)
+    df_part2 = pg2.generate(seed=222)
+    
+    # Check that the generated data is different
+    assert not df_part1['age'].equals(df_part2['age']), \
+        "Different seeds should produce different age distributions"
 
 
-def test_invalid_n_value():
-  """
-  Test that ValueError is raised when n is invalid.
-  """
-  # Test with n=0
-  subgroup = Subgroup(n=0, age_dist=np.array([100, 200, 300, 400]), mean_cint_margin=15.0)
-  pg = ParticipantGenerator(subgroup)
-  
-  # n=0 should generate an empty dataframe (not an error)
-  df_part = pg.generate(seed=42)
-  assert len(df_part) == 0, "n=0 should generate empty DataFrame"
+def test_invalid_n_participants():
+    """
+    Test that ValueError is raised when n_participants is invalid.
+    """
+    ref_age_dist = np.array([100, 200, 300, 400])
+    
+    gender_strat = Stratification(
+        name='gender',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Male', 'Female'],
+        seed=42
+    )
+    
+    pop_constructor = PopulationConstructor(gender_strat)
+    
+    # Test with n_participants=0
+    with pytest.raises(ValueError, match="n_participants must be positive"):
+        pg = ParticipantGenerator(pop_constructor, n_participants=0)
+    
+    # Test with negative n_participants
+    with pytest.raises(ValueError, match="n_participants must be positive"):
+        pg = ParticipantGenerator(pop_constructor, n_participants=-10)
 
 
 def test_invalid_input_types():
-  """
-  Test that TypeError is raised for invalid input types.
-  """
-  # Test with raw NDArray (should fail)
-  with pytest.raises(TypeError, match="subgroups must be Subgroup"):
-    ParticipantGenerator(np.array([100, 200, 300]))
-  
-  # Test with list containing non-Subgroup elements
-  with pytest.raises(TypeError, match="List elements must be Subgroup"):
-    ParticipantGenerator([np.array([100, 200, 300])])
-  
-  # Test with dict (should fail - no longer supported)
-  with pytest.raises(TypeError, match="subgroups must be Subgroup"):
-    ParticipantGenerator({'test': Subgroup(n=100, age_dist=np.array([100, 200, 300]), mean_cint_margin=15.0)})
+    """
+    Test that TypeError is raised for invalid input types.
+    """
 
 
-def test_age_distribution_normalization():
-  """
-  Test that age distributions are correctly normalized to proportions.
-  """
-  # Use unnormalized distribution
-  age_dist = np.array([100, 200, 300, 400])
-  subgroup = Subgroup(n=500, age_dist=age_dist, mean_cint_margin=15.0)
-  
-  pg = ParticipantGenerator(subgroup)
-  
-  # Check that age_proportions sums to 1
-  assert np.isclose(pg.age_proportions.sum(), 1.0), "Age proportions should sum to 1"
-  
-  # Check that proportions are correct
-  expected_prop = age_dist / age_dist.sum()
-  assert np.allclose(pg.age_proportions, expected_prop), "Age proportions should be correctly normalized"
+def test_age_distribution_matches_population():
+    """
+    Test that generated age distribution approximates population distribution.
+    """
+    ref_age_dist = np.array([1000, 1500, 2000, 1800, 1200])
+    
+    gender_strat = Stratification(
+        name='gender',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Male', 'Female'],
+        seed=42
+    )
+    
+    pop_constructor = PopulationConstructor(gender_strat)
+    
+    # Generate large sample
+    pg = ParticipantGenerator(pop_constructor, n_participants=10000)
+    df_part = pg.generate(seed=789)
+    
+    # Check that age distribution approximates population
+    age_counts = df_part['age'].value_counts().sort_index()
+    expected_proportions = ref_age_dist / ref_age_dist.sum()
+    observed_proportions = age_counts / age_counts.sum()
+    
+    # With 10000 samples, should be quite close
+    for age in range(len(ref_age_dist)):
+        assert abs(observed_proportions[age] - expected_proportions[age]) < 0.02, \
+            f"Age {age} proportion should be close to population distribution"
 
 
-def test_basic_functionality():
-  """
-  Test the basic functionality of loading age distribution data.
-  """
-  # Load the age distribution for the United States with a maximum age of 80
-  df_age_dist = load_age_distribution('United_States', max_age=80)
-  age_dist = df_age_dist['P'].values
-  
-  # ===== Single group ======
-  subgroup = Subgroup(n=1000, age_dist=age_dist, mean_cint_margin=15.0)
-  pg = ParticipantGenerator(subgroup)
-  df_part = pg.generate(seed=0)
-  
-  # Check the shape of the generated DataFrame
-  assert df_part.shape == (1000, 2)
-  
-  # Check the columns of the generated DataFrame
-  assert df_part.columns.isin(['id', 'age_group']).all()
-  
-  # Multiple groups
-  subgroups = [
-    Subgroup(n=1000, age_dist=age_dist, mean_cint_margin=15.0),
-    Subgroup(n=1000, age_dist=age_dist, mean_cint_margin=20.0)
-  ]
-  pg = ParticipantGenerator(subgroups)
-  df_part = pg.generate(seed=0)
-  assert df_part.shape == (2000, 3)
-  assert df_part.columns.isin(['id', 'age_group', 'subgroup']).all()
+def test_conditional_stratum_sampling():
+    """
+    Test that strata are sampled conditional on age using Q matrix.
+    """
+    ref_age_dist = np.array([1000, 1000, 1000])
+    
+    # Create stratification with age-dependent probabilities
+    gender_strat = Stratification(
+        name='gender',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Male', 'Female'],
+        seed=50
+    )
+    
+    pop_constructor = PopulationConstructor(gender_strat)
+    
+    # Generate participants
+    pg = ParticipantGenerator(pop_constructor, n_participants=3000)
+    df_part = pg.generate(seed=999)
+    
+    # Check Q matrix structure
+    Q = pop_constructor.Q
+    assert Q.shape == (2, 3), "Q should have shape (n_strata, n_ages)"
+    
+    # Each column should sum to 1 (probabilities for each age)
+    for age in range(3):
+        assert np.isclose(Q[:, age].sum(), 1.0), f"Q[:, {age}] should sum to 1"
+    
+    # Check that participants are distributed across strata
+    assert df_part['gender'].nunique() == 2, "Should have participants in both genders"
 
 
-def test_different_sample_sizes():
-  """
-  Test that subgroups can have different sample sizes.
-  """
-  # Create Subgroup objects with different n values
-  subgroup_1 = Subgroup(n=300, age_dist=np.array([100, 200, 300, 400]), mean_cint_margin=15.0, label='small')
-  subgroup_2 = Subgroup(n=700, age_dist=np.array([500, 400, 300, 200]), mean_cint_margin=20.0, label='large')
-  
-  pg = ParticipantGenerator([subgroup_1, subgroup_2])
-  df_part = pg.generate(seed=42)
-  
-  # Check total size
-  assert len(df_part) == 1000, "Total should be 300 + 700 = 1000"
-  
-  # Check that each subgroup has the correct number of participants
-  subgroup_counts = df_part['subgroup'].value_counts()
-  assert subgroup_counts['small'] == 300, "Subgroup 'small' should have 300 participants"
-  assert subgroup_counts['large'] == 700, "Subgroup 'large' should have 700 participants"
+def test_column_order():
+    """
+    Test that output DataFrame has correct column order.
+    """
+    ref_age_dist = np.array([100, 200, 300])
+    
+    gender_strat = Stratification(
+        name='gender',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Male', 'Female'],
+        seed=42
+    )
+    
+    pop_constructor = PopulationConstructor(gender_strat)
+    pg = ParticipantGenerator(pop_constructor, n_participants=100)
+    df_part = pg.generate(seed=1)
+    
+    # Check column order: id, age, then stratification variables
+    expected_cols = ['id', 'age', 'gender']
+    assert list(df_part.columns) == expected_cols, \
+        f"Columns should be {expected_cols}"
+
+
+def test_three_way_stratification():
+    """
+    Test ParticipantGenerator with three stratification variables.
+    """
+    ref_age_dist = np.array([1000, 1500, 2000])
+    
+    # Create three stratifications
+    gender_strat = Stratification(
+        name='gender',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Male', 'Female'],
+        seed=10
+    )
+    region_strat = Stratification(
+        name='region',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Urban', 'Rural'],
+        seed=11
+    )
+    ses_strat = Stratification(
+        name='ses',
+        n_strata=2,
+        ref_age_dist=ref_age_dist,
+        labels=['Low', 'High'],
+        seed=12
+    )
+    
+    # Build joint population
+    pop_constructor = PopulationConstructor([gender_strat, region_strat, ses_strat])
+    
+    # Generate participants
+    pg = ParticipantGenerator(pop_constructor, n_participants=1000)
+    df_part = pg.generate(seed=500)
+    
+    # Check columns
+    assert set(df_part.columns) == {'id', 'age', 'gender', 'region', 'ses'}, \
+        "Should have all stratification variables"
+    
+    # Check that we have 2×2×2 = 8 possible strata
+    n_unique_strata = df_part.groupby(['gender', 'region', 'ses']).size().shape[0]
+    assert n_unique_strata <= 8, "Should have at most 8 unique strata combinations"

@@ -27,14 +27,14 @@ class ParticipantGenerator:
     pop_constructor : PopulationConstructor
         Population structure defining stratifications and age distributions.
         Contains the reference age distribution and proportion matrix Q.
-    n_participants : int
+    n_part : int
         Total number of participants to generate.
 
     Attributes
     ----------
     pop_constructor : PopulationConstructor
         The population constructor with stratification information.
-    n_participants : int
+    n_part : int
         Total sample size.
     n_ages : int
         Number of age groups.
@@ -73,7 +73,7 @@ class ParticipantGenerator:
     >>> pop_constructor = PopulationConstructor(gender_strat)
 
     >>> # Generate 1000 participants
-    >>> pg = ParticipantGenerator(pop_constructor, n_participants=1000)
+    >>> pg = ParticipantGenerator(pop_constructor, n_part=1000)
     >>> df_participants = pg.generate(seed=123)
 
     >>> print(df_participants.head())
@@ -116,7 +116,7 @@ class ParticipantGenerator:
     >>> pop_constructor = PopulationConstructor([gender_strat, region_strat])
 
     >>> # Generate participants
-    >>> pg = ParticipantGenerator(pop_constructor, n_participants=2000)
+    >>> pg = ParticipantGenerator(pop_constructor, n_part=2000)
     >>> df_participants = pg.generate(seed=456)
 
     >>> print(df_participants.head())
@@ -149,9 +149,7 @@ class ParticipantGenerator:
     structure defined by the PopulationConstructor.
     """
 
-    def __init__(
-        self, pop_constructor: PopulationConstructor, n_participants: int
-    ) -> None:
+    def __init__(self, pop_constructor: PopulationConstructor, n_part: int) -> None:
         """
         Initialize ParticipantGenerator with population structure.
 
@@ -159,13 +157,13 @@ class ParticipantGenerator:
         ----------
         pop_constructor : PopulationConstructor
             Population structure defining stratifications and age distributions.
-        n_participants : int
+        n_part : int
             Total number of participants to generate. Must be positive.
 
         Raises
         ------
         ValueError
-            If n_participants is not positive.
+            If n_part is not positive.
         TypeError
             If pop_constructor is not a PopulationConstructor instance.
         """
@@ -174,11 +172,11 @@ class ParticipantGenerator:
                 f"pop_constructor must be PopulationConstructor, got {type(pop_constructor)}"
             )
 
-        if n_participants <= 0:
-            raise ValueError(f"n_participants must be positive, got {n_participants}")
+        if n_part <= 0:
+            raise ValueError(f"n_part must be positive, got {n_part}")
 
         self.pop_constructor = pop_constructor
-        self.n_participants = n_participants
+        self.n_part = n_part
 
         # Extract population structure
         self._extract_population_structure()
@@ -223,11 +221,9 @@ class ParticipantGenerator:
         Returns
         -------
         NDArray
-            Array of sampled ages (length n_participants).
+            Array of sampled ages (length n_part).
         """
-        ages = rng.choice(
-            self.n_ages, size=self.n_participants, p=self.global_age_dist
-        )
+        ages = rng.choice(self.n_ages, size=self.n_part, p=self.global_age_dist)
         return ages
 
     def _sample_strata_given_ages(
@@ -241,16 +237,16 @@ class ParticipantGenerator:
         Parameters
         ----------
         ages : NDArray
-            Array of participant ages (length n_participants).
+            Array of participant ages (length n_part).
         rng : np.random.Generator
             Random number generator.
 
         Returns
         -------
         NDArray
-            Array of sampled stratum indices (length n_participants).
+            Array of sampled stratum indices (length n_part).
         """
-        strata = np.zeros(self.n_participants, dtype=int)
+        strata = np.zeros(self.n_part, dtype=int)
 
         for i, age in enumerate(ages):
             # Get conditional distribution over strata given this age
@@ -271,7 +267,7 @@ class ParticipantGenerator:
         Parameters
         ----------
         strata : NDArray
-            Array of stratum indices (length n_participants).
+            Array of stratum indices (length n_part).
 
         Returns
         -------
@@ -309,13 +305,13 @@ class ParticipantGenerator:
         -------
         pd.DataFrame
             DataFrame with columns:
-            - 'id': Unique participant ID (1, 2, ..., n_participants)
+            - 'id': Unique participant ID (1, 2, ..., n_part)
             - 'age': Age group index (0 to n_ages - 1)
             - One column per stratification variable (e.g., 'gender', 'region')
 
         Examples
         --------
-        >>> pg = ParticipantGenerator(pop_constructor, n_participants=500)
+        >>> pg = ParticipantGenerator(pop_constructor, n_part=500)
         >>> df = pg.generate(seed=42)
         >>> df.columns
         Index(['id', 'age', 'gender'], dtype='object')
@@ -336,7 +332,7 @@ class ParticipantGenerator:
         # Build final DataFrame
         df = pd.DataFrame(
             {
-                "id": np.arange(1, self.n_participants + 1),
+                "id": np.arange(1, self.n_part + 1),
                 "age": ages,
             }
         )

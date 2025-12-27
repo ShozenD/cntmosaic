@@ -60,7 +60,7 @@ class PopulationConstructor:
                 data.append(
                     {
                         "age": int(age_idx),
-                        "P": self.Q[s, age_idx],
+                        "Q": self.Q[s, age_idx],
                         **{
                             f"{self.strats[j].name}": label_tuple[j]
                             for j in range(len(label_tuple))

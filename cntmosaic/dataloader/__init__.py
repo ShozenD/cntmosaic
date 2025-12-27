@@ -1,4 +1,4 @@
-from ._DataLoader import DataLoader
+from ._dataloader import DataLoader
 from .containers import ContactData, ParticipantData, PopulationData, StratPropData
 
 __all__ = [

@@ -6,6 +6,7 @@ from ._HiBRCrefine import HiBRCrefine
 from ._numpyro import to_inference_data
 from ._Prem import Prem
 from ._SocialMix import SocialMix
+from ._socialmix_bootstrap import SocialMixBootstrap, BootstrapResults
 from ._vdKassteele import vdKassteele
 
 __all__ = [
@@ -17,6 +18,8 @@ __all__ = [
     "Prem",
     "HiBRCrefine",
     "SocialMix",
+    "SocialMixBootstrap",
+    "BootstrapResults",
     "Prem",
     "vdKassteele",
     "to_inference_data",

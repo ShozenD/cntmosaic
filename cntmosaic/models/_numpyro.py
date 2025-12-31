@@ -1,22 +1,19 @@
 import os
 
-import numpy as np
 import jax
-from jax import random
 import jax.numpy as jnp
-from optax import linear_onecycle_schedule
-
+import numpy as np
 import numpyro
+from arviz.data.base import dict_to_dataset
+from arviz.data.inference_data import InferenceData
+from jax import random
 from numpyro.handlers import substitute
-from numpyro.infer.util import _predictive
-from numpyro.infer.util import log_likelihood
 from numpyro.infer import MCMC, NUTS, SVI, Predictive
 from numpyro.infer.elbo import Trace_ELBO
 from numpyro.infer.initialization import init_to_median, init_to_uniform
+from numpyro.infer.util import _predictive, log_likelihood
 from numpyro.optim import Adam
-
-from arviz.data.base import dict_to_dataset
-from arviz.data.inference_data import InferenceData
+from optax import linear_onecycle_schedule
 
 
 def run_inference_mcmc(
@@ -73,6 +70,58 @@ def posterior_predictive_mcmc(
     samples = mcmc.get_samples()
     predictive = Predictive(model, samples, parallel=True)
     return predictive(prng_key, **model_kwargs)
+
+
+def get_samples_svi(
+    prng_key,
+    guide: callable,
+    params: dict,
+    num_samples: int = 2000,
+    **guide_kwargs,
+) -> dict[str, jax.Array]:
+    """Sample parameters from the variational posterior (guide).
+
+    This is the SVI equivalent of MCMC.get_samples() - it samples the latent
+    parameters (e.g., beta0, beta_cd) from the learned variational distribution.
+
+    Parameters
+    ----------
+    prng_key : PRNGKey
+        Random number generator key.
+    guide : callable
+        The variational guide function.
+    params : dict
+        SVI parameters from svi_result.params.
+    num_samples : int, default=2000
+        Number of posterior samples to draw.
+    **guide_kwargs
+        Additional keyword arguments for the guide.
+
+    Returns
+    -------
+    dict[str, jax.Array]
+        Dictionary of parameter samples, excluding auto-guide internal variables.
+    """
+    # Substitute guide parameters and sample from it
+    sub_guide = substitute(guide, params)
+    posterior_samples = {}
+    batch_size = (num_samples,)
+
+    # Sample from the guide to get parameter posterior
+    samples = _predictive(
+        prng_key,
+        sub_guide,
+        posterior_samples,
+        batch_size,
+        return_sites="",
+        parallel=True,
+        model_args=(),
+        model_kwargs=guide_kwargs,
+        exclude_deterministic=True,
+    )
+
+    # Filter out auto-guide internal variables (contain '_auto_')
+    return {k: v for k, v in samples.items() if "_auto_" not in k}
 
 
 def posterior_predictive_svi(

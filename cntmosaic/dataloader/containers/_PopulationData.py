@@ -39,18 +39,18 @@ class PopulationData:
     strat_var_cols : Optional[Union[List[str], str]], default=None
         Stratification variable column name(s) for population subgroups.
         Can be a single string or list of strings. Examples: 'gender', ['gender', 'region'].
-        
+
         **Important**: If multiple variables are specified (e.g., ['gender', 'region']),
         they will be **combined into a single composite stratification variable** by DataLoader.
         For example, ['gender', 'region'] with categories ['M', 'F'] and ['North', 'South']
         will create a combined variable with categories: ['M_North', 'M_South', 'F_North', 'F_South'].
-        
+
         **Consistency requirement**: The same stratification variables must be specified across:
         - ParticipantData (required if stratifying)
         - ContactData (required if FULL stratification mode)
         - PopulationData (required if using stratified population data)
         - StratPropData (required, one object per composite stratification)
-        
+
         Population sizes will be aggregated (summed) by the composite stratification variable along with age.
 
     Properties
@@ -403,7 +403,9 @@ class PopulationData:
             )
 
         # Aggregate by summing population sizes within each group
-        df = df.groupby(groupby_cols, as_index=False, observed=False)[self.size_col].sum()
+        df = df.groupby(groupby_cols, as_index=False, observed=False)[
+            self.size_col
+        ].sum()
 
         # Step 6: Rename columns to standard names
         rename_map = {self.age_col: "age", self.size_col: "P"}
@@ -602,7 +604,7 @@ class PopulationData:
         return (int(ages.min()), int(ages.max()))
 
     @property
-    def stratification_vars(self) -> List[str]:
+    def strat_vars(self) -> List[str]:
         """
         Return list of stratification variable names.
 
@@ -614,10 +616,37 @@ class PopulationData:
         Examples
         --------
         >>> pop_data = PopulationData(df, 'age', 'population', strat_var_cols=['gender', 'region'])
-        >>> pop_data.stratification_vars
+        >>> pop_data.strat_vars
         ['gender', 'region']
         """
         return self.strat_var_cols if self.strat_var_cols else []
+
+    def get_strat_vars(self, suffix: bool = False) -> List[str]:
+        """
+        Return list of stratification variable names, optionally with suffix.
+
+        Parameters
+        ----------
+        suffix : bool, default=False
+            If True, appends '_pop' suffix to each stratification variable name.
+
+        Returns
+        -------
+        List[str]
+            List of stratification variable column names (with optional suffix).
+
+        Examples
+        --------
+        >>> pop_data = PopulationData(df, 'age', 'population', strat_var_cols=['gender', 'region'])
+        >>> pop_data.get_strat_vars(suffix=True)
+        ['gender_pop', 'region_pop']
+        """
+        if not self.strat_var_cols:
+            return []
+        if suffix:
+            return [var + "_pop" for var in self.strat_var_cols]
+        else:
+            return [var.removesuffix("_pop") for var in self.strat_var_cols]
 
     @property
     def as_proportions(self) -> pd.DataFrame:
@@ -761,8 +790,8 @@ class PopulationData:
             - age_range: Tuple of (min_age, max_age)
             - total_population: Total population size
             - mean_population_per_age: Average population per age group
-            - stratification_vars: List of stratification variables
-            - n_stratification_vars: Number of stratification variables
+            - strat_vars: List of stratification variables
+            - n_strat_vars: Number of stratification variables
             - is_stratified: Boolean indicating if data is stratified
 
         Examples
@@ -775,8 +804,8 @@ class PopulationData:
             'age_range': (0, 85),
             'total_population': 328200000.0,
             'mean_population_per_age': 3816279.07,
-            'stratification_vars': ['gender'],
-            'n_stratification_vars': 1,
+            'strat_vars': ['gender'],
+            'n_strat_vars': 1,
             'is_stratified': True
         }
         """
@@ -785,9 +814,9 @@ class PopulationData:
             "age_range": self.age_range,
             "total_population": self.total_population,
             "mean_population_per_age": self.total_population / self.n_ages,
-            "stratification_vars": self.stratification_vars,
-            "n_stratification_vars": len(self.stratification_vars),
-            "is_stratified": len(self.stratification_vars) > 0,
+            "strat_vars": self.strat_vars,
+            "n_strat_vars": len(self.strat_vars),
+            "is_stratified": len(self.strat_vars) > 0,
         }
 
         return summary_dict

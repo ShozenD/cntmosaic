@@ -645,6 +645,38 @@ class ParticipantData:
         """
         return self.strat_var_cols if self.strat_var_cols else []
 
+    def get_strat_vars(self, suffix: bool = False) -> List[str]:
+        """
+        Return list of stratification variable names, optionally with '_part' suffix.
+
+        Parameters
+        ----------
+        suffix : bool, default=False
+            If True, returns stratification variable names with '_part' suffix.
+            If False, returns original stratification variable names.
+
+        Returns
+        -------
+        List[str]
+            List of stratification variable column names.
+
+        Examples
+        --------
+        >>> part_data = ParticipantData(df, 'id', age_col='age', strat_var_cols=['gender', 'region'])
+        >>> part_data.get_strat_vars(suffix=True)
+        ['gender_part', 'region_part']
+        """
+        if not self.strat_var_cols:
+            return []
+
+        if suffix:
+            return [
+                f"{var}_part" if not var.endswith("_part") else var
+                for var in self.strat_var_cols
+            ]
+        else:
+            return [var.removesuffix("_part") for var in self.strat_var_cols]
+
     def get_sample_sizes(self, stratify=False) -> pd.Series:
         """
         Return a DataFrame with sample sizes per stratification group.

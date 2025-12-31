@@ -34,12 +34,12 @@ class ContactData:
     strat_var_cols : Optional[Union[List[str], str]], default=None
         Stratification variable column name(s) for contacts.
         Can be a single string or list of strings. Examples: 'setting', ['setting', 'duration'].
-        
+
         **Important**: If multiple variables are specified (e.g., ['setting', 'duration']),
         they will be **combined into a single composite stratification variable** by DataLoader.
         For example, ['setting', 'duration'] with categories ['home', 'work'] and ['short', 'long']
         will create a combined variable with categories: ['home_short', 'home_long', 'work_short', 'work_long'].
-        
+
         **Consistency requirement**: The same stratification variables must be specified across:
         - ParticipantData (required if FULL stratification mode)
         - ContactData (required if stratifying contacts)
@@ -585,7 +585,7 @@ class ContactData:
         return (float(ages.min()), float(ages.max()))
 
     @property
-    def stratification_vars(self) -> List[str]:
+    def strat_vars(self) -> List[str]:
         """
         Return list of stratification variable names.
 
@@ -601,6 +601,40 @@ class ContactData:
         ['setting', 'duration']
         """
         return self.strat_var_cols if self.strat_var_cols else []
+
+    def get_strat_vars(self, suffix: bool = False) -> List[str]:
+        """
+        Return list of stratification variable names, optionally with _cnt suffix.
+
+        Parameters
+        ----------
+        suffix : bool, default=True
+            If True, return stratification variable names with '_cnt' suffix.
+            If False, return original stratification variable names.
+
+        Returns
+        -------
+        List[str]
+            List of stratification variable column names.
+
+        Examples
+        --------
+        >>> cnt_data = ContactData(df, 'id', age_col='contact_age', strat_var_cols=['setting', 'duration'])
+        >>> cnt_data.get_strat_vars(suffix=True)
+        ['setting_cnt', 'duration_cnt']
+        >>> cnt_data.get_strat_vars(suffix=False)
+        ['setting', 'duration']
+        """
+        if not self.strat_var_cols:
+            return []
+
+        if suffix:
+            return [
+                f"{var}_cnt" if not var.endswith("_cnt") else var
+                for var in self.strat_var_cols
+            ]
+        else:
+            return [var.removesuffix("_cnt") for var in self.strat_var_cols]
 
     def get_age_distribution(self) -> pd.Series:
         """

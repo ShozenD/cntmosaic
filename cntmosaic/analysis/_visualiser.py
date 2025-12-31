@@ -3,14 +3,15 @@
 This module provides visualization tools for analyzing and presenting
 contact matrix estimation results from BRC model family.
 """
+
+import altair as alt
 import numpy as np
 import pandas as pd
-import altair as alt
 
-from ._summariser import ModelSummariserBRC
-from ._evaluator import ModelEvaluatorBRC
 from ..models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine
 from ..vis._visuals import plot_mosaic
+from .evaluator._ModelEvaluatorBRC import ModelEvaluatorBRC
+from .summariser._ModelSummariserBRC import ModelSummariserBRC
 
 
 def count_leaf_elements(d):
@@ -50,7 +51,7 @@ def df_from_dict(d):
 
     Transforms model output dictionaries containing contact matrices or vectors
     into a long-form DataFrame suitable for Altair visualization. Handles both
-    3D arrays (matrices with median/quantiles) and 2D arrays (vectors with 
+    3D arrays (matrices with median/quantiles) and 2D arrays (vectors with
     lower/median/upper bounds).
 
     Parameters
@@ -65,9 +66,9 @@ def df_from_dict(d):
     -------
     pandas.DataFrame
         Long-form DataFrame with columns:
-        - For matrices: 'x' (row index), 'y' (column index), 'z' (median value), 
+        - For matrices: 'x' (row index), 'y' (column index), 'z' (median value),
           'label' (stratification category)
-        - For vectors: 'x' (index), 'y' (median), 'l' (lower bound), 
+        - For vectors: 'x' (index), 'y' (median), 'l' (lower bound),
           'u' (upper bound), 'label' (stratification category)
 
     Notes
@@ -81,7 +82,7 @@ def df_from_dict(d):
     >>> df = df_from_dict(matrix)
     >>> df.columns
     Index(['x', 'y', 'z', 'label'], dtype='object')
-    
+
     >>> stratified = {'male': matrix, 'female': matrix}
     >>> df = df_from_dict(stratified)
     >>> df['label'].unique()
@@ -159,11 +160,11 @@ class ModelVisualiser:
     --------
     >>> from cntmosaic.analysis import ModelSummariserBRC, ModelVisualiser
     >>> from cntmosaic.models import BRCfine
-    >>> 
+    >>>
     >>> # After fitting a model
     >>> summariser = ModelSummariserBRC(model)
     >>> visualiser = ModelVisualiser(summariser)
-    >>> 
+    >>>
     >>> # Generate plots
     >>> rate_chart = visualiser.plot_rate()
     >>> cint_chart = visualiser.plot_cint()
@@ -175,6 +176,7 @@ class ModelVisualiser:
     - Saved to file: `chart.save('output.html')` or `chart.save('output.png')`
     - Composed with other charts using Altair operators (+, |, &)
     """
+
     default_config = {
         "x_axis": {
             "labelFontSize": 10,
@@ -198,7 +200,6 @@ class ModelVisualiser:
             "orient": "right",
         },
     }
-
 
     def __init__(self, summariser: ModelSummariserBRC):
         self.summariser = summariser
@@ -279,7 +280,7 @@ class ModelVisualiser:
         >>> # For non-hierarchical models
         >>> chart = visualiser.plot_cint(width=400, height=400)
         >>> chart.save('contact_intensity.html')
-        
+
         >>> # For hierarchical models
         >>> charts = visualiser.plot_cint(facet_columns=2)
         >>> for level, chart in charts.items():
@@ -398,7 +399,7 @@ class ModelVisualiser:
         Parameters
         ----------
         evaluator : ModelEvaluatorBRC or None, optional
-            Model evaluator containing ground truth contact patterns for 
+            Model evaluator containing ground truth contact patterns for
             comparison. If provided, true values are overlaid in red,
             by default None.
         width : int, optional
@@ -422,7 +423,7 @@ class ModelVisualiser:
         >>> # Plot without ground truth
         >>> chart = visualiser.plot_mcint(width=500, height=300)
         >>> chart.save('marginal_intensity.html')
-        
+
         >>> # Plot with ground truth comparison
         >>> from cntmosaic.analysis import ModelEvaluatorBRC
         >>> evaluator = ModelEvaluatorBRC(model, true_data)
@@ -434,7 +435,7 @@ class ModelVisualiser:
         Marginal contact intensity represents the total expected number of
         contacts for individuals of each age, summed across all contact ages.
         This provides a summary view of age-specific contact levels.
-        
+
         The error band represents the 95% credible interval from the posterior
         distribution, quantifying uncertainty in the estimates.
         """

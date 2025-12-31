@@ -11,28 +11,19 @@ Tests cover:
 - Edge cases and error handling
 """
 
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
 from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
 
+from cntmosaic.analysis import ModelEvaluatorBRC, ModelSummariserBRC
+from cntmosaic.dataloader import DataLoader
 from cntmosaic.datasets import load_age_distribution, load_template_patterns
-from cntmosaic.utils import AgeBins
-from cntmosaic.sim import (
-    ParticipantGenerator,
-    MatrixGenerator,
-    ContactGenerator,
-    Subgroup,
-)
-from cntmosaic.dataloader import DataLoader, CoordToColumns
 from cntmosaic.models import BRCfine
 from cntmosaic.models.priors import Spline2D
-from cntmosaic.analysis import (
-    ModelEvaluatorBRC,
-    ModelSummariserBRC,
-)
-
+from cntmosaic.sim import ContactGenerator, MatrixGenerator, ParticipantGenerator
+from cntmosaic.utils import AgeBins
 
 # ============================================================================
 # Fixtures

@@ -473,9 +473,9 @@ class ModelEvaluatorSocialMix:
                 )
 
                 y_true = self.cint_true
-                y_est = summary[1]  # median
-                y_low = summary[0]  # lower bound
-                y_high = summary[2]  # upper bound
+                y_est = summary["All->All"][1]  # median
+                y_low = summary["All->All"][0]  # lower bound
+                y_high = summary["All->All"][2]  # upper bound
 
                 rmse, mae, mape, int_score, coverage = compute_metrics(
                     y_true, y_est, y_low, y_high
@@ -553,9 +553,9 @@ class ModelEvaluatorSocialMix:
                     alpha=alpha, return_depixilated=True
                 )
                 y_true = self.mcint_true
-                y_est = summary[1]  # median
-                y_low = summary[0]  # lower bound
-                y_high = summary[2]  # upper bound
+                y_est = summary["All->All"][1]  # median
+                y_low = summary["All->All"][0]  # lower bound
+                y_high = summary["All->All"][2]  # upper bound
 
                 rmse, mae, mape, int_score, coverage = compute_metrics(
                     y_true, y_est, y_low, y_high

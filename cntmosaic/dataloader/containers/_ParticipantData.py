@@ -381,7 +381,7 @@ class ParticipantData:
         for col in object_cols:
             if not isinstance(df[col].dtype, pd.CategoricalDtype):
                 warnings.warn(
-                    f"Column '{col}' is object type. Converting to categorical for efficiency.",
+                    f"Converting '{col}' to categorical dtype.",
                     UserWarning,
                     stacklevel=3,
                 )

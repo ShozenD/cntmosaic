@@ -871,7 +871,7 @@ class ModelSummariserPrem:
         apply_reciprocity: bool = False,
         return_depixilated: bool = False,
         force_recompute: bool = False,
-    ):
+    ) -> Dict[str, NDArray]:
         """
         Compute summary statistics for contact intensity matrix.
 
@@ -894,9 +894,8 @@ class ModelSummariserPrem:
 
         Returns
         -------
-        NDArray or Dict[str, NDArray]
-            For K=1: NDArray of shape (3, A, A) with [lower, median, upper]
-            For K>1: Dict mapping stratum labels to NDArray of shape (3, A, A)
+        Dict[str, NDArray]
+            Dict mapping stratum labels to NDArray of shape (3, A, A)
 
         Raises
         ------
@@ -979,7 +978,7 @@ class ModelSummariserPrem:
                 samples = samples[self.strata_labels[0]]
 
             quantiles = compute_quantiles(samples, probs, axis=0)
-            result = quantiles  # Shape: (3, A, A)
+            result = {"All->All": quantiles}
 
         else:
             # Stratified: return Dict[str, NDArray]
@@ -993,7 +992,7 @@ class ModelSummariserPrem:
 
         # Cache and return
         self._cache[cache_key] = result
-        return result
+
         return result
 
     def summarise_rate(

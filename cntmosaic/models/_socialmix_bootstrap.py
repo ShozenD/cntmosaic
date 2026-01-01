@@ -641,17 +641,21 @@ class SocialMixBootstrap:
         Y_sampled = Y_raw[boot_idx]  # (N, K_cnt, D)
         age_sampled = age_codes[boot_idx]  # (N,)
 
+        Y_boot_dict = {}
+        N_boot_dict = {}
+
         if self.strat_mode == "single":
+            label = "All->All"
             # Aggregate: Y_boot[c, d] = sum over i where age_sampled[i] == c
-            Y_boot = np.zeros((self.C, self.D), dtype=np.float64)
-            N_boot = np.zeros(self.C, dtype=np.int32)
+            Y_boot_dict[label] = np.zeros((self.C, self.D), dtype=np.float64)
+            N_boot_dict[label] = np.zeros(self.C, dtype=np.int32)
 
             for i in range(len(boot_idx)):
                 c = age_sampled[i]
-                Y_boot[c, :] += Y_sampled[i, 0, :]  # K_cnt=1
-                N_boot[c] += 1
+                Y_boot_dict[label][c, :] += Y_sampled[i, 0, :]  # K_cnt=1
+                N_boot_dict[label][c] += 1
 
-            return Y_boot, N_boot
+            return Y_boot_dict, N_boot_dict
 
         # Stratified cases
         part_strat_sampled = (
@@ -660,9 +664,6 @@ class SocialMixBootstrap:
 
         # Build stratum labels
         strat_labels = self._create_stratum_labels()
-
-        Y_boot_dict = {}
-        N_boot_dict = {}
 
         if self.strat_mode == "partial":
             # Only participant stratification: Y[p][c, d]
@@ -784,8 +785,8 @@ class SocialMixBootstrap:
 
     def _compute_cint_from_YN(
         self,
-        Y_boot: Union[NDArray, Dict[str, NDArray]],
-        N_boot: Union[NDArray, Dict[str, NDArray]],
+        Y_boot: Dict[str, NDArray],
+        N_boot: Dict[str, NDArray],
     ) -> Dict[str, NDArray]:
         """
         Compute contact intensities from Y_boot and N_boot.
@@ -802,13 +803,6 @@ class SocialMixBootstrap:
         cint_boot : Dict[str, NDArray]
             Contact intensity matrices
         """
-        if self.strat_mode == "single":
-            # Y_boot: (C, D), N_boot: (C,)
-            cint = Y_boot / N_boot[:, np.newaxis]
-            cint = np.nan_to_num(cint, nan=0.0, posinf=0.0, neginf=0.0)
-            return {"All->All": cint}
-
-        # Stratified cases
         cint_boot = {}
         for label in Y_boot.keys():
             cint = Y_boot[label] / N_boot[label][:, np.newaxis]

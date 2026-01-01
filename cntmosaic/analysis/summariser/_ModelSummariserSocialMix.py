@@ -147,7 +147,7 @@ class ModelSummariserSocialMix:
         else:
             return False
 
-    def _stack_samples(self, samples_list) -> Union[NDArray, Dict[str, NDArray]]:
+    def _stack_samples(self, samples_list) -> Dict[str, NDArray]:
         """
         Stack bootstrap samples from List[Dict] to NDArray or Dict[str, NDArray].
 
@@ -158,18 +158,12 @@ class ModelSummariserSocialMix:
 
         Returns
         -------
-        Union[NDArray, Dict[str, NDArray]]
-            For unstratified: NDArray of shape (n_boot, C, D)
-            For stratified: Dict mapping labels to NDArray of shape (n_boot, C, D)
+        Dict[str, NDArray]
+            Dict mapping labels to NDArray of shape (n_boot, C, D)
         """
         # Get keys from first sample
         keys = list(samples_list[0].keys())
 
-        # If single "All->All" key, return as plain array
-        if len(keys) == 1 and keys[0] == "All->All":
-            return np.stack([s["All->All"] for s in samples_list])
-
-        # Otherwise return as dict
         stacked = {}
         for key in keys:
             stacked[key] = np.stack([s[key] for s in samples_list])

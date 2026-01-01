@@ -2,6 +2,7 @@
 This modules contains common test fixture for testing various models.
 """
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -73,6 +74,37 @@ def single_small_sample():
     ).generate(seed=42)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age")
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    pop_data = PopulationData(df_pop, age_col="age", size_col="P")
+
+    return part_data, cnt_data, pop_data
+
+
+@pytest.fixture
+def single_large_sample_with_repeats():
+    """Generate a large sample with single stratification (no stratification)."""
+    # Define stratification
+    strat = Stratification(
+        name="general", n_strata=1, labels=["All"], ref_age_dist=df_age_dist.P.values
+    )
+
+    # Construct population
+    pop_constructor = PopulationConstructor(strat)
+    df_pop = pop_constructor.df_P
+
+    # Generate contact matrix
+    cnt_matrix = MatrixGenerator(templates).generate_single(pop_constructor, seed=42)
+
+    # Generate participants
+    df_part = ParticipantGenerator(pop_constructor, n_part=1500).generate(seed=42)
+    df_part["rid"] = np.random.choice(5, size=len(df_part))
+
+    # Generate contacts
+    df_cnt = ContactGenerator(
+        df_part, cint_matrices=cnt_matrix, model="poisson"
+    ).generate(seed=42)
+
+    part_data = ParticipantData(df_part, id_col="id", age_col="age", repeat_col="rid")
     cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
     pop_data = PopulationData(df_pop, age_col="age", size_col="P")
 

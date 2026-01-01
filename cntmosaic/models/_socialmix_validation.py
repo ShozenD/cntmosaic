@@ -400,7 +400,9 @@ class SocialMixValidator:
                         strata_age_counts = self.part_data.data.groupby(
                             group_cols, observed=False
                         ).size()
-                        age_min_counts = strata_age_counts.groupby("age_grp_part").min()
+                        age_min_counts = strata_age_counts.groupby(
+                            "age_grp_part", observed=False
+                        ).min()
                         age_min_counts = age_min_counts.reindex(
                             pd.Index(
                                 self.part_data.data["age_grp_part"].cat.categories
@@ -445,7 +447,7 @@ class SocialMixValidator:
                         id_col=self.part_data.id_col,
                         age_col=None,
                         age_grp_col="age_grp_part",
-                        strat_var_cols=self.part_data.strat_var_cols,
+                        strat_var_cols=self.part_data.get_strat_vars(suffix=True),
                     )
 
                     self.cnt_data = ContactData(
@@ -454,7 +456,7 @@ class SocialMixValidator:
                         age_col=None,
                         age_grp_col="age_grp_cnt",
                         cnt_col=self.cnt_data.cnt_col,
-                        strat_var_cols=self.cnt_data.strat_var_cols,
+                        strat_var_cols=self.cnt_data.get_strat_vars(suffix=True),
                     )
 
                     # Update age bins
@@ -468,7 +470,9 @@ class SocialMixValidator:
                         strata_age_counts = self.part_data.data.groupby(
                             group_cols, observed=False
                         ).size()
-                        age_min_counts = strata_age_counts.groupby("age_grp_part").min()
+                        age_min_counts = strata_age_counts.groupby(
+                            "age_grp_part", observed=False
+                        ).min()
                         age_min_counts = age_min_counts.reindex(
                             pd.Index(
                                 self.part_data.data["age_grp_part"].cat.categories
@@ -499,9 +503,9 @@ class SocialMixValidator:
                     strata_info = f" across {len(self.strat_vars_part)} stratification variable(s)"
 
                 raise ValueError(
-                    f"Cannot estimate contact intensity matrix: found empty participant age group(s){strata_info}: {empty_groups}. "
-                    f"Empty age groups cause division by zero when computing contact intensities. "
-                    f"Please either:\n"
+                    f"\nCannot estimate contact intensity matrix: found empty participant age group(s){strata_info}: {empty_groups}. "
+                    f"\nEmpty age groups cause division by zero when computing contact intensities. "
+                    f"\nPlease either:\n"
                     f"  1. Set adaptive_merge=True to automatically merge empty age groups, or\n"
                     f"  2. Use coarser age bins that avoid empty groups, or\n"
                     f"  3. Collect more participant data to fill all age groups."
@@ -542,7 +546,9 @@ class SocialMixValidator:
 
             # For each age group, find minimum count across all strata
             # An age group is problematic if it's empty (count=0) in ANY stratum
-            age_min_counts = strata_age_counts.groupby("age_grp_part").min()
+            age_min_counts = strata_age_counts.groupby(
+                "age_grp_part", observed=False
+            ).min()
 
             # Reindex to ensure all age groups present
             age_min_counts = age_min_counts.reindex(

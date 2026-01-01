@@ -261,9 +261,6 @@ class SocialMix:
         else:
             self.strat_mode = "mixed"
 
-        print(set(self.strat_vars_part), set(self.strat_vars_cnt))
-        print(f"Inferred stratification mode: {self.strat_mode}")
-
     def _calculate_K(self) -> int:
         """
         Calculate the number of strata based on stratification mode.
@@ -673,7 +670,7 @@ class SocialMix:
         random_state: Optional[int] = None,
         progress: bool = True,
         min_success_rate: float = 0.5,
-    ) -> BootstrapResults:
+    ) -> None:
         """
         Estimate uncertainty via bootstrap resampling.
 
@@ -738,5 +735,3 @@ class SocialMix:
             progress=progress,
             min_success_rate=min_success_rate,
         )
-
-        return self._boot

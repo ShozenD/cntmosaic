@@ -176,7 +176,7 @@ class BRCfine(BRC):
         self.aid = jnp.array(self.data.base_data["aid"], dtype=jnp.int32)
         self.bid = jnp.array(self.data.base_data["bid"], dtype=jnp.int32)
         self.log_N = jnp.array(self.data.base_data["log_N"])
-        self.log_P = jnp.array(self.data.base_data["log_P"][jnp.newaxis, :])
+        self.log_P = jnp.array(self.data.base_data["log_P"])
 
         # Optional offset for different settings (e.g., home, work, school)
         self.log_S = (

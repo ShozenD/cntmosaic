@@ -189,7 +189,7 @@ class DataLoader(BaseLoader):
         for col in data.columns:
             # Check if column exists in participant data and is categorical
             if col in self.part_data.data.columns:
-                if pd.api.types.is_categorical_dtype(self.part_data.data[col]):
+                if isinstance(self.part_data.data[col].dtype, pd.CategoricalDtype):
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.part_data.data[col].cat.categories,
@@ -197,7 +197,7 @@ class DataLoader(BaseLoader):
                     )
             # Check if column exists in contact data and is categorical
             elif col in self.cnt_data.data.columns:
-                if pd.api.types.is_categorical_dtype(self.cnt_data.data[col]):
+                if isinstance(self.cnt_data.data[col].dtype, pd.CategoricalDtype):
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.cnt_data.data[col].cat.categories,

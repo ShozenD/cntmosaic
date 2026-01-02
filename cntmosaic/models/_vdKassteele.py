@@ -155,7 +155,7 @@ class vdKassteele:
 
     def model(self, y: Optional[ArrayLike] = None) -> None:
         beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
-        f = self.prior.sample()  # ()
+        f = self.prior.sample()
         log_rate = numpyro.deterministic("log_rate", beta0 + f)
 
         if self.prior_type == "global":

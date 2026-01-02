@@ -312,7 +312,10 @@ class DataValidator:
         # Check and convert ParticipantData
         for col in self.part_vars:
             if col in self.part_data.df_part.columns:
-                if not pd.api.types.is_categorical_dtype(self.part_data.df_part[col]):
+                if (
+                    isinstance(self.part_data.df_part[col].dtype, pd.CategoricalDtype)
+                    is False
+                ):
                     self.part_data.df_part[col] = pd.Categorical(
                         self.part_data.df_part[col],
                         categories=sorted(self.part_data.df_part[col].unique()),
@@ -323,7 +326,10 @@ class DataValidator:
         # Check and convert ContactData
         for col in self.cnt_vars:
             if col in self.cnt_data.df_cnt.columns:
-                if not pd.api.types.is_categorical_dtype(self.cnt_data.df_cnt[col]):
+                if (
+                    isinstance(self.cnt_data.df_cnt[col].dtype, pd.CategoricalDtype)
+                    is False
+                ):
                     self.cnt_data.df_cnt[col] = pd.Categorical(
                         self.cnt_data.df_cnt[col],
                         categories=sorted(self.cnt_data.df_cnt[col].unique()),
@@ -334,7 +340,10 @@ class DataValidator:
         # Check and convert PopulationData
         for col in self.pop_vars:
             if col in self.pop_data.df_pop.columns:
-                if not pd.api.types.is_categorical_dtype(self.pop_data.df_pop[col]):
+                if (
+                    isinstance(self.pop_data.df_pop[col].dtype, pd.CategoricalDtype)
+                    is False
+                ):
                     self.pop_data.df_pop[col] = pd.Categorical(
                         self.pop_data.df_pop[col],
                         categories=sorted(self.pop_data.df_pop[col].unique()),
@@ -348,8 +357,12 @@ class DataValidator:
                 # StratPropData uses base variable names without suffix
                 base_col = col.replace("_part", "")
                 if base_col in self.strat_prop_data.data.columns:
-                    if not pd.api.types.is_categorical_dtype(
-                        self.strat_prop_data.data[base_col]
+                    if (
+                        isinstance(
+                            self.strat_prop_data.data[base_col].dtype,
+                            pd.CategoricalDtype,
+                        )
+                        is False
                     ):
                         self.strat_prop_data.data[base_col] = pd.Categorical(
                             self.strat_prop_data.data[base_col],

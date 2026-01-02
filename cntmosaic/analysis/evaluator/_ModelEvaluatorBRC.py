@@ -408,10 +408,10 @@ class ModelEvaluatorBRC:
             if self.model_type == "brc":
                 # Standard BRC model
                 summary = self.summariser.summarise_cint(alpha=alpha)
-                y_true = self.cint_true
-                y_est = summary[1]  # median
-                y_low = summary[0]  # lower bound
-                y_high = summary[2]  # upper bound
+                y_true = self.cint_true["All->All"]
+                y_est = summary["All->All"][1]  # median
+                y_low = summary["All->All"][0]  # lower bound
+                y_high = summary["All->All"][2]  # upper bound
 
                 rmse, mae, mape, int_score, coverage = compute_metrics(
                     y_true, y_est, y_low, y_high
@@ -481,10 +481,10 @@ class ModelEvaluatorBRC:
             if self.model_type == "brc":
                 # Standard BRC model
                 summary = self.summariser.summarise_mcint(alpha=alpha)
-                y_true = self.mcint_true
-                y_est = summary[1]  # median
-                y_low = summary[0]  # lower bound
-                y_high = summary[2]  # upper bound
+                y_true = self.mcint_true["All->All"]
+                y_est = summary["All->All"][1]  # median
+                y_low = summary["All->All"][0]  # lower bound
+                y_high = summary["All->All"][2]  # upper bound
 
                 rmse, mae, mape, int_score, coverage = compute_metrics(
                     y_true, y_est, y_low, y_high

@@ -471,7 +471,7 @@ class ModelSummariserBRC:
         self,
         alpha: float = 0.05,
         probs: Optional[Tuple[float, ...]] = None,
-    ) -> NDArray | Dict[str, NDArray]:
+    ) -> Dict[str, NDArray]:
         """
         Compute summary statistics for contact intensity matrix.
 
@@ -489,10 +489,9 @@ class ModelSummariserBRC:
 
         Returns
         -------
-        NDArray | Dict
-            - For BRC models: NDArray of shape (3, A, A) or (len(probs), A, A)
-            - For HiBRC models: Dict[str, NDArray] with structure
-              {full_label: quantiles} where full_label is like "M_A->All"
+        Dict[str, NDArray]
+            Dict[str, NDArray] with structure
+            {full_label: quantiles} where full_label is like "M_A->All"
 
         Raises
         ------
@@ -524,7 +523,10 @@ class ModelSummariserBRC:
 
         if self.model_type == "brc":
             # Simple case: direct quantile computation
-            result = compute_quantiles(self.post_cint_samples, probs, axis=0)
+            result = {}
+            result["All->All"] = compute_quantiles(
+                self.post_cint_samples, probs, axis=0
+            )
 
         else:  # hibrc
             # Compute quantiles for each stratum
@@ -539,7 +541,7 @@ class ModelSummariserBRC:
         self,
         alpha: float = 0.05,
         probs: Optional[Tuple[float, ...]] = None,
-    ) -> NDArray | Dict[str, NDArray]:
+    ) -> Dict[str, NDArray]:
         """
         Compute summary statistics for marginal contact intensity.
 
@@ -557,9 +559,8 @@ class ModelSummariserBRC:
 
         Returns
         -------
-        NDArray | Dict
-            - For BRC models: NDArray of shape (3, A) or (len(probs), A)
-            - For HiBRC models: Dict[str, NDArray] with structure
+        Dict[str, NDArray]
+            - Dict[str, NDArray] with structure
               {full_label: quantiles} where full_label is like "M_A->All"
 
         Examples
@@ -588,7 +589,8 @@ class ModelSummariserBRC:
         if self.model_type == "brc":
             # Sum over contact age (last axis)
             mcint_samples = self.post_cint_samples.sum(axis=-1)
-            result = compute_quantiles(mcint_samples, probs, axis=0)
+            result = {}
+            result["All->All"] = compute_quantiles(mcint_samples, probs, axis=0)
 
         else:  # hibrc
             # Compute marginal for each stratum

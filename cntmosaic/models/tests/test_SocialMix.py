@@ -4,10 +4,16 @@ import pytest
 from ...analysis.summariser import ModelSummariserSocialMix
 from ...utils import AgeBins
 from .._SocialMix import SocialMix
-from .fixtures import (full_large_sample, full_multi_strat_large_sample,
-                       full_small_sample, partial_large_sample,
-                       partial_multi_strat_large_sample, partial_small_sample,
-                       single_large_sample, single_small_sample)
+from .fixtures import (
+    full_large_sample,
+    full_multi_strat_large_sample,
+    full_small_sample,
+    partial_large_sample,
+    partial_multi_strat_large_sample,
+    partial_small_sample,
+    single_large_sample,
+    single_small_sample,
+)
 
 # Language: python
 

@@ -124,11 +124,31 @@ class ModelSummariserSocialMix:
 
         # Extract population age distribution if available
         if self.pop_data is not None:
-            # Get fine-grained (1-year) age distribution
-            age_dist_df = self.pop_data.get_age_distribution(by_group=False)
-            self.age_dist = age_dist_df.values
+            # Store stratified population structure for per-stratum extraction
+            pop_by_group = self.pop_data.get_age_distribution(by_group=True)
+            
+            if self.pop_data.strat_var_cols:
+                # Stratified: create MultiIndex structure [strat_var(s), age] -> P
+                if self.pop_data.n_strat_vars > 1:
+                    # Build composite strata string for multi-variable stratification
+                    pop_by_group["strata"] = pop_by_group[self.pop_data.strat_var_cols[0]].astype(str)
+                    for col in self.pop_data.strat_var_cols[1:]:
+                        pop_by_group["strata"] = pop_by_group["strata"] + "_" + pop_by_group[col].astype(str)
+                    self.pop_by_strata = pop_by_group[["strata", "age", "P"]].set_index(["strata", "age"])["P"]
+                else:
+                    # Single stratification variable
+                    strat_var = self.pop_data.strat_var_cols[0]
+                    self.pop_by_strata = pop_by_group[[strat_var, "age", "P"]].set_index([strat_var, "age"])["P"]
+                
+                # For backward compatibility, also store unstratified total
+                self.age_dist = self.pop_data.get_age_distribution(by_group=False)["P"].values
+            else:
+                # Unstratified: just extract the population values
+                self.age_dist = pop_by_group["P"].values
+                self.pop_by_strata = None
         else:
             self.age_dist = None
+            self.pop_by_strata = None
 
         # Simple cache: {cache_key: result}
         self._cache: Dict[str, Union[NDArray, Dict[str, NDArray]]] = {}
@@ -170,7 +190,7 @@ class ModelSummariserSocialMix:
 
         return stacked
 
-    def _depixilate_unstratified(self, samples: NDArray, use_age_dist: bool) -> NDArray:
+    def _depixilate_unstratified(self, samples: Dict, use_age_dist: bool) -> NDArray:
         """Depixilate unstratified bootstrap samples."""
         n_boot = samples.shape[0]
         A = self.age_bins.range
@@ -195,31 +215,52 @@ class ModelSummariserSocialMix:
             n_boot = samples.shape[0]
             depix_label = np.empty((n_boot, A, A), dtype=np.float64)
 
-            for i in range(n_boot):
-                if use_age_dist:
-                    depix_label[i] = depixilate(
-                        samples[i], self.age_bins, self.age_dist
-                    )
+            # Extract appropriate population for this stratum
+            if use_age_dist and self.pop_by_strata is not None:
+                # Parse stratum label (e.g., "M->All", "M->F", "F->All")
+                if "->" in label:
+                    source_stratum = label.split("->")[0]
+                    
+                    # Extract source stratum population from MultiIndex
+                    if source_stratum in self.pop_by_strata.index.get_level_values(0):
+                        stratum_age_dist = self.pop_by_strata.xs(source_stratum, level=0).values
+                    else:
+                        # Fallback to full population if stratum not found
+                        warnings.warn(
+                            f"Could not find population for stratum '{source_stratum}'. "
+                            "Using total population for depixilation.",
+                            UserWarning,
+                        )
+                        stratum_age_dist = self.age_dist
                 else:
-                    depix_label[i] = depixilate(samples[i], self.age_bins)
+                    # No stratification in label, use total population
+                    stratum_age_dist = self.age_dist
+                
+                # Depixilate with stratum-specific population
+                for i in range(n_boot):
+                    depix_label[i] = depixilate(
+                        samples[i], self.age_bins, stratum_age_dist
+                    )
+            else:
+                # No age distribution or unstratified
+                for i in range(n_boot):
+                    if use_age_dist:
+                        depix_label[i] = depixilate(
+                            samples[i], self.age_bins, self.age_dist
+                        )
+                    else:
+                        depix_label[i] = depixilate(samples[i], self.age_bins)
 
             depix_samples[label] = depix_label
 
         return depix_samples
 
-    def _compute_quantiles_unstratified(
-        self, samples: NDArray, probs: Tuple[float, ...]
-    ) -> NDArray:
-        """Compute quantiles for unstratified samples."""
-        return compute_quantiles(samples, probs, axis=0)
-
-    def _compute_quantiles_stratified(
+    def _compute_quantiles(
         self, samples_dict: Dict[str, NDArray], probs: Tuple[float, ...]
     ) -> Dict[str, NDArray]:
-        """Compute quantiles for stratified samples."""
         quantiles = {}
         for label, samples in samples_dict.items():
-            quantiles[label] = compute_quantiles(samples, probs, axis=0)
+            quantiles[label] = np.quantile(samples, q=probs, axis=0)
         return quantiles
 
     def summarise_cint(
@@ -227,7 +268,7 @@ class ModelSummariserSocialMix:
         alpha: float = 0.05,
         return_depixilated: bool = False,
         force_recompute: bool = False,
-    ) -> Union[NDArray, Dict[str, NDArray]]:
+    ) -> Dict[str, NDArray]:
         """
         Compute summary statistics for contact intensity matrix.
 
@@ -246,9 +287,8 @@ class ModelSummariserSocialMix:
 
         Returns
         -------
-        Union[NDArray, Dict[str, NDArray]]
-            For unstratified: NDArray of shape (3, C, D) with [lower, median, upper]
-            For stratified: Dict mapping stratum labels to NDArray of shape (3, C, D)
+        Dict[str, NDArray]
+            Dict mapping stratum labels to NDArray of shape (3, C, D)
 
         Examples
         --------
@@ -281,16 +321,15 @@ class ModelSummariserSocialMix:
                     "Provide pop_data when initializing SocialMix."
                 )
 
-            if isinstance(samples, dict):
-                samples = self._depixilate_stratified(samples, use_age_dist=True)
+            if "All->All" in samples.keys():
+                samples["All->All"] = self._depixilate_unstratified(
+                    samples["All->All"], use_age_dist=True
+                )
             else:
-                samples = self._depixilate_unstratified(samples, use_age_dist=True)
+                samples = self._depixilate_stratified(samples, use_age_dist=True)
 
         # Compute quantiles
-        if isinstance(samples, dict):
-            result = self._compute_quantiles_stratified(samples, probs)
-        else:
-            result = self._compute_quantiles_unstratified(samples, probs)
+        result = self._compute_quantiles(samples, probs)
 
         # Cache and return
         self._cache[cache_key] = result
@@ -301,7 +340,7 @@ class ModelSummariserSocialMix:
         alpha: float = 0.05,
         return_depixilated: bool = False,
         force_recompute: bool = False,
-    ) -> Union[NDArray, Dict[str, NDArray]]:
+    ) -> Union[Dict[str, NDArray]]:
         """
         Compute summary statistics for contact rate matrix.
 
@@ -320,9 +359,8 @@ class ModelSummariserSocialMix:
 
         Returns
         -------
-        Union[NDArray, Dict[str, NDArray]]
-            For unstratified: NDArray of shape (3, C, D) with [lower, median, upper]
-            For stratified: Dict mapping stratum labels to NDArray of shape (3, C, D)
+        Dict[str, NDArray]
+            Dict mapping stratum labels to NDArray of shape (3, C, D)
         """
         validate_alpha(alpha)
         self._validate_bootstrap()
@@ -338,16 +376,13 @@ class ModelSummariserSocialMix:
 
         # Handle depixilation if needed
         if return_depixilated:
-            if isinstance(samples, dict):
-                samples = self._depixilate_stratified(samples, use_age_dist=False)
-            else:
+            if "All->All" in samples.keys():
                 samples = self._depixilate_unstratified(samples, use_age_dist=False)
+            else:
+                samples = self._depixilate_stratified(samples, use_age_dist=False)
 
         # Compute quantiles
-        if isinstance(samples, dict):
-            result = self._compute_quantiles_stratified(samples, probs)
-        else:
-            result = self._compute_quantiles_unstratified(samples, probs)
+        result = self._compute_quantiles(samples, probs)
 
         # Cache and return
         self._cache[cache_key] = result
@@ -414,10 +449,12 @@ class ModelSummariserSocialMix:
                     "Provide pop_data when initializing SocialMix."
                 )
 
-            if isinstance(samples, dict):
-                samples = self._depixilate_stratified(samples, use_age_dist=True)
+            if "All->All" in samples.keys():
+                samples = self._depixilate_unstratified(
+                    samples["All->All"], use_age_dist=True
+                )
             else:
-                samples = self._depixilate_unstratified(samples, use_age_dist=True)
+                samples = self._depixilate_stratified(samples, use_age_dist=True)
 
         # Compute marginals by summing over contact age (last axis)
         if isinstance(samples, dict):
@@ -425,7 +462,7 @@ class ModelSummariserSocialMix:
             result = self._compute_quantiles_stratified(marginal_samples, probs)
         else:
             marginal_samples = samples.sum(axis=-1)
-            result = self._compute_quantiles_unstratified(marginal_samples, probs)
+            result = self._compute_quantiles(marginal_samples, probs)
 
         # Cache and return
         self._cache[cache_key] = result

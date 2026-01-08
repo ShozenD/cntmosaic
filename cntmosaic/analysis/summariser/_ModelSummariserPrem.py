@@ -9,7 +9,6 @@ from numpy.typing import NDArray
 from ...dataloader.containers import PopulationData
 from ...models import Prem
 from ...models._socialmix_age_processing import AgeBinProcessor
-from ...models._socialmix_validation import SocialMixValidator
 from ...utils import AgeBins, depixilate, pixilate
 
 
@@ -614,11 +613,27 @@ class ModelSummariserPrem:
                     "PopulationData must have stratification variables for full mode"
                 )
 
-            strat_var = (
-                pop_data.strat_var_cols[0]
-                if len(pop_data.strat_var_cols) == 1
-                else None
-            )
+            if pop_data.n_strat_vars > 1:
+                # Build composite strata string
+                pop_by_group["strata"] = pop_by_group[pop_data.strat_var_cols[0]].astype(
+                    str
+                )
+                for col in pop_data.strat_var_cols[1:]:
+                    pop_by_group["strata"] = (
+                        pop_by_group["strata"] + "_" + pop_by_group[col].astype(str)
+                    )
+
+                # Set as index and keep only age and population columns
+                composite_col = "strata"
+                pop_by_group_indexed = pop_by_group[["strata", "age", "P"]].set_index(
+                    ["strata", "age"]
+                )["P"]
+            else:
+                # Set as index and keep only age and population columns
+                composite_col = pop_data.strat_var_cols[0]
+                pop_by_group_indexed = pop_by_group[[composite_col, "age", "P"]].set_index(
+                    [composite_col, "age"]
+                )["P"]
 
             # Extract unique strata from labels
             strata = set()
@@ -633,12 +648,8 @@ class ModelSummariserPrem:
             first_key = next(iter(cint_samples.keys()))
             n_age_groups = cint_samples[first_key].shape[1]
 
-            # Get unique ages in population (works for both 'age' and 'age_grp' index names)
-            if isinstance(pop_by_group.index, pd.MultiIndex):
-                # For stratified data, get unique ages from first level
-                n_pop_ages = len(pop_by_group.index.get_level_values(0).unique())
-            else:
-                n_pop_ages = len(pop_by_group.index.unique())
+            # Get unique ages in population from the MultiIndex
+            n_pop_ages = len(pop_by_group_indexed.index.get_level_values(1).unique())
 
             if n_pop_ages != n_age_groups:
                 if age_bins is None:
@@ -650,14 +661,21 @@ class ModelSummariserPrem:
                     pop_data, age_bins, strat_mode
                 )
                 pop_by_group = pop_data.get_age_distribution(by_group=True)
+                
+                # Re-index after aggregation
+                if pop_data.n_strat_vars > 1:
+                    pop_by_group["strata"] = pop_by_group[pop_data.strat_var_cols[0]].astype(str)
+                    for col in pop_data.strat_var_cols[1:]:
+                        pop_by_group["strata"] = pop_by_group["strata"] + "_" + pop_by_group[col].astype(str)
+                    pop_by_group_indexed = pop_by_group[["strata", "age", "P"]].set_index(["strata", "age"])["P"]
+                else:
+                    pop_by_group_indexed = pop_by_group[[composite_col, "age", "P"]].set_index([composite_col, "age"])["P"]
 
             # Build population dict
             pop_dict = {}
             for stratum in strata:
-                if strat_var and stratum in pop_by_group.index.get_level_values(
-                    strat_var
-                ):
-                    pop_dict[stratum] = pop_by_group.xs(stratum, level=strat_var).values
+                if stratum in pop_by_group_indexed.index.get_level_values(0):
+                    pop_dict[stratum] = pop_by_group_indexed.xs(stratum, level=0).values
                 else:
                     # Try composite stratification
                     # For now, this is simplified - full implementation would parse composite labels
@@ -790,7 +808,7 @@ class ModelSummariserPrem:
                     "For unstratified mode, samples should be NDArray, not Dict"
                 )
 
-            age_dist = pop_data.get_age_distribution(by_group=False).values
+            age_dist = pop_data.get_age_distribution(by_group=False)["P"].values
             n_samples = samples.shape[0]
 
             # Preallocate output
@@ -814,9 +832,27 @@ class ModelSummariserPrem:
                 "PopulationData must have stratification variables for stratified depixilation"
             )
 
-        strat_var = (
-            pop_data.strat_var_cols[0] if len(pop_data.strat_var_cols) == 1 else None
-        )
+        if pop_data.n_strat_vars > 1:
+            # Build composite strata string
+            pop_by_group["strata"] = pop_by_group[pop_data.strat_var_cols[0]].astype(
+                str
+            )
+            for col in pop_data.strat_var_cols[1:]:
+                pop_by_group["strata"] = (
+                    pop_by_group["strata"] + "_" + pop_by_group[col].astype(str)
+                )
+
+            # Set as index and keep only age and population columns
+            composite_var = "strata"
+            pop_by_group = pop_by_group[["strata", "age", "P"]].set_index(
+                ["strata", "age"]
+            )["P"]
+        else:
+            # Set as index and keep only age and population columns
+            composite_var = pop_data.strat_var_cols[0]
+            pop_by_group = pop_by_group[[composite_var, "age", "P"]].set_index(
+                [composite_var, "age"]
+            )["P"]
 
         # Extract unique source strata from labels
         source_strata = set()
@@ -828,10 +864,8 @@ class ModelSummariserPrem:
         # Build source population dict
         source_pop_dict = {}
         for stratum in source_strata:
-            if strat_var and stratum in pop_by_group.index.get_level_values(strat_var):
-                source_pop_dict[stratum] = pop_by_group.xs(
-                    stratum, level=strat_var
-                ).values
+            if stratum in pop_by_group.index.get_level_values(0):
+                source_pop_dict[stratum] = pop_by_group.xs(stratum, level=0).values
             else:
                 warnings.warn(
                     f"Could not extract population for source stratum '{stratum}'. "
@@ -962,13 +996,16 @@ class ModelSummariserPrem:
 
         # Apply depixilation if requested
         if return_depixilated:
-            samples = self._depixilate_samples(
-                samples,
-                self.pop_data,
-                self.strat_mode,
-                self.strata_labels,
-                age_bins=self.age_bins,
-            )
+            if self.pop_data is not None:
+                samples = self._depixilate_samples(
+                    samples,
+                    self.pop_data,
+                    self.strat_mode,
+                    self.strata_labels,
+                    age_bins=self.age_bins,
+                )
+            else:
+                raise ValueError("pop_data must be provided for depixilation.")
 
         # Compute quantiles and format output
         if self.K == 1:
@@ -1210,18 +1247,21 @@ class ModelSummariserPrem:
 
         # Apply depixilation if requested
         if return_depixilated:
-            samples = self._depixilate_samples(
-                samples,
-                self.pop_data,
-                self.strat_mode,
-                self.strata_labels,
-                age_bins=self.age_bins,
-            )
+            if self.pop_data is None:
+                raise ValueError("pop_data must be provided for depixilation.")
+            else:
+                samples = self._depixilate_samples(
+                    samples,
+                    self.pop_data,
+                    self.strat_mode,
+                    self.strata_labels,
+                    age_bins=self.age_bins,
+                )
 
         # Compute marginals by summing over contact age (last axis)
+        mcint_dict = {}
         if isinstance(samples, dict):
             # Stratified: compute marginals for each stratum
-            mcint_dict = {}
             for label, cint_samples in samples.items():
                 mcint_samples = cint_samples.sum(
                     axis=-1
@@ -1230,18 +1270,19 @@ class ModelSummariserPrem:
                 mcint_dict[label] = np.stack(
                     [quantiles[0], quantiles[1], quantiles[2]], axis=0
                 )
-            result = mcint_dict
         else:
             # Unstratified: compute marginals directly
             mcint_samples = samples.sum(
                 axis=-1
             )  # Shape: (n_samples, B) or (n_samples, A)
             quantiles = compute_quantiles(mcint_samples, probs, axis=0)
-            result = np.stack([quantiles[0], quantiles[1], quantiles[2]], axis=0)
+            mcint_dict["All->All"] = np.stack(
+                [quantiles[0], quantiles[1], quantiles[2]], axis=0
+            )
 
         # Cache and return
-        self._cache[cache_key] = result
-        return result
+        self._cache[cache_key] = mcint_dict
+        return mcint_dict
 
     def get_point_estimates(
         self,

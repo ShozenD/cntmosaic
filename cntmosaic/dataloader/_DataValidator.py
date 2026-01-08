@@ -87,8 +87,8 @@ class DataValidator:
         Computes variable name sets once and caches them for reuse. This method
         populates the part_vars, cnt_vars, pop_vars, and strat_prop_vars attributes.
         """
-        self.part_vars = set(self.part_data.strat_var_cols or [])
-        self.cnt_vars = set(self.cnt_data.strat_var_cols or [])
+        self.part_vars = set(self.part_data.get_strat_vars(suffix=False) or [])
+        self.cnt_vars = set(self.cnt_data.get_strat_vars(suffix=False) or [])
         self.pop_vars = set(self.pop_data.strat_var_cols or [])
         self.strat_prop_vars = (
             set(self.strat_prop_data.strat_var_cols or [])
@@ -118,7 +118,7 @@ class DataValidator:
         - Participant variables: 'gender_part', 'region_part'
         - Contact variables: 'setting_cnt', 'duration_cnt'
         - Population variables: 'gender_pop', 'region_pop'
-        - StratProp variables: 'gender_part', 'region_part' (match participant)
+        - StratProp variables: 'gender', 'region'
 
         Raises
         ------

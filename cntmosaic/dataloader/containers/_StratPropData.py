@@ -410,17 +410,21 @@ class StratPropData:
         )
 
         # Aggregate and pivot to get source proportions
-        prop_sa = (
+        df_grouped_source = (
             df_prop_source.groupby([self.age_col, "strat_combined"])[self.prop_col]
             .sum()
             .reset_index()
-            .pivot(index="strat_combined", columns=self.age_col, values=self.prop_col)
-            .values
-        )  # shape (n_strata_source, A)
+        )
+        prop_sa = df_grouped_source.pivot(
+            index="strat_combined", columns=self.age_col, values=self.prop_col
+        ).values  # shape (n_strata_source, A)
+
+        strat_labels_source = df_grouped_source["strat_combined"].unique()
 
         # PARTIAL case: single variable stratification
         if len(strat_vars_target) == 0:
-            return prop_sa[:, :, None]  # shape (n_strata, A, 1)
+            result = prop_sa[:, :, None]  # shape (n_strata, A, 1)
+            return self._handle_nans(result, strat_labels_source, None, mode="PARTIAL")
 
         # FULL case: compute outer product for source × target
         df_prop_target = self.data[[self.age_col] + strat_vars_target + [self.prop_col]]
@@ -430,13 +434,16 @@ class StratPropData:
             lambda row: "_".join(row.astype(str)), axis=1
         )
 
-        prop_tb = (
+        df_grouped_target = (
             df_prop_target.groupby([self.age_col, "strat_combined"])[self.prop_col]
             .sum()
             .reset_index()
-            .pivot(index="strat_combined", columns=self.age_col, values=self.prop_col)
-            .values
-        )  # shape (n_strata_target, A)
+        )
+        prop_tb = df_grouped_target.pivot(
+            index="strat_combined", columns=self.age_col, values=self.prop_col
+        ).values  # shape (n_strata_target, A)
+
+        strat_labels_target = df_grouped_target["strat_combined"].unique()
 
         # Compute outer product and reshape
         prop_stab = prop_sa[:, None, :, None] * prop_tb[None, :, None, :]
@@ -446,7 +453,90 @@ class StratPropData:
             prop_sa.shape[1],
         )
 
-        return prop_stab.reshape(n_strata_source * n_strata_target, A, A)
+        result = prop_stab.reshape(n_strata_source * n_strata_target, A, A)
+        return self._handle_nans(
+            result, strat_labels_source, strat_labels_target, mode="FULL"
+        )
+
+    def _handle_nans(
+        self,
+        multipliers: NDArray,
+        strat_labels_source: NDArray,
+        strat_labels_target: Optional[NDArray],
+        mode: str,
+    ) -> NDArray:
+        """
+        Check for NaN values in multipliers and replace with neutral value (1.0).
+
+        Parameters
+        ----------
+        multipliers : NDArray
+            The computed multipliers array that may contain NaN values.
+        strat_labels_source : NDArray
+            Labels for source strata.
+        strat_labels_target : NDArray, optional
+            Labels for target strata (only for FULL mode).
+        mode : str
+            Either 'PARTIAL' or 'FULL' to determine warning message format.
+
+        Returns
+        -------
+        NDArray
+            Multipliers with NaN values replaced by 1.0.
+        """
+        if not np.isnan(multipliers).any():
+            return multipliers
+
+        # Identify NaN locations
+        nan_mask = np.isnan(multipliers)
+        nan_count = nan_mask.sum()
+
+        # Generate warning message with affected strata combinations
+        if mode == "PARTIAL":
+            # Shape: (n_strata, A, 1)
+            affected_strata = set()
+            for strat_idx in range(multipliers.shape[0]):
+                if nan_mask[strat_idx].any():
+                    affected_strata.add(strat_labels_source[strat_idx])
+
+            warning_msg = (
+                f"Found {nan_count} NaN values in stratified multipliers (PARTIAL mode). "
+                f"These have been replaced with 1.0 (neutral multiplier). "
+                f"Affected strata: {sorted(affected_strata)}. "
+                f"This typically occurs when certain age-strata combinations have no population data. "
+                f"Verify your population proportion data completeness."
+            )
+        else:  # FULL mode
+            # Shape: (n_strata_source * n_strata_target, A, A)
+            affected_pairs = set()
+            n_strata_source = len(strat_labels_source)
+            n_strata_target = len(strat_labels_target)
+
+            for combined_idx in range(multipliers.shape[0]):
+                if nan_mask[combined_idx].any():
+                    source_idx = combined_idx // n_strata_target
+                    target_idx = combined_idx % n_strata_target
+                    pair = (
+                        strat_labels_source[source_idx],
+                        strat_labels_target[target_idx],
+                    )
+                    affected_pairs.add(pair)
+
+            warning_msg = (
+                f"Found {nan_count} NaN values in stratified multipliers (FULL mode). "
+                f"These have been replaced with 1.0 (neutral multiplier). "
+                f"Affected strata pairs (source, target): {sorted(affected_pairs)}. "
+                f"This typically occurs when certain age-strata combinations have no population data. "
+                f"Verify your population proportion data completeness."
+            )
+
+        warnings.warn(warning_msg, UserWarning, stacklevel=3)
+
+        # Replace NaNs with neutral multiplier
+        multipliers_clean = multipliers.copy()
+        multipliers_clean[nan_mask] = 1.0
+
+        return multipliers_clean
 
     def validate_for_mode(self, mode: StratMode) -> None:
         """

@@ -16,7 +16,7 @@ import pytest
 from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
 
-from ...dataloader import CoordToColumns, DataLoader, PopulationProportion
+from ...dataloader import DataLoader, StratPropData
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator, Subgroup
 from .._HiBRCrefine import HiBRCrefine, _expand_id_array
@@ -233,12 +233,12 @@ def generate_stratified_contact_data():
         age_part="age_part",
         age_grp_cnt="age_grp_cnt",  # Coarse contact ages
         age_pop="age",
-        size_pop="P",
-        grp_vars_part=["gender"],  # Stratification variable
+        P="P",
+        strat_vars_part=["gender"],  # Stratification variable
     )
 
-    pp = PopulationProportion.from_counts(
-        df_age_dist_strat, age_col="age", stratify_by="gender", count_col="P"
+    pp = StratPropData.from_counts(
+        df_age_dist_strat, age_col="age", strat_col="gender", count_col="P"
     )
 
     dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map, pop_prop=pp)
@@ -298,15 +298,17 @@ def test_initialization_basic(generate_stratified_contact_data):
     # Check hierarchical-specific attributes
     assert "gender" in model.X_vars
     assert len(model.X_vars) == 1
-    assert "gender" in model.X_ids
-    assert "gender" in model.X_ids_exp
+    assert "gender_part" in model.strat_ix
+    assert "gender_part" in model.strat_ix_exp
     assert "gender" in model.log_age_dist_props
 
     # Check categorical encoding
-    assert np.all((model.X_ids["gender"] >= 0) & (model.X_ids["gender"] < 2))
+    assert np.all(
+        (model.strat_ix["gender_part"] >= 0) & (model.strat_ix["gender_part"] < 2)
+    )
 
     # Check expanded IDs shape
-    assert model.X_ids_exp["gender"].shape == model.bid_pad.shape
+    assert model.strat_ix_exp["gender_part"].shape == model.bid_pad.shape
 
 
 def test_initialization_with_defaults(generate_stratified_contact_data):

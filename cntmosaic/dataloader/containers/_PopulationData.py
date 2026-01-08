@@ -728,11 +728,19 @@ class PopulationData:
         """
         if by_group and self.strat_var_cols:
             # Return distribution for each age × group combination
-            groupby_cols = ["age"] + self.strat_var_cols
-            return self.df_pop.groupby(groupby_cols, observed=False)["P"].sum()
+            groupby_cols = [self.age_col] + self.strat_var_cols
+            return (
+                self.df_pop.groupby(groupby_cols, observed=False)["P"]
+                .sum()
+                .reset_index()
+            )
         else:
             # Return marginal age distribution (sum across groups if stratified)
-            return self.df_pop.groupby("age", observed=False)["P"].sum()
+            return (
+                self.df_pop.groupby(self.age_col, observed=False)["P"]
+                .sum()
+                .reset_index()
+            )
 
     def normalize(self) -> "PopulationData":
         """
@@ -820,3 +828,21 @@ class PopulationData:
         }
 
         return summary_dict
+
+    @property
+    def n_strat_vars(self) -> int:
+        """
+        Return the number of stratification variables.
+
+        Returns
+        -------
+        int
+            Number of stratification variable columns.
+
+        Examples
+        --------
+        >>> pop_data = PopulationData(df, 'age', 'population', strat_var_cols=['gender', 'region'])
+        >>> pop_data.n_strat_vars
+        2
+        """
+        return len(self.strat_var_cols) if self.strat_var_cols else 0

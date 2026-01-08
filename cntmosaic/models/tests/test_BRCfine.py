@@ -59,7 +59,7 @@ class TestInit:
         assert model.hill.max_value == 4
 
 
-class testModel:
+class TestModel:
 
     def test_model_callable(self, single_small_sample):
         """Test that model is callable"""

@@ -363,3 +363,93 @@ class TestInference:
         assert hasattr(model, "posterior_predictive_svi")
         assert callable(model.posterior_predictive_mcmc)
         assert callable(model.posterior_predictive_svi)
+
+
+class TestSummarizerIntegration:
+
+    def test_single(self, single_large_sample):
+        """Test ModelSummariserPrem integration for unstratified model."""
+        part_data, cnt_data, pop_data = single_large_sample
+        age_bins = AgeBins(0, 80, 5)
+        model = Prem(part_data, cnt_data, age_bins)
+        model.run_inference_svi(PRNGKey(0), num_steps=500)
+
+        summariser = ModelSummariserPrem(model, pop_data, num_samples=500)
+
+        # Depixilated summary
+        sum_cint = summariser.summarise_cint(return_depixilated=True)
+        assert sum_cint["All->All"].shape == (3, 81, 81)
+
+        sum_mcint = summariser.summarise_mcint(return_depixilated=True)
+        assert sum_mcint["All->All"].shape == (3, 81)
+
+        # Pixilated summary
+        sum_cint_pix = summariser.summarise_cint(return_depixilated=False)
+        assert sum_cint_pix["All->All"].shape == (3, 16, 16)
+
+        sum_mcint_pix = summariser.summarise_mcint(return_depixilated=False)
+        assert sum_mcint_pix["All->All"].shape == (3, 16)
+
+        # No population data
+        summariser = ModelSummariserPrem(model, num_samples=500)
+
+        sum_cint = summariser.summarise_cint()
+        assert sum_cint["All->All"].shape == (3, 16, 16)
+
+        with pytest.raises(ValueError):
+            # Should raise error if requesting depixilated without pop data
+            summariser.summarise_cint(return_depixilated=True)
+
+    def test_partial(self, partial_large_sample):
+        """Test ModelSummariserPrem integration for participant-stratified model."""
+        part_data, cnt_data, pop_data = partial_large_sample
+        age_bins = AgeBins(0, 80, 5)
+        model = Prem(part_data, cnt_data, age_bins)
+        model.run_inference_svi(PRNGKey(0), num_steps=500)
+
+        summariser = ModelSummariserPrem(model, pop_data, num_samples=500)
+
+        # Depixilated summary
+        sum_cint = summariser.summarise_cint(return_depixilated=True)
+        for label in sum_cint:
+            assert sum_cint[label].shape == (3, 81, 81)
+
+        sum_mcint = summariser.summarise_mcint(return_depixilated=True)
+        for label in sum_mcint:
+            assert sum_mcint[label].shape == (3, 81)
+
+        # Pixilated summary
+        sum_cint_pix = summariser.summarise_cint(return_depixilated=False)
+        for label in sum_cint_pix:
+            assert sum_cint_pix[label].shape == (3, 16, 16)
+
+        sum_mcint_pix = summariser.summarise_mcint(return_depixilated=False)
+        for label in sum_mcint_pix:
+            assert sum_mcint_pix[label].shape == (3, 16)
+
+    def test_partial_multi_strat(self, partial_multi_strat_large_sample):
+        """Test ModelSummariserPrem integration for multi-variable participant-stratified model."""
+        part_data, cnt_data, pop_data = partial_multi_strat_large_sample
+        age_bins = AgeBins(0, 80, 5)
+        model = Prem(part_data, cnt_data, age_bins)
+        model.run_inference_svi(PRNGKey(0), num_steps=500)
+
+        summariser = ModelSummariserPrem(model, pop_data, num_samples=500)
+
+        # Depixilated summary
+        sum_cint = summariser.summarise_cint(return_depixilated=True)
+        for label in sum_cint:
+            assert sum_cint[label].shape == (3, 81, 81)
+
+        sum_mcint = summariser.summarise_mcint(return_depixilated=True)
+        for label in sum_mcint:
+            assert sum_mcint[label].shape == (3, 81)
+
+        # Pixilated summary
+        sum_cint_pix = summariser.summarise_cint(return_depixilated=False)
+        for label in sum_cint_pix:
+            assert sum_cint_pix[label].shape == (3, 16, 16)
+
+        sum_mcint_pix = summariser.summarise_mcint(return_depixilated=False)
+        for label in sum_mcint_pix:
+            assert sum_mcint_pix[label].shape == (3, 16)

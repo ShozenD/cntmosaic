@@ -342,32 +342,19 @@ class HiBRCfine(BRCfine):
             jnp.log(delta) - self.data.strat_data["multipliers"],
         )
 
-    def model(self, y: Optional[ArrayLike] = None) -> None:
+    def model(
+        self,
+        y: Optional[ArrayLike] = None,
+        aid: Optional[ArrayLike] = None,
+        bid: Optional[ArrayLike] = None,
+        rid: Optional[ArrayLike] = None,
+        flat_ix: Optional[ArrayLike] = None,
+        flat_pixs: Optional[ArrayLike] = None,
+        log_N: Optional[ArrayLike] = None,
+        log_S: Optional[ArrayLike] = None,
+    ) -> None:
         """
-        NumPyro generative model for hierarchical Bayesian contact matrix estimation.
-
-        This model specifies the complete generative process:
-        1. Sample baseline log-intensity (β₀) from Normal prior
-        2. Sample rate pattern f from 'rate' prior (shared across strata)
-        3. Compute log rate: log(λ) = β₀ + f
-        4. Add population age adjustment and stratification effects
-        5. Convert to expected contact counts and sample observations
-
-        **Model Structure**:
-
-        log(E[y_ijk]) = log(λ_ab) + log(P_b) + log(N_i) + log(S_i) + h_r + Σ_s δ_s,ij,ab
-
-        where:
-        - λ_ab: Baseline contact intensity (age a → age b)
-        - P_b: Population age proportion
-        - N_i: Participant survey duration
-        - S_i: Participant seasonal weight
-        - h_r: Repeat interview effect (if applicable)
-        - δ_s: Stratum-specific multiplicative adjustment
-
-        **Likelihood Options**:
-        - Poisson: E[y] = μ
-        - Negative Binomial: E[y] = μ, Var[y] = μ + μ²/ϕ (with ϕ ~ Exponential(1))
+        NumPyro generative model for hierarchical Bayesian generalized contact matrix estimation.
 
         Parameters
         ----------
@@ -389,7 +376,6 @@ class HiBRCfine(BRCfine):
         Run MCMC inference:
 
         >>> model = HiBRCfine(dataloader, priors={...})
-        >>> model.set_age_dims(0, 85)
         >>> model.run_inference_mcmc(rng_key, num_samples=1000)
 
         Prior predictive sampling:
@@ -402,6 +388,17 @@ class HiBRCfine(BRCfine):
         run_inference_mcmc : Run NUTS sampling
         run_inference_svi : Run stochastic variational inference
         """
+        aid = self.aid if aid is None else aid
+        bid = self.bid if bid is None else bid
+        rid = getattr(self, "rid", None) if rid is None else rid
+        flat_ix = self.data.strat_data["flat_ix"] if flat_ix is None else flat_ix
+        flat_pixs = (
+            self.data.strat_data["flat_pixs"] if flat_pixs is None else flat_pixs
+        )
+        log_N = self.log_N if log_N is None else log_N
+        log_S = self.log_S if log_S is None else log_S
+        len_y = len(self.y) if y is None else len(y)
+
         # Sample baseline log-intensity
         beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
 
@@ -413,30 +410,28 @@ class HiBRCfine(BRCfine):
         log_rate = numpyro.deterministic("log_rate", beta0 + f)
 
         # Initialize log contact intensity with population adjustment
-        log_cint = log_rate[self.aid, self.bid]
+        log_cint = log_rate[aid, bid]
 
         # Add stratification effects
-        log_cint += self.sample_log_delta()[
-            self.data.strat_data["flat_ix"], self.aid, self.bid
-        ]
+        log_cint += self.sample_log_delta()[flat_ix, aid, bid]
 
         # Add population offsets
-        log_cint += self.log_P[self.data.strat_data["flat_pixs"], self.bid]
+        log_cint += self.log_P[flat_pixs, bid]
 
         # Add repeat interview effect if present
-        repeat_effect = self.hill.sample()[self.rid] if hasattr(self, "rid") else 0.0
+        repeat_effect = self.hill.sample()[rid] if hasattr(self, "rid") else 0.0
 
         # Compute expected counts
-        mu = jnp.exp(log_cint + self.log_N + self.log_S + repeat_effect)
+        mu = jnp.exp(log_cint + log_N + log_S + repeat_effect)
 
         # Likelihood
         if self.likelihood == "poisson":
-            with plate("data", len(self.y)):
+            with plate("data", len_y):
                 numpyro.sample("obs", dist.Poisson(rate=mu), obs=y)
 
         if self.likelihood == "negbin":
             inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
-            with plate("data", len(self.y)):
+            with plate("data", len_y):
                 numpyro.sample(
                     "obs",
                     dist.NegativeBinomial2(mean=mu, concentration=1.0 / inv_disp),

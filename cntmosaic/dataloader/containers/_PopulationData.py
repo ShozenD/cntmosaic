@@ -742,6 +742,11 @@ class PopulationData:
                 .reset_index()
             )
 
+    @property
+    def df(self) -> pd.DataFrame:
+        """Wrapper for get_age_distribution returning DataFrame."""
+        return self.get_age_distribution(by_group=True).copy()
+
     def normalize(self) -> "PopulationData":
         """
         Return a new PopulationData instance with normalized population sizes.

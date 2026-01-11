@@ -1,3 +1,4 @@
+from ._arviz import svi_to_inference_data
 from ._visualiser import ModelVisualiser
 from .evaluator import ModelEvaluatorBRC, ModelEvaluatorPrem, ModelEvaluatorSocialMix
 from .summariser._ModelSummariserBRC import ModelSummariserBRC

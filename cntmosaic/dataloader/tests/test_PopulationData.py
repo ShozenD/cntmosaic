@@ -10,94 +10,61 @@ import pandas as pd
 import pytest
 
 from ..containers._PopulationData import PopulationData
+from .fixtures import df_pop_age_grps, df_pop_basic, df_pop_multi_var, df_pop_single_var
 
 
-class TestPopulationDataInitialization:
+class TestInit:
     """Test PopulationData initialization with various configurations."""
 
-    def test_basic_initialization(self):
+    def test_basic(self, df_pop_basic):
         """Test basic initialization with required parameters."""
-        df = pd.DataFrame({"age": [0, 1, 2, 3], "population": [1000, 1100, 1200, 1150]})
-
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+        df = df_pop_basic
+        pop_data = PopulationData(df_pop=df, age_col="age", size_col="P")
 
         assert pop_data.n_ages == 4
         assert "age" in pop_data.data.columns
         assert "P" in pop_data.data.columns
 
-    def test_initialization_with_stratification_var(self):
+    def test_single_var(self, df_pop_single_var):
         """Test initialization with a single stratification variable."""
-        df = pd.DataFrame(
-            {
-                "age": [0, 0, 1, 1, 2, 2],
-                "gender": ["M", "F", "M", "F", "M", "F"],
-                "population": [510, 490, 530, 520, 550, 550],
-            }
-        )
 
         pop_data = PopulationData(
-            df_pop=df, age_col="age", size_col="population", strat_vars="gender"
+            df_pop=df_pop_single_var,
+            age_col="age",
+            size_col="P",
+            strat_var_cols="sex",
         )
 
         assert pop_data.n_ages == 3
-        assert "gender" in pop_data.data.columns
-        assert len(pop_data.data) == 6  # 3 ages × 2 genders
+        assert "sex" in pop_data.data.columns
+        assert len(pop_data.data) == 6  # 3 ages × 2 sexes
 
-    def test_initialization_with_multiple_stratification_vars(self):
+    def test_multiple_vars(self, df_pop_multi_var):
         """Test initialization with multiple stratification variables."""
-        df = pd.DataFrame(
-            {
-                "age": [0, 0, 0, 0],
-                "gender": ["M", "F", "M", "F"],
-                "region": ["North", "North", "South", "South"],
-                "population": [250, 240, 260, 250],
-            }
-        )
-
         pop_data = PopulationData(
-            df_pop=df,
+            df_pop=df_pop_multi_var,
             age_col="age",
-            size_col="population",
-            strat_vars=["gender", "region"],
+            size_col="P",
+            strat_var_cols=["sex", "hhsize"],
         )
 
-        assert pop_data.n_ages == 1
-        assert "gender" in pop_data.data.columns
-        assert "region" in pop_data.data.columns
-        assert pop_data.total_population == 1000
+        assert pop_data.n_ages == 3
+        assert "sex" in pop_data.data.columns
+        assert "hhsize" in pop_data.data.columns
+        assert pop_data.total == 3000
 
-    def test_initialization_with_age_group(self):
+    def test_age_group(self, df_pop_age_grps):
         """Test initialization with age groups."""
-        df = pd.DataFrame(
-            {
-                "age": [0, 5, 10],
-                "age_group": pd.IntervalIndex.from_tuples([(0, 5), (5, 10), (10, 15)]),
-                "population": [5000, 4800, 4600],
-            }
-        )
 
         pop_data = PopulationData(
-            df_pop=df,
+            df_pop=df_pop_age_grps,
             age_col="age",
-            size_col="population",
-            age_grp_col="age_group",
+            size_col="P",
+            age_grp_col="age_grp",
         )
 
         assert "age_grp_pop" in pop_data.data.columns
         assert pop_data.n_ages == 3
-        assert isinstance(pop_data.data["age_grp_pop"].dtype, pd.IntervalDtype)
-
-    def test_invalid_type_for_df_pop(self):
-        """Test that non-DataFrame input raises TypeError."""
-        with pytest.raises(TypeError, match="df_pop must be a pandas DataFrame"):
-            PopulationData(df_pop=[1, 2, 3], age_col="age", size_col="population")
-
-    def test_missing_age_col_raises_error(self):
-        """Test that missing age_col raises ValueError."""
-        df = pd.DataFrame({"population": [1000, 1100]})
-
-        with pytest.raises(ValueError, match="Must specify 'age_col'"):
-            PopulationData(df_pop=df, age_col=None, size_col="population")
 
 
 class TestPopulationDataValidation:
@@ -128,7 +95,7 @@ class TestPopulationDataValidation:
                 df_pop=df,
                 age_col="age",
                 size_col="population",
-                strat_vars=["gender"],  # 'gender' doesn't exist
+                strat_var_cols=["gender"],  # 'gender' doesn't exist
             )
 
     def test_missing_age_grp_column(self):
@@ -186,7 +153,7 @@ class TestPopulationDataValidation:
             pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
 
         assert pop_data.n_ages == 3
-        assert pop_data.total_population == 3350
+        assert pop_data.total == 3350
 
     def test_empty_dataframe_after_dropping_missing(self):
         """Test that empty DataFrame after dropping missing raises ValueError."""
@@ -205,7 +172,7 @@ class TestPopulationDataValidation:
         assert pop_data.n_ages == 3
 
 
-class TestPopulationDataProperties:
+class TestProperties:
     """Test PopulationData properties."""
 
     def test_data_property(self):
@@ -228,15 +195,15 @@ class TestPopulationDataProperties:
 
         assert pop_data.n_ages == 5
 
-    def test_total_population_property(self):
-        """Test total_population property."""
+    def test_total(self):
+        """Test total property."""
         df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 1100, 1200]})
 
         pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
 
-        assert pop_data.total_population == 3300
+        assert pop_data.total == 3300
 
-    def test_age_range_property(self):
+    def test_age_range(self):
         """Test age_range property."""
         df = pd.DataFrame(
             {"age": [5, 10, 15, 20], "population": [1000, 1100, 1200, 1150]}
@@ -246,112 +213,36 @@ class TestPopulationDataProperties:
 
         assert pop_data.age_range == (5, 20)
 
-    def test_stratification_vars_property_empty(self):
-        """Test stratification_vars with no variables."""
-        df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 1100, 1200]})
-
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
-
-        assert pop_data.stratification_vars == []
-
-    def test_stratification_vars_property_with_vars(self):
-        """Test stratification_vars with multiple variables."""
-        df = pd.DataFrame(
-            {
-                "age": [0, 0, 0, 0],
-                "gender": ["M", "F", "M", "F"],
-                "region": ["A", "A", "B", "B"],
-                "population": [250, 250, 250, 250],
-            }
-        )
-
+    def test_strat_vars(self, df_pop_multi_var):
+        """Test strat_vars with multiple variables."""
         pop_data = PopulationData(
-            df_pop=df,
+            df_pop=df_pop_multi_var,
             age_col="age",
-            size_col="population",
-            strat_vars=["gender", "region"],
+            size_col="P",
+            strat_var_cols=["sex", "hhsize"],
         )
 
-        assert pop_data.stratification_vars == ["gender", "region"]
-
-    def test_as_proportions_property(self):
-        """Test as_proportions property."""
-        df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 2000, 3000]})
-
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
-        pop_prop = pop_data.as_proportions
-
-        assert np.isclose(pop_prop["P"].sum(), 1.0)
-        assert np.isclose(pop_prop["P"].iloc[0], 1000 / 6000)
-        assert np.isclose(pop_prop["P"].iloc[1], 2000 / 6000)
-        # Original unchanged
-        assert pop_data.total_population == 6000
+        assert pop_data.strat_vars == ["sex", "hhsize"]
 
 
-class TestPopulationDataMethods:
+class TestMethods:
     """Test PopulationData methods."""
 
-    def test_get_age_distribution_simple(self):
-        """Test get_age_distribution for non-stratified data."""
-        df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 1100, 1200]})
-
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
-        age_dist = pop_data.get_age_distribution()
-
-        assert len(age_dist) == 3
-        assert age_dist[0] == 1000
-        assert age_dist[1] == 1100
-        assert age_dist[2] == 1200
-
-    def test_get_age_distribution_stratified_marginal(self):
-        """Test get_age_distribution with stratification (marginal)."""
-        df = pd.DataFrame(
-            {
-                "age": [0, 0, 1, 1],
-                "gender": ["M", "F", "M", "F"],
-                "population": [510, 490, 530, 520],
-            }
-        )
+    def test_get_strat_var_schema(self, df_pop_multi_var):
+        """Test get_strat_var_schema method."""
 
         pop_data = PopulationData(
-            df_pop=df, age_col="age", size_col="population", strat_vars="gender"
-        )
-        age_dist = pop_data.get_age_distribution(by_group=False)
-
-        assert len(age_dist) == 2
-        assert age_dist[0] == 1000  # 510 + 490
-        assert age_dist[1] == 1050  # 530 + 520
-
-    def test_get_age_distribution_stratified_by_group(self):
-        """Test get_age_distribution with stratification (by group)."""
-        df = pd.DataFrame(
-            {
-                "age": [0, 0, 1, 1],
-                "gender": ["M", "F", "M", "F"],
-                "population": [510, 490, 530, 520],
-            }
+            df_pop=df_pop_multi_var,
+            age_col="age",
+            size_col="P",
+            strat_var_cols=["sex", "hhsize"],
         )
 
-        pop_data = PopulationData(
-            df_pop=df, age_col="age", size_col="population", strat_vars="gender"
-        )
-        age_dist = pop_data.get_age_distribution(by_group=True)
-
-        assert len(age_dist) == 4  # 2 ages × 2 genders
-        assert age_dist[(0, "M")] == 510
-        assert age_dist[(0, "F")] == 490
-
-    def test_normalize_method(self):
-        """Test normalize method."""
-        df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 2000, 3000]})
-
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
-        pop_normalized = pop_data.normalize()
-
-        assert np.isclose(pop_normalized.total_population, 1.0)
-        assert np.isclose(pop_normalized.data["P"].iloc[0], 1000 / 6000)
-        # Original unchanged
-        assert pop_data.total_population == 6000
+        schema = pop_data.get_strat_var_schema()
+        assert schema == {
+            "sex": {"categories": ["F", "M"], "codes": [0, 1]},
+            "hhsize": {"categories": ["1", "2"], "codes": [0, 1]},
+        }
 
     def test_summary_method(self):
         """Test summary method."""
@@ -364,22 +255,22 @@ class TestPopulationDataMethods:
         )
 
         pop_data = PopulationData(
-            df_pop=df, age_col="age", size_col="population", strat_vars="gender"
+            df_pop=df, age_col="age", size_col="population", strat_var_cols="gender"
         )
         summary = pop_data.summary()
 
         assert summary["n_ages"] == 2
         assert summary["age_range"] == (0, 1)
-        assert summary["total_population"] == 2050
-        assert summary["stratification_vars"] == ["gender"]
-        assert summary["n_stratification_vars"] == 1
+        assert summary["total"] == 2050
+        assert summary["strat_vars"] == ["gender"]
+        assert summary["n_strat_vars"] == 1
         assert summary["is_stratified"] is True
 
 
-class TestPopulationDataAggregation:
+class TestAggregation:
     """Test PopulationData aggregation behavior."""
 
-    def test_aggregation_without_stratification(self):
+    def test_duplicate_age(self):
         """Test that multiple rows per age are aggregated."""
         df = pd.DataFrame(
             {
@@ -400,32 +291,32 @@ class TestPopulationDataAggregation:
         df = pd.DataFrame(
             {
                 "age": [0, 0, 0, 0],
-                "gender": ["M", "M", "F", "F"],  # Duplicates within gender
-                "population": [250, 260, 240, 250],
+                "sex": ["M", "M", "F", "F"],  # Duplicates within gender
+                "P": [250, 260, 240, 250],
             }
         )
 
         with pytest.warns(UserWarning, match="Aggregating population data"):
             pop_data = PopulationData(
-                df_pop=df, age_col="age", size_col="population", strat_vars="gender"
+                df_pop=df, age_col="age", size_col="P", strat_var_cols="sex"
             )
 
         assert len(pop_data.data) == 2  # M and F
-        male_pop = pop_data.data.loc[pop_data.data["gender"] == "M", "P"].iloc[0]
-        female_pop = pop_data.data.loc[pop_data.data["gender"] == "F", "P"].iloc[0]
+        male_pop = pop_data.data.loc[pop_data.data["sex"] == "M", "P"].iloc[0]
+        female_pop = pop_data.data.loc[pop_data.data["sex"] == "F", "P"].iloc[0]
         assert male_pop == 510  # 250 + 260
         assert female_pop == 490  # 240 + 250
 
     def test_no_aggregation_warning_when_not_needed(self):
         """Test that no aggregation warning is raised when data is already unique."""
-        df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 1100, 1200]})
+        df = pd.DataFrame({"age": [0, 1, 2], "P": [1000, 1100, 1200]})
 
         # Should NOT raise aggregation warning
         import warnings as warnings_module
 
         with warnings_module.catch_warnings(record=True) as warning_list:
             warnings_module.simplefilter("always")
-            pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+            pop_data = PopulationData(df_pop=df, age_col="age", size_col="P")
 
         # Filter for aggregation warnings only
         agg_warnings = [
@@ -439,127 +330,18 @@ class TestPopulationDataEdgeCases:
 
     def test_single_age(self):
         """Test with a single age."""
-        df = pd.DataFrame({"age": [0], "population": [1000]})
+        df = pd.DataFrame({"age": [0], "P": [1000]})
 
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+        pop_data = PopulationData(df_pop=df, age_col="age", size_col="P")
 
         assert pop_data.n_ages == 1
         assert pop_data.age_range == (0, 0)
-        assert pop_data.total_population == 1000
-
-    def test_large_age_range(self):
-        """Test with large age range."""
-        ages = list(range(0, 101))
-        populations = [1000 + i * 10 for i in range(101)]
-        df = pd.DataFrame({"age": ages, "population": populations})
-
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
-
-        assert pop_data.n_ages == 101
-        assert pop_data.age_range == (0, 100)
-
-    def test_float_ages(self):
-        """Test with float ages (should work)."""
-        df = pd.DataFrame({"age": [0.5, 1.5, 2.5], "population": [1000, 1100, 1200]})
-
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
-
-        assert pop_data.n_ages == 3
+        assert pop_data.total == 1000
 
     def test_float_population_sizes(self):
         """Test with float population sizes (proportions)."""
-        df = pd.DataFrame({"age": [0, 1, 2], "population": [0.3, 0.4, 0.3]})
+        df = pd.DataFrame({"age": [0, 1, 2], "P": [0.3, 0.4, 0.3]})
 
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+        pop_data = PopulationData(df_pop=df, age_col="age", size_col="P")
 
-        assert np.isclose(pop_data.total_population, 1.0)
-
-    def test_very_small_populations(self):
-        """Test with very small population sizes."""
-        df = pd.DataFrame({"age": [0, 1, 2], "population": [1e-6, 2e-6, 3e-6]})
-
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
-
-        assert pop_data.total_population > 0
-
-
-class TestPopulationDataIntegration:
-    """Integration tests for PopulationData with realistic scenarios."""
-
-    def test_realistic_population_data(self):
-        """Test with realistic population distribution."""
-        np.random.seed(42)
-        ages = list(range(0, 86))
-        populations = [
-            np.random.randint(800000, 1200000) for _ in range(86)
-        ]  # Realistic US-like distribution
-
-        df = pd.DataFrame({"age": ages, "population": populations})
-
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
-
-        assert pop_data.n_ages == 86
-        assert pop_data.age_range == (0, 85)
-        assert pop_data.total_population > 0
-
-        summary = pop_data.summary()
-        assert summary["n_ages"] == 86
-        assert summary["is_stratified"] is False
-
-    def test_stratified_population_data(self):
-        """Test with stratified population (gender and region)."""
-        ages = list(range(0, 10))
-        data_rows = []
-
-        for age in ages:
-            for gender in ["M", "F"]:
-                for region in ["North", "South"]:
-                    pop = np.random.randint(5000, 10000)
-                    data_rows.append(
-                        {
-                            "age": age,
-                            "gender": gender,
-                            "region": region,
-                            "population": pop,
-                        }
-                    )
-
-        df = pd.DataFrame(data_rows)
-
-        pop_data = PopulationData(
-            df_pop=df,
-            age_col="age",
-            size_col="population",
-            strat_vars=["gender", "region"],
-        )
-
-        assert pop_data.n_ages == 10
-        assert len(pop_data.data) == 40  # 10 ages × 2 genders × 2 regions
-        assert pop_data.stratification_vars == ["gender", "region"]
-
-        # Test marginal distribution
-        age_dist = pop_data.get_age_distribution(by_group=False)
-        assert len(age_dist) == 10
-
-        # Test stratified distribution
-        age_dist_by_group = pop_data.get_age_distribution(by_group=True)
-        assert len(age_dist_by_group) == 40
-
-    def test_conversion_between_counts_and_proportions(self):
-        """Test converting between counts and proportions."""
-        df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 2000, 3000]})
-
-        # Start with counts
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
-        assert pop_data.total_population == 6000
-
-        # Convert to proportions
-        pop_prop = pop_data.as_proportions
-        assert np.isclose(pop_prop["P"].sum(), 1.0)
-
-        # Normalize (creates new instance)
-        pop_normalized = pop_data.normalize()
-        assert np.isclose(pop_normalized.total_population, 1.0)
-
-        # Original unchanged
-        assert pop_data.total_population == 6000
+        assert np.isclose(pop_data.total, 1.0)

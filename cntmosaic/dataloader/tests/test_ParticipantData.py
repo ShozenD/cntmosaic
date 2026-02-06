@@ -10,118 +10,77 @@ import pandas as pd
 import pytest
 
 from ..containers._ParticipantData import ParticipantData
+from .fixtures import df_part_age_grps, df_part_one_year
 
 
 class TestInit:
     """Test initialization and validation of ParticipantData."""
 
-    def test_init_with_age_col(self):
+    def test_init_one_year(self, df_part_one_year):
         """Test basic initialization with exact ages."""
-        df = pd.DataFrame(
-            {
-                "id": [1, 2, 3, 4],
-                "age": [25, 34, 45, 52],
-                "gender": ["M", "F", "M", "F"],
-            }
-        )
+        df_part = df_part_one_year
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(df_part, id_col="id", age_col="age")
 
-        assert part_data.n == 4
+        assert part_data.n == 5
         assert part_data.age_col == "age"
         assert part_data.age_grp_col is None
-
         assert part_data.data.columns.tolist() == ["id", "age_part", "z"]
 
-    def test_init_with_age_groups(self):
+    def test_init_age_groups(self, df_part_age_grps):
         """Test initialization with age groups (IntervalIndex)."""
-        df = pd.DataFrame(
-            {
-                "pid": [1, 2, 3],
-                "age_group": pd.IntervalIndex.from_tuples([(0, 5), (5, 10), (10, 15)]),
-                "gender": ["M", "F", "M"],
-            }
-        )
-        df["age_group"] = df["age_group"].astype("category")
+        df_part = df_part_age_grps
+        part_data = ParticipantData(df_part=df_part, id_col="id", age_grp_col="age_grp")
 
-        part_data = ParticipantData(df_part=df, id_col="pid", age_grp_col="age_group")
-
-        assert part_data.n == 3
-        assert part_data.age_grp_col == "age_group"
+        assert part_data.n == 5
+        assert part_data.age_grp_col == "age_grp"
         assert part_data.age_col is None
-
         assert part_data.data.columns.tolist() == ["id", "age_grp_part", "z"]
 
-    def test_init_with_single_strat(self):
+    def test_init_single_strat(self, df_part_one_year):
         """Test initialization with a single stratification variable as string."""
-        df = pd.DataFrame(
-            {"id": [1, 2, 3], "age": [25, 34, 45], "gender": ["M", "F", "M"]}
-        )
-
         part_data = ParticipantData(
-            df_part=df, id_col="id", age_col="age", strat_var_cols="gender"
+            df_part=df_part_one_year,
+            id_col="id",
+            age_col="age",
+            strat_var_cols="sex",
         )
 
         # Should be converted to list internally
-        assert part_data.strat_vars == ["gender"]
-        assert part_data.data.columns.tolist() == ["id", "age_part", "gender_part", "z"]
+        assert part_data.strat_vars == ["sex"]
+        assert part_data.data.columns.tolist() == ["id", "age_part", "sex_part", "z"]
 
-    def test_init_with_multiple_strat(self):
+    def test_init_multiple_strat(self, df_part_one_year):
         """Test initialization with multiple stratification variables."""
-        df = pd.DataFrame(
-            {
-                "id": [1, 2, 3],
-                "age": [25, 34, 45],
-                "gender": ["M", "F", "M"],
-                "region": ["North", "South", "East"],
-                "occupation": ["A", "B", "C"],
-            }
-        )
+        df_part = df_part_one_year
 
         part_data = ParticipantData(
-            df_part=df,
+            df_part=df_part,
             id_col="id",
             age_col="age",
-            strat_var_cols=["gender", "region", "occupation"],
+            strat_var_cols=["sex", "hhsize"],
         )
 
-        assert part_data.strat_vars == ["gender", "region", "occupation"]
+        assert part_data.strat_vars == ["sex", "hhsize"]
         assert part_data.data.columns.tolist() == [
             "id",
             "age_part",
-            "gender_part",
-            "region_part",
-            "occupation_part",
+            "sex_part",
+            "hhsize_part",
             "z",
         ]
 
-    def test_init_with_repeat(self):
+    def test_init_with_repeat(self, df_part_one_year):
         """Test initialization with repeat interview variable."""
-        df = pd.DataFrame(
-            {
-                "id": [1, 2, 3, 4],
-                "age": [25, 34, 45, 52],
-                "repeat": [0, 1, 0, 1],
-            }
-        )
-
+        df_part = df_part_one_year
         part_data = ParticipantData(
-            df_part=df, id_col="id", age_col="age", repeat_col="repeat"
+            df_part=df_part, id_col="id", age_col="age", repeat_col="repeat"
         )
 
         assert part_data.data.columns.tolist() == ["id", "age_part", "repeat_part", "z"]
-        assert part_data.n == 4
-
-    def test_init_without_strat(self):
-        """Test initialization without stratification variables."""
-        df = pd.DataFrame({"id": [1, 2, 3], "age": [25, 34, 45]})
-
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
-
-        assert part_data.strat_vars == []
 
 
-class TestParticipantDataValidation:
+class TestValidation:
     """Test validation logic and error handling."""
 
     def test_invalid_dataframe_type(self):
@@ -180,20 +139,20 @@ class TestParticipantDataValidation:
                 df_part=df, id_col="id", age_col="age"  # Column doesn't exist
             )
 
-    def test_missing_stratification_column(self):
+    def test_missing_strat_col(self):
         """Test that missing stratification variable raises KeyError."""
         df = pd.DataFrame(
-            {"id": [1, 2, 3], "age": [25, 34, 45], "gender": ["M", "F", "M"]}
+            {"id": [1, 2, 3], "age": [25, 34, 45], "sex": ["M", "F", "M"]}
         )
 
         with pytest.raises(
-            KeyError, match="strat_var_cols '\\['gender', 'region'\\]' is specified"
+            KeyError, match="strat_var_cols '\\['sex', 'hhsize'\\]' is specified"
         ):
             ParticipantData(
                 df_part=df,
                 id_col="id",
                 age_col="age",
-                strat_var_cols=["gender", "region"],  # 'region' doesn't exist
+                strat_var_cols=["sex", "hhsize"],  # 'hhsize' doesn't exist
             )
 
     def test_duplicate_participant_ids(self):
@@ -223,19 +182,19 @@ class TestParticipantDataValidation:
         # Check that row was dropped
         assert part_data.n == 3
 
-    def test_missing_values_in_stratification_var(self):
+    def test_missing_values_in_strat_var(self):
         """Test that missing values in stratification variables trigger warning and are dropped."""
         df = pd.DataFrame(
             {
                 "id": [1, 2, 3, 4],
                 "age": [25, 34, 45, 52],
-                "gender": ["M", np.nan, "M", "F"],
+                "sex": ["M", np.nan, "M", "F"],
             }
         )
 
         with pytest.warns(UserWarning, match="Dropped 1 row"):
             part_data = ParticipantData(
-                df_part=df, id_col="id", age_col="age", strat_var_cols="gender"
+                df_part=df, id_col="id", age_col="age", strat_var_cols="sex"
             )
         # Check that row was dropped
         assert part_data.n == 3
@@ -257,7 +216,7 @@ class TestParticipantDataValidation:
             ParticipantData(df_part=df, id_col="id", age_col="age")
 
 
-class TestParticipantDataProperties:
+class TestProperties:
     """Test properties and accessor methods."""
 
     def test_data_property(self):
@@ -308,7 +267,6 @@ class TestParticipantDataProperties:
     def test_strat_vars_property_empty(self):
         """Test strat_vars when no variables specified."""
         df = pd.DataFrame({"id": [1, 2, 3], "age": [25, 34, 45]})
-
         part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
 
         assert part_data.strat_vars == []
@@ -331,7 +289,7 @@ class TestParticipantDataProperties:
         assert part_data.strat_vars == ["gender", "region"]
 
 
-class TestParticipantDataMethods:
+class TestMethods:
     """Test methods for data analysis and summarization."""
 
     def test_get_sample_sizes(self):
@@ -414,8 +372,23 @@ class TestParticipantDataMethods:
 
         assert summary["strat_vars"] == []
 
+    def test_get_strat_var_schema(self, df_part_one_year):
+        part_data = ParticipantData(
+            df_part_one_year,
+            id_col="id",
+            age_col="age",
+            strat_var_cols=["sex", "hhsize"],
+        )
 
-class TestParticipantDataEdgeCases:
+        schema = part_data.get_strat_var_schema()
+        assert schema["sex"] == {"categories": ["F", "M"], "codes": [0, 1]}
+        assert schema["hhsize"] == {
+            "categories": ["1", "2", "3", "4", "5+"],
+            "codes": [0, 1, 2, 3, 4],
+        }
+
+
+class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
     def test_single_participant(self):

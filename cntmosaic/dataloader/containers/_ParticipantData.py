@@ -8,82 +8,69 @@ import pandas as pd
 @dataclass
 class ParticipantData:
     """
-    Validated participant data container for social contact surveys.
+    A container class for participant data from social contact surveys.
 
-    This class provides a type-safe, validated wrapper around participant DataFrames,
-    ensuring data integrity before use in contact matrix estimation models. It performs
-    comprehensive validation of required columns, data types, and value ranges, along
-    with automatic preprocessing for downstream modeling.
+    This class wraps participant DataFrames and handles validation, type conversion, and
+    column standardization. It automatically preprocesses data and provides convenient
+    properties and methods to access participant information.
+
+    Parameters
+    ----------
+    df_part : pd.DataFrame
+        DataFrame containing participant information. Each row represents one participant.
+        Must contain columns specified by id_col, age_col (or age_grp_col), and optionally
+        strat_var_cols, repeat_col, and amb_cnt_col.
+    id_col : str
+        Name of the column containing unique participant identifiers.
+        Values must be unique for each participant. Renamed to 'id' internally.
+    age_col : Optional[str], default=None
+        Name of the column containing participant ages as numeric values.
+        Use this OR age_grp_col, not both. Ages should be non-negative.
+        Renamed to 'age_part' internally.
+    age_grp_col : Optional[str], default=None
+        Name of the column containing participant age groups as pd.IntervalIndex.
+        Use this OR age_col, not both. Must be categorical with IntervalIndex categories.
+        Renamed to 'age_grp_part' internally.
+    strat_var_cols : Optional[Union[List[str], str]], default=None
+        Stratification variable column name(s) for participants.
+        Can be a single string or list of strings. Examples: 'gender', ['gender', 'region'].
+        Each variable is renamed with '_part' suffix (e.g., 'gender' → 'gender_part').
+    repeat_col : Optional[str], default=None
+        Name of the column indicating repeat interviews/waves.
+        Used to track longitudinal data where participants are surveyed multiple times.
+        Renamed to 'repeat_part' internally.
+    amb_cnt_col : Optional[str], default=None
+        Name of the column containing ambiguous/group contact counts.
+        If None, a column named 'z' is created and initialized to 0.
+        If specified but missing from df_part, it will be created with 0 values.
 
     Attributes
     ----------
     df_part : pd.DataFrame
-        DataFrame containing participant information. Each row represents one participant.
-        Must contain columns specified by id_col, age_col (or age_grp_col), and strat_var_cols.
-        Note: The DataFrame is automatically preprocessed (copied, cleaned, type-converted).
-    id_col : str
-        Name of the column containing unique participant identifiers.
-        Values must be unique for each participant. Used to link participants with their contacts.
-    age_col : Optional[str], default=None
-        Name of the column containing participant ages as integers.
-        Use this OR age_grp_col, not both. Ages should be non-negative integers.
-    age_grp_col : Optional[str], default=None
-        Name of the column containing participant age groups.
-        Use this OR age_col, not both. Should be pd.IntervalIndex or categorical age groups.
-    strat_var_cols : Optional[Union[List[str], str]], default=None
-        Stratification variable column name(s) for participants.
-        Can be a single string or list of strings. Examples: 'gender', ['gender', 'region'].
-
-        **Important**: If multiple variables are specified (e.g., ['gender', 'region']),
-        they will be **combined into a single composite stratification variable** by DataLoader.
-        For example, ['gender', 'region'] with categories ['M', 'F'] and ['North', 'South']
-        will create a combined variable with categories: ['M_North', 'M_South', 'F_North', 'F_South'].
-
-        **Consistency requirement**: The same stratification variables must be specified across:
-        - ParticipantData (required if stratifying)
-        - ContactData (required if FULL stratification mode)
-        - PopulationData (required if using stratified population data)
-        - StratPropData (required, one object per composite stratification)
-    repeat_col : Optional[str], default=None
-        Name of the column indicating repeat interviews/waves for participants.
-        If specified, this column will be renamed to 'repeat_part' in the processed DataFrame.
-        Used to track longitudinal data where participants are surveyed multiple times.
-    grp_cnt_col : str, default='z'
-        Name of the column for group contact counts. If not present in df_part,
-        it will be automatically created and initialized to 0.
+        The validated and preprocessed participant DataFrame. Access via the `data` property.
 
     Properties
     ----------
     data : pd.DataFrame
         Returns the validated and preprocessed participant DataFrame.
-    n_participants : int
-        Returns the number of participants in the dataset (after preprocessing).
+    n : int
+        Returns the number of participants (after preprocessing and validation).
     age_range : Tuple[float, float]
-        Returns (min_age, max_age) if age_col is specified, otherwise raises ValueError.
-    stratification_vars : List[str]
-        Returns list of stratification variable names (empty list if none).
+        Returns (min_age, max_age). Only available when using age_col.
+    strat_vars : List[str]
+        Returns list of original stratification variable names (empty list if none).
 
     Methods
     -------
     validate()
         Performs comprehensive validation of the participant data.
-    get_age_distribution()
-        Returns age distribution of participants as a Series.
+        Called automatically during initialization.
+    get_strat_vars(suffix=False)
+        Returns stratification variable names, optionally with '_part' suffix.
+    get_sample_sizes(stratify=False)
+        Returns DataFrame with participant counts, optionally stratified by all variables.
     summary()
-        Returns a dictionary with summary statistics about the participant data.
-
-    Raises
-    ------
-    ValueError
-        If neither age_col nor age_grp_col is provided.
-        If both age_col and age_grp_col are provided simultaneously.
-        If age values contain NaN, negative values, or non-numeric types.
-        If duplicate participant IDs are found.
-        If DataFrame becomes empty after removing missing values.
-    KeyError
-        If required columns (id_col, age_col, age_grp_col, strat_var_cols) are missing.
-    TypeError
-        If df_part is not a pandas DataFrame.
+        Returns dictionary with summary statistics about the participant data.
 
     Examples
     --------
@@ -99,24 +86,23 @@ class ParticipantData:
     ...     age_col='age',
     ...     strat_var_cols='gender'
     ... )
-    >>> part_data.n_participants
+    >>> part_data.n
     4
     >>> part_data.age_range
-    (25, 52)
-    >>> # Age column is renamed to 'age_part'
-    >>> 'age_part' in part_data.data.columns
-    True
-    >>> # Gender column is renamed to 'gender_part'
-    >>> 'gender_part' in part_data.data.columns
-    True
-    >>> # Note: 'z' column is automatically added with value 0
-    >>> 'z' in part_data.data.columns
-    True
+    (25.0, 52.0)
+    >>> # Columns are renamed with standardized names
+    >>> list(part_data.data.columns)
+    ['id', 'age_part', 'gender_part', 'z']
+    >>> part_data.data['gender_part'].dtype.name
+    'category'
     >>>
     >>> # With age groups and multiple stratification variables
     >>> df = pd.DataFrame({
     ...     'pid': [1, 2, 3],
-    ...     'age_group': pd.IntervalIndex.from_tuples([(0, 5), (5, 10), (10, 15)]),
+    ...     'age_group': pd.Categorical.from_codes(
+    ...         [0, 1, 2],
+    ...         categories=pd.IntervalIndex.from_tuples([(0, 5), (5, 10), (10, 15)])
+    ...     ),
     ...     'gender': ['M', 'F', 'M'],
     ...     'region': ['North', 'South', 'East']
     ... })
@@ -126,54 +112,63 @@ class ParticipantData:
     ...     age_grp_col='age_group',
     ...     strat_var_cols=['gender', 'region']
     ... )
-    >>> part_data.stratification_vars
+    >>> part_data.strat_vars
     ['gender', 'region']
-    >>> # Columns are renamed with _part suffix
+    >>> part_data.get_strat_vars(suffix=True)
+    ['gender_part', 'region_part']
     >>> list(part_data.data.columns)
-    ['pid', 'age_grp_part', 'gender_part', 'region_part', 'z']
-    >>> # Object columns are automatically converted to categorical
-    >>> part_data.data['gender_part'].dtype.name
-    'category'
+    ['id', 'age_grp_part', 'gender_part', 'region_part', 'z']
     >>>
-    >>> # Accessing summary statistics
-    >>> summary = part_data.summary()
-    >>> print(summary['n_participants'])
-    3
+    >>> # Get sample sizes
+    >>> sample_sizes = part_data.get_sample_sizes(stratify=True)
+    >>> sample_sizes.columns.tolist()
+    ['age_grp_part', 'gender_part', 'region_part', 'N']
 
     Notes
     -----
-    Preprocessing Steps (Automatic):
-    - Creates a copy of the input DataFrame to avoid side effects
-    - Drops rows with missing values in required columns
-    - Converts object-type columns (except ID) to categorical for efficiency
-    - Renames columns with standardized names:
-      * id_col → 'id' (standardized identifier)
-      * age_col → 'age_part'
-      * age_grp_col → 'age_grp_part' (if specified)
-      * each strat_var_cols → '{var}_part'
-      * repeat_col → 'repeat_part' (if specified)
-    - Adds 'z' column (group contact count) initialized to 0 if not present
-    - Validates all data constraints after preprocessing
+    **Automatic Preprocessing:**
 
-    Processed DataFrame Structure:
-    - id: Standardized participant identifier (renamed from id_col)
-    - age_part: Participant age (renamed from age_col)
-    - age_grp_part: Participant age group (renamed from age_grp_col, if specified)
+    1. Creates a copy of the input DataFrame (original is not modified)
+    2. Drops rows with missing values in required columns (with warning)
+    3. Converts object-type columns (except ID) to categorical dtype
+    4. Renames columns to standardized names:
+       - id_col → 'id' (only if id_col != 'id')
+       - age_col → 'age_part' (only if not already ending with '_part')
+       - age_grp_col → 'age_grp_part' (only if not already ending with '_part')
+       - Each strat_var_cols → '{var}_part' (only if not already ending with '_part')
+       - repeat_col → 'repeat_part' (only if not already ending with '_part')
+    5. Creates amb_cnt_col (defaults to 'z' with value 0 if not specified)
+    6. Validates all data constraints
+
+    **Processed DataFrame Columns:**
+
+    - id: Participant identifier (standardized from id_col)
+    - age_part: Participant age (if using age_col)
+    - age_grp_part: Participant age group (if using age_grp_col)
     - {var}_part: Each stratification variable with _part suffix
-    - repeat_part: Repeat interview indicator (renamed from repeat_col, if specified)
-    - z: Group contact count column
+    - repeat_part: Repeat interview indicator (if specified)
+    - {amb_cnt_col}: Ambiguous contact count column (defaults to 'z')
 
-    Validation Checks:
+    **Validation Checks:**
+
     - Exactly one of age_col or age_grp_col must be specified
-    - Participant IDs must be unique (no duplicate rows for the same participant)
-    - Age values (if using age_col) must be non-negative integers or floats
+    - All required columns must exist in df_part
+    - Participant IDs must be unique (no duplicate rows)
+    - Age values (if using age_col) must be non-negative numeric
+    - Age groups (if using age_grp_col) must be categorical with IntervalIndex categories
+    - Repeat values (if specified) must be non-negative numeric
+    - Ambiguous contact counts (if specified) must be non-negative numeric
     - No missing values in required columns (removed during preprocessing)
-    - Stratification variables are optional but commonly include: gender, occupation,
-      region, household size, etc.
 
-    Warnings:
-    - UserWarning if rows are dropped due to missing values
-    - UserWarning if object columns are converted to categorical
+    **Warnings:**
+
+    - UserWarning: If rows are dropped due to missing values
+    - UserWarning: If object columns are converted to categorical
+
+    See Also
+    --------
+    ContactData : Container for contact data from social contact surveys
+    DataLoader : Main data loader that combines participant and contact data
     """
 
     df_part: pd.DataFrame
@@ -182,7 +177,7 @@ class ParticipantData:
     age_grp_col: Optional[str] = None
     strat_var_cols: Optional[Union[List[str], str]] = None
     repeat_col: Optional[str] = None
-    grp_cnt_col: Optional[str] = None
+    amb_cnt_col: Optional[str] = None
 
     def __post_init__(self) -> None:
         """
@@ -286,9 +281,9 @@ class ParticipantData:
             )
 
         # Check group contact count column exist (if specified)
-        if self.grp_cnt_col and self.grp_cnt_col not in self.df_part.columns:
+        if self.amb_cnt_col and self.amb_cnt_col not in self.df_part.columns:
             raise KeyError(
-                f"grp_cnt_col '{self.grp_cnt_col}' is specified but missing in DataFrame.\n"
+                f"amb_cnt_col '{self.amb_cnt_col}' is specified but missing in DataFrame.\n"
                 f"Available columns: {list(self.df_part.columns)}"
             )
 
@@ -298,6 +293,8 @@ class ParticipantData:
             self._required_cols.extend(self.strat_var_cols)
         if self.repeat_col:  # If repeat column is specified
             self._required_cols.append(self.repeat_col)
+        if self.amb_cnt_col:  # If group contact count column is specified
+            self._required_cols.append(self.amb_cnt_col)
 
     def _preprocess(self) -> pd.DataFrame:
         """
@@ -372,7 +369,7 @@ class ParticipantData:
                 f"Missing value counts: {missing_counts.to_dict()}"
             )
 
-        # Step 4: Convert object columns to categorical for efficiency
+        # Step 4: Convert object columns to categorical dtype.
         # (excluding the ID column which should remain as-is for merging)
         object_cols = df.select_dtypes(include="object").columns.tolist()
         if self.id_col in object_cols:
@@ -431,10 +428,14 @@ class ParticipantData:
 
         df = df.rename(columns=rename_map)
 
-        # Step 6: Add 'z' column (group contact count) if not present
-        if self.grp_cnt_col is None:
-            self.grp_cnt_col = "z"
-            df[self.grp_cnt_col] = 0
+        # Step 6: Handle ambiguous contact count column
+        if self.amb_cnt_col is None:
+            # If no amb_cnt_col specified, create default 'z' column
+            self.amb_cnt_col = "z"
+            df[self.amb_cnt_col] = 0
+        elif self.amb_cnt_col not in df.columns:
+            # If amb_cnt_col was specified but got dropped, re-add it with 0 values
+            df[self.amb_cnt_col] = 0
 
         return df
 
@@ -447,7 +448,7 @@ class ParticipantData:
         2. (If age_col specified) Age column contains valid non-negative numeric values
         3. (If age_grp_col specified) Age group column contains valid pd.IntervalIndex or categorical values
         4. (If repeat_col specified) Repeat interview values are non-negative integers
-        5. (If grp_cnt_col specified) Group contact count values are non-negative integers
+        5. (If amb_cnt_col specified) Ambiguous contact count values are non-negative integers
 
         Note: Missing value checks are handled during preprocessing in _preprocess(),
         so this method assumes clean data without NaNs.
@@ -540,13 +541,13 @@ class ParticipantData:
                 )
 
         # Check 5: Validate group contact count values if specified
-        if self.grp_cnt_col:
-            grp_counts = self.df_part[self.grp_cnt_col]
+        if self.amb_cnt_col:
+            grp_counts = self.df_part[self.amb_cnt_col]
 
             # Check for non-numeric values
             if not pd.api.types.is_numeric_dtype(grp_counts):
                 raise ValueError(
-                    f"Group contact count column '{self.grp_cnt_col}' must contain numeric values.\n"
+                    f"Group contact count column '{self.amb_cnt_col}' must contain numeric values.\n"
                     f"Current dtype: {grp_counts.dtype}\n"
                     f"Hint: Convert group contact count to integer type."
                 )
@@ -555,7 +556,7 @@ class ParticipantData:
             if (grp_counts < 0).any():
                 negative_indices = self.df_part[grp_counts < 0].index[:5].tolist()
                 raise ValueError(
-                    f"Group contact count column '{self.grp_cnt_col}' contains negative values.\n"
+                    f"Group contact count column '{self.amb_cnt_col}' contains negative values.\n"
                     f"Values must be non-negative. Rows with negative values: {negative_indices}\n"
                     f"Values: {grp_counts[grp_counts < 0].head().tolist()}"
                 )
@@ -677,6 +678,35 @@ class ParticipantData:
         else:
             return [var.removesuffix("_part") for var in self.strat_var_cols]
 
+    def get_strat_var_schema(self) -> Dict[str, Dict[str, List[str | int]]]:
+        """
+        Return a dictionary of stratification variables and their unique category and code values.
+        The output is to be used in the DataLoader to ensure that the category and codes are consistent
+        between the participant, contact, population, and demographic data.
+
+        Returns
+        -------
+        Dict[str, Dict[str, List[str | int]]]
+            A dictionary where keys are the original stratification variable names (without '_part' suffix)
+            and values are dictionaries with keys 'categories' and 'codes' containing lists of unique category
+            values and their corresponding codes.
+        """
+        schema = {}
+        for var in self.strat_var_cols:
+            var_part = f"{var}_part" if not var.endswith("_part") else var
+            if var_part in self.df_part.columns:
+                categories = self.df_part[var_part].cat.categories.tolist()
+                codes = sorted(self.df_part[var_part].cat.codes.unique().tolist())
+
+                # Remove suffix
+                var = (
+                    var.removesuffix("_part") if var.endswith("_part") else var
+                )  # Remove suffix
+
+                schema[var] = {"categories": categories, "codes": codes}
+
+        return schema
+
     def get_sample_sizes(self, stratify=False) -> pd.Series:
         """
         Return a DataFrame with sample sizes per stratification group.
@@ -708,7 +738,7 @@ class ParticipantData:
         if stratify and self.strat_var_cols:
             group_cols = [age_column] + [f"{var}_part" for var in self.strat_var_cols]
             return (
-                self.df_part.groupby(group_cols, observed=True)
+                self.df_part.groupby(group_cols, observed=False)
                 .agg(N=("id", "count"))
                 .reset_index()
             )

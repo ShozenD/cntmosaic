@@ -26,16 +26,18 @@ class PopulationData:
         Note: The DataFrame is automatically preprocessed (copied, cleaned, aggregated).
     age_col : str
         Name of the column containing population ages as integers.
-        Use this OR age_grp_col, not both. Ages should be non-negative integers.
+        Ages should be non-negative integers.
         In the processed data, this column will be renamed to "age".
+        This field is required.
     size_col : str
         Name of the column containing population sizes (counts or proportions).
         Should contain non-negative numeric values.
         In the processed data, this column will be renamed to "P".
     age_grp_col : Optional[str], default=None
         Name of the column containing population age groups.
-        Use this OR age_col, not both. Should be pd.IntervalIndex or categorical age groups.
+        Should be pd.IntervalIndex or categorical age groups.
         If specified, will be preserved as "age_grp_pop" in processed data.
+        This is optional and can be used alongside age_col to preserve grouping information.
     strat_var_cols : Optional[Union[List[str], str]], default=None
         Stratification variable column name(s) for population subgroups.
         Can be a single string or list of strings. Examples: 'gender', ['gender', 'region'].
@@ -49,7 +51,7 @@ class PopulationData:
         - ParticipantData (required if stratifying)
         - ContactData (required if FULL stratification mode)
         - PopulationData (required if using stratified population data)
-        - StratPropData (required, one object per composite stratification)
+        - StratificationData (required, one object per composite stratification)
 
         Population sizes will be aggregated (summed) by the composite stratification variable along with age.
 
@@ -60,35 +62,33 @@ class PopulationData:
         column names ("age", "P", and optional grouping variables).
     n_ages : int
         Returns the number of unique ages in the population data.
-    total_population : float
+    total : float
         Returns the total population size (sum of all P values).
     age_range : Tuple[int, int]
-        Returns (min_age, max_age) if age_col is specified.
-    stratification_vars : List[str]
+        Returns (min_age, max_age) tuple.
+    strat_vars : List[str]
         Returns list of stratification variable names (empty list if none).
-    as_proportions : pd.DataFrame
-        Returns population data with sizes converted to proportions (P/sum(P)).
 
     Methods
     -------
     validate()
         Performs comprehensive validation of the population data.
-    get_age_distribution()
-        Returns age distribution as a Series (aggregated if stratified).
+    get_strat_vars(suffix=False)
+        Returns list of stratification variable names, optionally with '_pop' suffix.
+    get_strat_var_schema()
+        Returns dictionary mapping stratification variables to their categories and codes.
     summary()
         Returns a dictionary with summary statistics about the population data.
-    normalize()
-        Returns a copy with population sizes normalized to sum to 1.0.
 
     Raises
     ------
     ValueError
-        If neither age_col nor age_grp_col is provided.
-        If both age_col and age_grp_col are provided simultaneously.
+        If age_col is not specified (required field).
         If age or size values are invalid (negative or non-numeric).
-        If DataFrame becomes empty after removing missing values or aggregation.
+        If DataFrame becomes empty after removing missing values.
     KeyError
-        If required columns (age_col, size_col, age_grp_col, strat_var_cols) are missing.
+        If required columns (age_col, size_col, age_grp_col, strat_var_cols) are missing
+        from the input DataFrame.
     TypeError
         If df_pop is not a pandas DataFrame.
 
@@ -104,7 +104,7 @@ class PopulationData:
     ...     age_col='age',
     ...     size_col='population'
     ... )
-    >>> pop_data.total_population
+    >>> pop_data.total
     5350
     >>> pop_data.n_ages
     5
@@ -133,13 +133,11 @@ class PopulationData:
     4    2      F   550
     5    2      M   550
     >>> # Total population is sum across all strata
-    >>> pop_data.total_population
+    >>> pop_data.total
     3150
-    >>>
-    >>> # Get as proportions
-    >>> pop_prop = pop_data.as_proportions
-    >>> pop_prop['P'].sum()
-    1.0
+    >>> # Access stratification variables
+    >>> pop_data.strat_vars
+    ['gender']
     >>>
     >>> # With age groups
     >>> df = pd.DataFrame({
@@ -171,8 +169,8 @@ class PopulationData:
     - Validates all data constraints after preprocessing
 
     Validation Checks:
-    - Exactly one of age_col or age_grp_col must be specified (age_col required, age_grp_col optional)
-    - Age values must be non-negative integers
+    - age_col is required (must be specified)
+    - Age values must be non-negative and numeric
     - Population size values must be non-negative and numeric
     - No missing values in required columns (removed during preprocessing)
     - At least one age must remain after preprocessing
@@ -186,11 +184,13 @@ class PopulationData:
     Warnings:
     - UserWarning if rows are dropped due to missing values
     - UserWarning if population sizes are aggregated (multiple rows per age group)
+    - UserWarning if any age groups have zero population size
 
     See Also
     --------
     ParticipantData : Validated container for participant survey data
     ContactData : Validated container for contact survey data
+    StratificationData : Validated container for stratification proportions
     """
 
     df_pop: pd.DataFrame
@@ -564,7 +564,7 @@ class PopulationData:
         return self.df_pop["age"].nunique()
 
     @property
-    def total_population(self) -> float:
+    def total(self) -> float:
         """
         Return the total population size.
 
@@ -579,7 +579,7 @@ class PopulationData:
         Examples
         --------
         >>> pop_data = PopulationData(df, age_col='age', size_col='population')
-        >>> pop_data.total_population
+        >>> pop_data.total
         328200000.0
         """
         return float(self.df_pop["P"].sum())
@@ -648,145 +648,27 @@ class PopulationData:
         else:
             return [var.removesuffix("_pop") for var in self.strat_var_cols]
 
-    @property
-    def as_proportions(self) -> pd.DataFrame:
+    def get_strat_var_schema(self) -> Dict[str, Dict[str, List[Union[str, int]]]]:
         """
-        Return population data with sizes converted to proportions.
-
-        Divides each population size by the total population to get proportions
-        that sum to 1.0. Useful for models that expect proportions rather than counts.
+        Return a dictionary of stratification variables and their unique category and code values.
+        The output is to be used in the DataLoader to ensure that the category and codes are consistent
+        between the participant, contact, population, and demographic data.
 
         Returns
         -------
-        pd.DataFrame
-            Copy of the population DataFrame with 'P' column converted to proportions.
-
-        Examples
-        --------
-        >>> pop_data = PopulationData(df, age_col='age', size_col='population')
-        >>> pop_prop = pop_data.as_proportions
-        >>> pop_prop['P'].sum()
-        1.0
-        >>> # Original data unchanged
-        >>> pop_data.data['P'].sum()
-        328200000.0
+        Dict[str, Dict[str, List[str | int]]]
+            A dictionary where keys are the original stratification variable names (without '_cnt' suffix)
+            and values are dictionaries with keys 'categories' and 'codes' containing lists of unique category
+            values and their corresponding codes.
         """
-        df = self.df_pop.copy()
-        df["P"] = df["P"] / df["P"].sum()
-        return df
+        schema = {}
+        for var in self.strat_var_cols:
+            if var in self.df_pop.columns:
+                categories = self.df_pop[var].cat.categories.tolist()
+                codes = sorted(self.df_pop[var].cat.codes.unique().tolist())
+                schema[var] = {"categories": categories, "codes": codes}
 
-    def get_age_distribution(self, by_group: bool = False) -> pd.Series:
-        """
-        Return age distribution of the population.
-
-        If the population is stratified, you can choose to get the distribution
-        aggregated across groups (by_group=False, default) or separately for each
-        group (by_group=True).
-
-        Parameters
-        ----------
-        by_group : bool, default=False
-            If True and stratification variables exist, returns distribution for each
-            age × group combination. If False, sums across groups to get marginal
-            age distribution.
-
-        Returns
-        -------
-        pd.Series
-            Series with age (or age × group) as index and population sizes as values.
-
-        Examples
-        --------
-        >>> # Non-stratified
-        >>> pop_data = PopulationData(df, 'age', 'population')
-        >>> age_dist = pop_data.get_age_distribution()
-        >>> age_dist.head()
-        age
-        0    1000
-        1    1050
-        2    1100
-        ...
-        >>>
-        >>> # Stratified - marginal distribution
-        >>> pop_data = PopulationData(df, 'age', 'population', strat_var_cols='gender')
-        >>> age_dist = pop_data.get_age_distribution(by_group=False)
-        >>> age_dist.head()
-        age
-        0    2000   # Sum of M + F
-        1    2100
-        ...
-        >>>
-        >>> # Stratified - by group
-        >>> age_dist_by_group = pop_data.get_age_distribution(by_group=True)
-        >>> age_dist_by_group.head()
-        age  gender
-        0    F         980
-             M        1020
-        1    F        1030
-             M        1070
-        ...
-        """
-        if by_group and self.strat_var_cols:
-            # Return distribution for each age × group combination
-            groupby_cols = [self.age_col] + self.strat_var_cols
-            return (
-                self.df_pop.groupby(groupby_cols, observed=False)["P"]
-                .sum()
-                .reset_index()
-            )
-        else:
-            # Return marginal age distribution (sum across groups if stratified)
-            return (
-                self.df_pop.groupby(self.age_col, observed=False)["P"]
-                .sum()
-                .reset_index()
-            )
-
-    @property
-    def df(self) -> pd.DataFrame:
-        """Wrapper for get_age_distribution returning DataFrame."""
-        return self.get_age_distribution(by_group=True).copy()
-
-    def normalize(self) -> "PopulationData":
-        """
-        Return a new PopulationData instance with normalized population sizes.
-
-        Creates a new instance where population sizes sum to 1.0 (i.e., converted to
-        proportions). The original instance is unchanged.
-
-        Returns
-        -------
-        PopulationData
-            New PopulationData instance with normalized population sizes.
-
-        Examples
-        --------
-        >>> pop_data = PopulationData(df, age_col='age', size_col='population')
-        >>> pop_data.total_population
-        328200000.0
-        >>> pop_normalized = pop_data.normalize()
-        >>> pop_normalized.total_population
-        1.0
-        >>> # Original unchanged
-        >>> pop_data.total_population
-        328200000.0
-        """
-        # Create normalized dataframe
-        df_normalized = self.as_proportions
-
-        # Create new instance with the normalized data
-        # We need to use the processed dataframe directly, so we'll create a minimal
-        # instance and replace its df_pop
-        new_instance = PopulationData.__new__(PopulationData)
-        new_instance.age_col = "age"  # Already renamed in processed data
-        new_instance.size_col = "P"  # Already renamed in processed data
-        new_instance.age_grp_col = (
-            "age_grp_pop" if "age_grp_pop" in df_normalized.columns else None
-        )
-        new_instance.strat_var_cols = self.strat_var_cols
-        object.__setattr__(new_instance, "df_pop", df_normalized)
-
-        return new_instance
+        return schema
 
     def summary(self) -> Dict[str, Any]:
         """
@@ -801,7 +683,7 @@ class PopulationData:
             Dictionary containing:
             - n_ages: Number of unique ages
             - age_range: Tuple of (min_age, max_age)
-            - total_population: Total population size
+            - total: Total population size
             - mean_population_per_age: Average population per age group
             - strat_vars: List of stratification variables
             - n_strat_vars: Number of stratification variables
@@ -815,7 +697,7 @@ class PopulationData:
         {
             'n_ages': 86,
             'age_range': (0, 85),
-            'total_population': 328200000.0,
+            'total': 328200000.0,
             'mean_population_per_age': 3816279.07,
             'strat_vars': ['gender'],
             'n_strat_vars': 1,
@@ -825,29 +707,11 @@ class PopulationData:
         summary_dict = {
             "n_ages": self.n_ages,
             "age_range": self.age_range,
-            "total_population": self.total_population,
-            "mean_population_per_age": self.total_population / self.n_ages,
+            "total": self.total,
+            "mean_population_per_age": self.total / self.n_ages,
             "strat_vars": self.strat_vars,
             "n_strat_vars": len(self.strat_vars),
             "is_stratified": len(self.strat_vars) > 0,
         }
 
         return summary_dict
-
-    @property
-    def n_strat_vars(self) -> int:
-        """
-        Return the number of stratification variables.
-
-        Returns
-        -------
-        int
-            Number of stratification variable columns.
-
-        Examples
-        --------
-        >>> pop_data = PopulationData(df, 'age', 'population', strat_var_cols=['gender', 'region'])
-        >>> pop_data.n_strat_vars
-        2
-        """
-        return len(self.strat_var_cols) if self.strat_var_cols else 0

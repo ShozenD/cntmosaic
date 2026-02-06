@@ -34,17 +34,6 @@ class ContactData:
     strat_var_cols : Optional[Union[List[str], str]], default=None
         Stratification variable column name(s) for contacts.
         Can be a single string or list of strings. Examples: 'setting', ['setting', 'duration'].
-
-        **Important**: If multiple variables are specified (e.g., ['setting', 'duration']),
-        they will be **combined into a single composite stratification variable** by DataLoader.
-        For example, ['setting', 'duration'] with categories ['home', 'work'] and ['short', 'long']
-        will create a combined variable with categories: ['home_short', 'home_long', 'work_short', 'work_long'].
-
-        **Consistency requirement**: The same stratification variables must be specified across:
-        - ParticipantData (required if FULL stratification mode)
-        - ContactData (required if stratifying contacts)
-        - PopulationData (required if using stratified population data)
-        - StratPropData (required, one object per composite stratification)
     cnt_col : str, default='y'
         Name of the column for contact counts/indicators. If not present in df_cnt,
         it will be automatically created and initialized to 1 (one contact per row).
@@ -53,9 +42,9 @@ class ContactData:
     ----------
     data : pd.DataFrame
         Returns the validated and preprocessed contact DataFrame.
-    n_contacts : int
+    n : int
         Returns the number of contact records in the dataset (after preprocessing).
-    n_unique_participants : int
+    n_cnt : int
         Returns the number of unique participants who reported contacts.
     age_range : Tuple[float, float]
         Returns (min_age, max_age) of contacts if age_col is specified.
@@ -66,8 +55,6 @@ class ContactData:
     -------
     validate()
         Performs comprehensive validation of the contact data.
-    get_age_distribution()
-        Returns age distribution of contacts as a Series.
     get_contacts_per_participant()
         Returns Series with number of contacts reported by each participant.
     summary()
@@ -99,9 +86,9 @@ class ContactData:
     ...     age_col='contact_age',
     ...     strat_var_cols='setting'
     ... )
-    >>> cnt_data.n_contacts
+    >>> cnt_data.n
     4
-    >>> cnt_data.n_unique_participants
+    >>> cnt_data.n_cnt
     3
     >>> # Note: 'y' column is automatically added with value 1
     >>> 'y' in cnt_data.data.columns
@@ -125,14 +112,6 @@ class ContactData:
     >>> # Object columns are automatically converted to categorical
     >>> cnt_data.data['setting'].dtype.name
     'category'
-    >>>
-    >>> # Get contacts per participant
-    >>> contacts_per_part = cnt_data.get_contacts_per_participant()
-    >>> contacts_per_part
-    pid
-    1    2
-    2    1
-    dtype: int64
 
     Notes
     -----
@@ -339,7 +318,7 @@ class ContactData:
                 f"Missing value counts: {missing_counts.to_dict()}"
             )
 
-        # Step 4: Convert object columns to categorical for efficiency
+        # Step 4: Convert object columns to categorical.
         # (excluding the ID column which should remain as-is for merging)
         object_cols = df.select_dtypes(include="object").columns.tolist()
         if self.id_col in object_cols:
@@ -516,7 +495,7 @@ class ContactData:
         return self.df_cnt
 
     @property
-    def n_contacts(self) -> int:
+    def n(self) -> int:
         """
         Return the number of contact records in the dataset.
 
@@ -528,13 +507,13 @@ class ContactData:
         Examples
         --------
         >>> cnt_data = ContactData(df, 'id', age_col='contact_age')
-        >>> cnt_data.n_contacts
+        >>> cnt_data.n
         150
         """
         return len(self.df_cnt)
 
     @property
-    def n_unique_participants(self) -> int:
+    def n_part(self) -> int:
         """
         Return the number of unique participants who reported contacts.
 
@@ -546,7 +525,7 @@ class ContactData:
         Examples
         --------
         >>> cnt_data = ContactData(df, 'id', age_col='contact_age')
-        >>> cnt_data.n_unique_participants
+        >>> cnt_data.n_part
         45
         """
         return self.df_cnt["id"].nunique()
@@ -635,117 +614,29 @@ class ContactData:
         else:
             return [var.removesuffix("_cnt") for var in self.strat_var_cols]
 
-    def get_age_distribution(self) -> pd.Series:
+    def get_strat_var_schema(self) -> Dict[str, Dict[str, List[str | int]]]:
         """
-        Return age distribution of contacts.
-
-        Returns value counts for age_col (exact ages) or age_grp_col (age groups),
-        sorted by age/age group.
+        Return a dictionary of stratification variables and their unique category and code values.
+        The output is to be used in the DataLoader to ensure that the category and codes are consistent
+        between the participant, contact, population, and demographic data.
 
         Returns
         -------
-        pd.Series
-            Series with contact age (or age group) as index and counts as values.
-
-        Examples
-        --------
-        >>> cnt_data = ContactData(df, 'id', age_col='contact_age')
-        >>> age_dist = cnt_data.get_age_distribution()
-        >>> print(age_dist.head())
-        age_cnt
-        0     12
-        1     15
-        2     18
-        ...
+        Dict[str, Dict[str, List[str | int]]]
+            A dictionary where keys are the original stratification variable names (without '_cnt' suffix)
+            and values are dictionaries with keys 'categories' and 'codes' containing lists of unique category
+            values and their corresponding codes.
         """
-        age_column = "age_cnt" if self.age_col else "age_grp_cnt"
-        return self.df_cnt[age_column].value_counts().sort_index()
+        schema = {}
+        for var in self.strat_var_cols:
+            var_cnt = f"{var}_cnt" if not var.endswith("_cnt") else var
+            if var_cnt in self.df_cnt.columns:
+                categories = self.df_cnt[var_cnt].cat.categories.tolist()
+                codes = sorted(self.df_cnt[var_cnt].cat.codes.unique().tolist())
 
-    def get_contacts_per_participant(self) -> pd.Series:
-        """
-        Return the number of contacts reported by each participant.
+                var = (
+                    var.removesuffix("_cnt") if var.endswith("_cnt") else var
+                )  # Remove suffix
+                schema[var] = {"categories": categories, "codes": codes}
 
-        Useful for understanding reporting patterns and identifying participants
-        with unusually high or low contact counts.
-
-        Returns
-        -------
-        pd.Series
-            Series with participant ID as index and contact counts as values,
-            sorted by participant ID.
-
-        Examples
-        --------
-        >>> cnt_data = ContactData(df, 'id', age_col='contact_age')
-        >>> contacts_per_part = cnt_data.get_contacts_per_participant()
-        >>> print(contacts_per_part.head())
-        id
-        1     3
-        2     5
-        3     2
-        4     7
-        5     1
-        dtype: int64
-        >>>
-        >>> # Summary statistics
-        >>> print(f"Mean contacts per participant: {contacts_per_part.mean():.1f}")
-        >>> print(f"Median contacts per participant: {contacts_per_part.median():.1f}")
-        """
-        return self.df_cnt["id"].value_counts().sort_index()
-
-    def summary(self) -> Dict[str, Any]:
-        """
-        Return summary statistics about the contact data.
-
-        Provides a comprehensive overview including sample size, participant coverage,
-        age statistics (if applicable), and stratification information.
-
-        Returns
-        -------
-        Dict[str, Any]
-            Dictionary containing:
-            - n_contacts: Total number of contact records
-            - n_unique_participants: Number of unique participants reporting contacts
-            - mean_contacts_per_participant: Average contacts per participant
-            - id_col: Name of ID column
-            - age_col: Name of contact age column (or None)
-            - age_grp_col: Name of contact age group column (or None)
-            - age_range: Tuple of (min, max) contact age if using age_col
-            - stratification_vars: List of stratification variables
-            - n_stratification_vars: Number of stratification variables
-
-        Examples
-        --------
-        >>> cnt_data = ContactData(df, 'id', age_col='contact_age', strat_var_cols='setting')
-        >>> summary = cnt_data.summary()
-        >>> print(summary)
-        {
-            'n_contacts': 150,
-            'n_unique_participants': 45,
-            'mean_contacts_per_participant': 3.3,
-            'id_col': 'id',
-            'age_col': 'contact_age',
-            'age_grp_col': None,
-            'age_range': (0, 85),
-            'stratification_vars': ['setting'],
-            'n_stratification_vars': 1
-        }
-        """
-        contacts_per_part = self.get_contacts_per_participant()
-
-        summary_dict = {
-            "n_contacts": self.n_contacts,
-            "n_unique_participants": self.n_unique_participants,
-            "mean_contacts_per_participant": float(contacts_per_part.mean()),
-            "id_col": self.id_col,
-            "age_col": self.age_col,
-            "age_grp_col": self.age_grp_col,
-            "stratification_vars": self.stratification_vars,
-            "n_stratification_vars": len(self.stratification_vars),
-        }
-
-        # Add age range if using exact ages
-        if self.age_col:
-            summary_dict["age_range"] = self.age_range
-
-        return summary_dict
+        return schema

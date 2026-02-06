@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 from ..._types import StratMode
 
 if TYPE_CHECKING:
-    from ._StratPropData import StratPropData
+    from ._StratificationData import StratificationData
 
 
 class ModelBaseData(TypedDict, total=False):

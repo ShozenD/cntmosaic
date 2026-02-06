@@ -10,11 +10,12 @@ from typing import Optional, Set, Tuple
 
 import pandas as pd
 
-from .containers import ContactData, ParticipantData, PopulationData, StratPropData
+from .containers import ContactData, ParticipantData, PopulationData, StratificationData
 
 
 class DataValidator:
-    """Validator for contact survey data consistency and integrity.
+    """
+    Validates the different data sources for integrity and consistency before preprocessing.
 
     Performs cross-dataset validation to ensure:
     - Stratification variables are consistently defined across all data containers
@@ -32,7 +33,7 @@ class DataValidator:
         Contact observation data container
     pop_data : PopulationData
         Population age distribution data container
-    strat_prop_data : StratPropData or None, default=None
+    strat_data : StratificationData or None, default=None
         Stratified population proportions for demographic adjustment
 
     Attributes
@@ -43,14 +44,14 @@ class DataValidator:
         Stratification variable names from contact data (with '_cnt' suffix)
     pop_vars : Set[str]
         Stratification variable names from population data (with '_pop' suffix)
-    strat_prop_vars : Set[str]
+    strat_vars : Set[str]
         Stratification variable names from proportion data
 
     Examples
     --------
-    >>> validator = DataValidator(part_data, cnt_data, pop_data, strat_prop_data)
+    >>> validator = DataValidator(part_data, cnt_data, pop_data, strat_data)
     >>> validated = validator.validate()
-    >>> part_data, cnt_data, pop_data, strat_prop_data = validated
+    >>> part_data, cnt_data, pop_data, strat_data = validated
 
     Notes
     -----
@@ -68,62 +69,48 @@ class DataValidator:
         part_data: ParticipantData,
         cnt_data: ContactData,
         pop_data: PopulationData,
-        strat_prop_data: Optional[StratPropData] = None,
+        strat_data: Optional[StratificationData] = None,
     ):
         self.part_data = part_data
         self.cnt_data = cnt_data
         self.pop_data = pop_data
-        self.strat_prop_data = strat_prop_data
+        self.strat_data = strat_data
 
         # Cache for stratification variable sets (computed on demand)
         self.part_vars: Optional[Set[str]] = None
         self.cnt_vars: Optional[Set[str]] = None
         self.pop_vars: Optional[Set[str]] = None
-        self.strat_prop_vars: Optional[Set[str]] = None
+        self.strat_vars: Optional[Set[str]] = None
 
     def _get_strat_vars(self) -> None:
-        """Extract and cache stratification variable names from all containers.
+        """
+        Extract and cache stratification variable names from all containers.
 
         Computes variable name sets once and caches them for reuse. This method
-        populates the part_vars, cnt_vars, pop_vars, and strat_prop_vars attributes.
+        populates the part_vars, cnt_vars, pop_vars, and strat_vars attributes.
         """
-        self.part_vars = set(self.part_data.get_strat_vars(suffix=False) or [])
-        self.cnt_vars = set(self.cnt_data.get_strat_vars(suffix=False) or [])
-        self.pop_vars = set(self.pop_data.strat_var_cols or [])
-        self.strat_prop_vars = (
-            set(self.strat_prop_data.strat_var_cols or [])
-            if self.strat_prop_data
-            else set()
-        )
-
-    @staticmethod
-    def _strip_suffix(var_names: Set[str], suffix: str) -> Set[str]:
-        return {v.replace(suffix, "") for v in var_names}
+        self.part_vars = set(self.part_data.get_strat_vars(suffix=False))
+        self.cnt_vars = set(self.cnt_data.get_strat_vars(suffix=False))
+        self.pop_vars = set(self.pop_data.get_strat_vars(suffix=False))
+        if self.strat_data:
+            self.strat_vars = set(self.strat_data.get_strat_vars())
+        else:
+            self.strat_vars = set()
 
     def _check_strat_var_consistency(self) -> None:
-        """Validate stratification variable consistency across all datasets.
+        """
+        Check if stratification variables are consistently specified across datasets
+        for the required stratification mode (PARTIAL v.s. FULL).
 
-        Ensures that stratification variables are properly defined and aligned:
+        1. Partially stratified scenario (PARTIAL):
+            - If part_data has strat_vars, strat_data must be provided
+            - The stratification variables in part_data must also be present in strat_data
+            - The categories and codes for these variables must be consistent between part_data and strat_data
 
-        1. **Participant-level stratification** (PARTIAL mode):
-           - If part_data has strat_vars, strat_prop_data must be provided
-           - strat_prop_vars must exactly match part_vars
-
-        2. **Full stratification** (FULL mode - both participant and contact):
-           - Contact strat_vars (base names) must match participant strat_vars
-           - Population strat_vars must be defined and match participant strat_vars
-           - strat_prop_vars must match part_vars
-
-        Variable naming convention:
-        - Participant variables: 'gender_part', 'region_part'
-        - Contact variables: 'setting_cnt', 'duration_cnt'
-        - Population variables: 'gender_pop', 'region_pop'
-        - StratProp variables: 'gender', 'region'
-
-        Raises
-        ------
-        ValueError
-            If stratification variables are inconsistent or improperly defined
+        2. Fully stratified scenario (FULL):
+            - Contact strat_vars (base names) must match participant strat_vars
+            - Population strat_vars must be defined and match participant strat_vars
+            - strat_vars must match part_vars
 
         Notes
         -----
@@ -133,42 +120,44 @@ class DataValidator:
         # Extract stratification variables from all containers
         self._get_strat_vars()
 
-        # No validation needed if no stratification
+        # =======================================
+        # No stratification
+        # =======================================
         if not self.part_vars:
-            return
+            return  # No validation required
 
-        # Get base variable names (without suffixes)
-        part_vars_base = self._strip_suffix(self.part_vars, "_part")
-
-        # Validate PARTIAL mode: Participant stratification requires StratPropData
-        if not self.strat_prop_data:
+        # =======================================
+        # Partially stratified scenario (PARTIAL)
+        # =======================================
+        if not self.strat_data:
             warnings.warn(
-                "StratPropData is not provided. Continuing without stratified population proportions. "
+                "strat_data is not provided. Continuing without stratified population proportions. "
                 "Some models (e.g., BRC) may not be available.",
                 UserWarning,
                 stacklevel=3,
             )
         else:
-            # StratPropData variables must match participant variables exactly
-            if self.strat_prop_vars != self.part_vars:
+            # StratificationData variables must match participant variables exactly
+            if self.strat_vars != self.part_vars:
                 raise ValueError(
-                    "Stratification variables in StratPropData must match ParticipantData.\n"
-                    f"ParticipantData strat_var_cols: {sorted(self.part_vars)}\n"
-                    f"StratPropData strat_var_cols: {sorted(self.strat_prop_vars)}\n"
-                    "These must be identical for proper demographic weighting."
+                    "Stratification variables in StratificationData must match ParticipantData.\n"
+                    f"Stratification variables in ParticipantData (no suffix): {sorted(self.part_vars)}\n"
+                    f"Stratification variables in StratificationData (no suffix): {sorted(self.strat_vars)}\n"
+                    "These must be identical."
                 )
 
-        # Validate FULL mode: Contact-level stratification
         if not self.cnt_vars:
             return  # Only participant-level stratification (PARTIAL mode)
 
+        # =======================================
+        # Fully stratified scenario (FULL)
+        # =======================================
         # Contact variables (base names) must match participant variables
-        cnt_vars_base = self._strip_suffix(self.cnt_vars, "_cnt")
-        if cnt_vars_base != part_vars_base:
+        if self.cnt_vars != self.part_vars:
             raise ValueError(
                 "Stratification variables must match between ParticipantData and ContactData.\n"
-                f"ParticipantData strat_var_cols (base): {sorted(part_vars_base)}\n"
-                f"ContactData strat_var_cols (base): {sorted(cnt_vars_base)}\n"
+                f"Stratification variables in ParticipantData (no suffix): {sorted(self.part_vars)}\n"
+                f"Stratification variables in ContactData (no suffix): {sorted(self.cnt_vars)}\n"
                 "For FULL stratification mode, both must have identical variables."
             )
 
@@ -176,22 +165,21 @@ class DataValidator:
         if not self.pop_vars:
             raise ValueError(
                 "PopulationData must have stratification variables when using FULL stratification.\n"
-                f"ContactData defines strat_var_cols: {sorted(self.cnt_vars)}\n"
+                f"Stratification variables in ContactData (no suffix): {sorted(self.cnt_vars)}\n"
                 "Please provide PopulationData with corresponding stratification columns."
             )
 
-        # Population variables (base names) must match participant variables
-        pop_vars_base = self._strip_suffix(self.pop_vars, "_pop")
-        if pop_vars_base != part_vars_base:
+        # Population variables must match participant variables
+        if self.pop_vars != self.part_vars:
             raise ValueError(
                 "Stratification variables must match between ParticipantData and PopulationData.\n"
-                f"ParticipantData strat_var_cols (base): {sorted(part_vars_base)}\n"
-                f"PopulationData strat_var_cols (base): {sorted(pop_vars_base)}\n"
+                f"ParticipantData strat_var_cols (no suffix): {sorted(self.part_vars)}\n"
+                f"PopulationData strat_var_cols (no suffix): {sorted(self.pop_vars)}\n"
                 "For FULL stratification mode, both must have identical variables."
             )
 
-    def _consolidate_categories_for_variable(
-        self, base_var: str, reference_categories: list
+    def _consolidate_schema_for_variable(
+        self, var: str, reference_schema: list
     ) -> None:
         """Consolidate categorical encodings for a single stratification variable.
 
@@ -204,7 +192,7 @@ class DataValidator:
         ----------
         base_var : str
             Base variable name (without suffix), e.g., 'gender', 'region'
-        reference_categories : list
+        reference_schema : list
             Ordered list of valid categories from participant data
 
         Raises
@@ -218,179 +206,84 @@ class DataValidator:
         - Other containers may have subsets of these categories
         - Categories are ordered consistently across all containers
         - All categorical columns are set to ordered=True
+        - This ensures consistent categorical codes: e.g., if participant data
+          has ['M', 'F'] (M=0, F=1), all other datasets will use the same
+          category order and codes, preventing silent indexing errors
         """
-        # Validate and consolidate StratPropData categories
-        if self.strat_prop_data:
-            prop_col = f"{base_var}"
-            current_categories = self.strat_prop_data.data[
-                prop_col
-            ].cat.categories.tolist()
+        # Keep ordered list for category assignment (preserves order and codes)
+        reference_cats = reference_schema["categories"]
+        # Use set for subset checking (order-independent)
+        reference_cats_set = set(reference_cats)
 
-            if not set(current_categories).issubset(set(reference_categories)):
+        # Validate and consolidate strat_data categories
+        if self.strat_data:
+            current_schema = self.strat_data.get_strat_var_schema()
+            current_cats = current_schema[var]["categories"]
+
+            if not set(current_cats).issubset(reference_cats_set):
                 raise ValueError(
-                    f"StratPropData variable '{base_var}' contains unexpected categories.\n"
-                    f"Reference categories (ParticipantData): {reference_categories}\n"
-                    f"Found in StratPropData: {current_categories}\n"
-                    f"Extra categories: {set(current_categories) - set(reference_categories)}\n"
+                    f"strat_data variable '{var}' contains unexpected categories.\n"
+                    f"Reference categories (ParticipantData): {reference_cats}\n"
+                    f"Found in strat_data: {current_cats}\n"
+                    f"Extra categories: {set(current_cats) - reference_cats_set}\n"
                     "Please ensure all categories are defined in ParticipantData first."
                 )
 
             # Reorder categories to match reference
-            self.strat_prop_data.data[prop_col] = pd.Categorical(
-                self.strat_prop_data.data[prop_col],
-                categories=reference_categories,
+            self.strat_data.data[var] = pd.Categorical(
+                self.strat_data.data[var],
+                categories=reference_cats,
                 ordered=True,
             )
 
         # Validate and consolidate ContactData categories (FULL mode)
         if self.cnt_vars:
-            cnt_col = f"{base_var}_cnt"
-            if cnt_col in self.cnt_data.df_cnt.columns:
-                current_categories = self.cnt_data.df_cnt[
-                    cnt_col
-                ].cat.categories.tolist()
+            current_schema = self.cnt_data.get_strat_var_schema()
+            current_cats = current_schema[var]["categories"]
 
-                if not set(current_categories).issubset(set(reference_categories)):
-                    raise ValueError(
-                        f"ContactData variable '{base_var}' contains unexpected categories.\n"
-                        f"Reference categories (ParticipantData): {reference_categories}\n"
-                        f"Found in ContactData: {current_categories}\n"
-                        f"Extra categories: {set(current_categories) - set(reference_categories)}\n"
-                        "Please ensure all categories are defined in ParticipantData first."
-                    )
-
-                # Reorder categories to match reference
-                self.cnt_data.df_cnt[cnt_col] = pd.Categorical(
-                    self.cnt_data.df_cnt[cnt_col],
-                    categories=reference_categories,
-                    ordered=True,
+            if not set(current_cats).issubset(reference_cats_set):
+                raise ValueError(
+                    f"ContactData variable '{var}' contains unexpected categories.\n"
+                    f"Reference categories (ParticipantData): {reference_cats}\n"
+                    f"Found in ContactData: {current_cats}\n"
+                    f"Extra categories: {set(current_cats) - reference_cats_set}\n"
+                    "Please ensure all categories are defined in ParticipantData first."
                 )
+
+            # Reorder categories to match reference
+            self.cnt_data.df_cnt[f"{var}_cnt"] = pd.Categorical(
+                self.cnt_data.df_cnt[f"{var}_cnt"],
+                categories=reference_cats,
+                ordered=True,
+            )
 
         # Validate and consolidate PopulationData categories (FULL mode)
         if self.pop_vars:
-            pop_col = f"{base_var}_pop"
-            if pop_col in self.pop_data.df_pop.columns:
-                current_categories = self.pop_data.df_pop[
-                    pop_col
-                ].cat.categories.tolist()
+            current_schema = self.pop_data.get_strat_var_schema()
+            current_cats = current_schema[var]["categories"]
 
-                if not set(current_categories).issubset(set(reference_categories)):
-                    raise ValueError(
-                        f"PopulationData variable '{base_var}' contains unexpected categories.\n"
-                        f"Reference categories (ParticipantData): {reference_categories}\n"
-                        f"Found in PopulationData: {current_categories}\n"
-                        f"Extra categories: {set(current_categories) - set(reference_categories)}\n"
-                        "Please ensure all categories are defined in ParticipantData first."
-                    )
-
-                # Reorder categories to match reference
-                self.pop_data.df_pop[pop_col] = pd.Categorical(
-                    self.pop_data.df_pop[pop_col],
-                    categories=reference_categories,
-                    ordered=True,
+            if not set(current_cats).issubset(reference_cats_set):
+                raise ValueError(
+                    f"PopulationData variable '{var}' contains unexpected categories.\n"
+                    f"Reference categories (ParticipantData): {reference_cats}\n"
+                    f"Found in PopulationData: {current_cats}\n"
+                    f"Extra categories: {set(current_cats) - reference_cats_set}\n"
+                    "Please ensure all categories are defined in ParticipantData first."
                 )
 
-    def _ensure_categorical_dtype(self) -> None:
-        """Ensure all stratification variables have categorical dtype.
-
-        Automatically converts stratification variables to categorical dtype if they
-        are not already categorical. Issues a warning to inform users about the
-        conversion and that the ordering is determined by sorted unique values.
-
-        Notes
-        -----
-        - Modifies dataframes in-place
-        - Uses sorted unique values to determine category ordering
-        - Should be called before _check_stratum_categories()
-        """
-        # Skip if no stratification variables
-        if not self.part_data.strat_var_cols:
-            return
-
-        converted_vars = []
-
-        # Check and convert ParticipantData
-        for col in self.part_vars:
-            if col in self.part_data.df_part.columns:
-                if (
-                    isinstance(self.part_data.df_part[col].dtype, pd.CategoricalDtype)
-                    is False
-                ):
-                    self.part_data.df_part[col] = pd.Categorical(
-                        self.part_data.df_part[col],
-                        categories=sorted(self.part_data.df_part[col].unique()),
-                        ordered=True,
-                    )
-                    converted_vars.append(f"ParticipantData.{col}")
-
-        # Check and convert ContactData
-        for col in self.cnt_vars:
-            if col in self.cnt_data.df_cnt.columns:
-                if (
-                    isinstance(self.cnt_data.df_cnt[col].dtype, pd.CategoricalDtype)
-                    is False
-                ):
-                    self.cnt_data.df_cnt[col] = pd.Categorical(
-                        self.cnt_data.df_cnt[col],
-                        categories=sorted(self.cnt_data.df_cnt[col].unique()),
-                        ordered=True,
-                    )
-                    converted_vars.append(f"ContactData.{col}")
-
-        # Check and convert PopulationData
-        for col in self.pop_vars:
-            if col in self.pop_data.df_pop.columns:
-                if (
-                    isinstance(self.pop_data.df_pop[col].dtype, pd.CategoricalDtype)
-                    is False
-                ):
-                    self.pop_data.df_pop[col] = pd.Categorical(
-                        self.pop_data.df_pop[col],
-                        categories=sorted(self.pop_data.df_pop[col].unique()),
-                        ordered=True,
-                    )
-                    converted_vars.append(f"PopulationData.{col}")
-
-        # Check and convert StratPropData
-        if self.strat_prop_data:
-            for col in self.strat_prop_vars:
-                # StratPropData uses base variable names without suffix
-                base_col = col.replace("_part", "")
-                if base_col in self.strat_prop_data.data.columns:
-                    if (
-                        isinstance(
-                            self.strat_prop_data.data[base_col].dtype,
-                            pd.CategoricalDtype,
-                        )
-                        is False
-                    ):
-                        self.strat_prop_data.data[base_col] = pd.Categorical(
-                            self.strat_prop_data.data[base_col],
-                            categories=sorted(
-                                self.strat_prop_data.data[base_col].unique()
-                            ),
-                            ordered=True,
-                        )
-                        converted_vars.append(f"StratPropData.{base_col}")
-
-        # Warn user if any variables were converted
-        if converted_vars:
-            warnings.warn(
-                f"Automatically converted the following stratification variables to categorical dtype: "
-                f"{', '.join(converted_vars)}. "
-                f"Categories are ordered alphabetically/numerically by sorted unique values. "
-                f"If you need a specific ordering, please convert to pd.Categorical with explicit "
-                f"category ordering before creating the DataLoader.",
-                UserWarning,
-                stacklevel=4,
+            # Reorder categories to match reference
+            self.pop_data.df_pop[var] = pd.Categorical(
+                self.pop_data.df_pop[var],
+                categories=reference_cats,
+                ordered=True,
             )
 
-    def _check_stratum_categories(self) -> None:
+    def _consolidate_strat_var(self) -> None:
         """Validate and consolidate categorical encodings across all datasets.
 
         This method ensures that all stratification variables use consistent
         categorical encodings across ParticipantData, ContactData, PopulationData,
-        and StratPropData. Consistency is critical for:
+        and strat_data. Consistency is critical for:
         - Proper array broadcasting in NumPyro models
         - Correct alignment of population weights
         - Avoiding silent indexing errors
@@ -420,27 +313,26 @@ class DataValidator:
         Examples
         --------
         If ParticipantData has gender categories ['M', 'F', 'Other']:
-        - StratPropData must use a subset: ['M', 'F'] is valid
+        - strat_data must use a subset: ['M', 'F'] is valid
         - ContactData with ['F', 'M', 'Unknown'] will raise an error ('Unknown' not in reference)
         """
         # Skip if no stratification variables
-        if not self.part_data.strat_var_cols:
+        if not self.part_data.get_strat_vars():
             return
 
         # Process each stratification variable
-        part_vars_base = self._strip_suffix(self.part_vars, "_part")
-        for base_var in part_vars_base:
-            part_col = f"{base_var}_part"
-            reference_categories = self.part_data.df_part[
-                part_col
-            ].cat.categories.tolist()
+        reference_schemas = self.part_data.get_strat_var_schema()
+        for var in self.part_vars:
+            reference_schema = reference_schemas[var]
 
             # Consolidate categories across all containers
-            self._consolidate_categories_for_variable(base_var, reference_categories)
+            self._consolidate_schema_for_variable(var, reference_schema)
 
     def validate(
         self,
-    ) -> Tuple[ParticipantData, ContactData, PopulationData, Optional[StratPropData]]:
+    ) -> Tuple[
+        ParticipantData, ContactData, PopulationData, Optional[StratificationData]
+    ]:
         """Execute all validation checks and return validated data containers.
 
         Performs comprehensive validation of contact survey data:
@@ -449,7 +341,7 @@ class DataValidator:
 
         Returns
         -------
-        tuple of (ParticipantData, ContactData, PopulationData, StratPropData or None)
+        tuple of (ParticipantData, ContactData, PopulationData, strat_data or None)
             Validated data containers with consistent categorical encodings.
             Categorical columns are modified in-place during validation.
 
@@ -460,8 +352,8 @@ class DataValidator:
 
         Examples
         --------
-        >>> validator = DataValidator(part_data, cnt_data, pop_data, strat_prop_data)
-        >>> part, cnt, pop, strat_prop = validator.validate()
+        >>> validator = DataValidator(part_data, cnt_data, pop_data, strat_data)
+        >>> part, cnt, pop, strat = validator.validate()
         >>> # All categorical columns now have consistent categories and ordering
 
         Notes
@@ -471,12 +363,11 @@ class DataValidator:
         consistency, which is essential for proper array broadcasting in JAX/NumPyro.
         """
         self._check_strat_var_consistency()
-        self._ensure_categorical_dtype()
-        self._check_stratum_categories()
+        self._consolidate_strat_var()
 
         return (
             self.part_data,
             self.cnt_data,
             self.pop_data,
-            self.strat_prop_data,
+            self.strat_data,
         )

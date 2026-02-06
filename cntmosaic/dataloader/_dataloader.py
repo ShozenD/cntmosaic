@@ -8,7 +8,7 @@ from ._DataValidator import DataValidator
 from .containers._ContactData import ContactData
 from .containers._ParticipantData import ParticipantData
 from .containers._PopulationData import PopulationData
-from .containers._StratPropData import StratPropData
+from .containers._StratificationData import StratificationData
 
 
 class DataLoader(BaseLoader):
@@ -33,7 +33,7 @@ class DataLoader(BaseLoader):
     pop_data : PopulationData
         Validated population data object containing population age distribution.
         Already validated with standardized column names (age, P).
-    strat_prop_data : Union[StratPropData, List[StratPropData], None], optional
+    strat_data : Union[StratPropData, List[StratPropData], None], optional
         Population proportion specification(s) for demographic adjustment.
         Can be either:
         - A single StratPropData object
@@ -41,15 +41,15 @@ class DataLoader(BaseLoader):
         If None, no stratified population proportions are used.
 
         Example with single stratification:
-            strat_prop_data = StratPropData.from_counts(
+            strat_data = StratPropData.from_counts(
                 data=df_gender, age_col='age', strat_col='gender', count_col='N'
             )
-            DataLoader(part_data, cnt_data, pop_data, strat_prop_data=strat_prop_data)
+            DataLoader(part_data, cnt_data, pop_data, strat_data=strat_data)
 
         Example with multiple stratifications:
             strat_prop_gender = StratPropData.from_counts(...)
             strat_prop_region = StratPropData.from_counts(...)
-            DataLoader(part_data, cnt_data, pop_data, strat_prop_data=[strat_prop_gender, strat_prop_region])
+            DataLoader(part_data, cnt_data, pop_data, strat_data=[strat_prop_gender, strat_prop_region])
 
     Attributes
     ----------
@@ -59,7 +59,7 @@ class DataLoader(BaseLoader):
         Validated contact data object.
     pop_data : PopulationData
         Validated population data object.
-    strat_prop_data : Union[StratPropData, None]
+    strat_data : Union[StratPropData, None]
         Population proportion specification(s) for demographic adjustment.
     col_map : CoordToColumns
         Generated column mapping object based on dataclass structures.
@@ -158,25 +158,23 @@ class DataLoader(BaseLoader):
     ...     strat_var_cols='gender_region',  # Will auto-detect if omitted
     ...     count_col='count'
     ... )
-    >>> loader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data=pop_prop)
+    >>> loader = DataLoader(part_data, cnt_data, pop_data, strat_data=pop_prop)
     """
 
     def __init__(
         self,
-        part_data,  # ParticipantData type hint removed to avoid circular import
-        cnt_data,  # ContactData type hint removed to avoid circular import
-        pop_data,  # PopulationData type hint removed to avoid circular import
-        strat_prop_data: Union[StratPropData, None] = None,
+        part_data: ParticipantData,
+        cnt_data: ContactData,
+        pop_data: PopulationData,
+        strat_data: Union[StratificationData, None] = None,
     ) -> None:
 
-        self.part_data, self.cnt_data, self.pop_data, self.strat_prop_data = (
-            DataValidator(
-                part_data=part_data,
-                cnt_data=cnt_data,
-                pop_data=pop_data,
-                strat_prop_data=strat_prop_data,
-            ).validate()
-        )
+        self.part_data, self.cnt_data, self.pop_data, self.strat_data = DataValidator(
+            part_data=part_data,
+            cnt_data=cnt_data,
+            pop_data=pop_data,
+            strat_data=strat_data,
+        ).validate()
 
         # Create CoordToColumns from dataclass structures
         col_map = self._create_col_map(self.part_data, self.cnt_data, self.pop_data)
@@ -205,7 +203,7 @@ class DataLoader(BaseLoader):
                     )
 
         # Initialize parent class with merged data
-        super().__init__(data, self.pop_data.data, col_map, self.strat_prop_data)
+        super().__init__(data, self.pop_data.data, col_map, self.strat_data)
 
     def _create_col_map(self, part_data, cnt_data, pop_data) -> CoordToColumns:
         """
@@ -229,22 +227,12 @@ class DataLoader(BaseLoader):
             Column mapping configuration for BaseLoader.
         """
         if part_data.strat_var_cols:
-            strat_vars_part = []
-            for var in part_data.strat_var_cols:
-                if var.endswith("_part"):
-                    strat_vars_part.append(var)
-                else:
-                    strat_vars_part.append(f"{var}_part")
+            strat_vars_part = part_data.get_strat_var_cols(suffix=True)
         else:
             strat_vars_part = None
 
         if cnt_data.strat_var_cols:
-            strat_vars_cnt = []
-            for var in cnt_data.strat_var_cols:
-                if var.endswith("_cnt"):
-                    strat_vars_cnt.append(var)
-                else:
-                    strat_vars_cnt.append(f"{var}_cnt")
+            strat_vars_cnt = cnt_data.get_strat_var_cols(suffix=True)
         else:
             strat_vars_cnt = None
 
@@ -255,13 +243,15 @@ class DataLoader(BaseLoader):
             age_grp_cnt="age_grp_cnt" if cnt_data.age_grp_col else None,
             id_col="id",
             y="y",
-            z="z",
+            z=part_data.grp_cnt_col,  # Use actual group contact count column name
             strat_vars_part=strat_vars_part,
             strat_vars_cnt=strat_vars_cnt,
             repeat_part="repeat_part" if part_data.repeat_col else None,
             age_pop="age",
             P="P",
-            strat_vars_pop=pop_data.strat_var_cols if pop_data.strat_var_cols else None,
+            strat_vars_pop=(
+                pop_data.get_strat_var_cols() if pop_data.strat_var_cols else None
+            ),
         )
 
         return col_map

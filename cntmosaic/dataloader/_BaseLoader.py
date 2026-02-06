@@ -8,6 +8,7 @@ for statistical modeling.
 
 import warnings
 from abc import ABC
+from itertools import product
 from typing import Dict, List, Optional, Union
 
 import numpy as np
@@ -18,7 +19,7 @@ from .._types import StratMode
 from ._CoordToColumns import CoordToColumns
 from ._utils import make_idarrs_for_intervals
 from .containers._ModelData import ModelBaseData, ModelData, ModelStratData
-from .containers._StratPropData import StratPropData
+from .containers._StratificationData import StratificationData
 
 
 class BaseLoader(ABC):
@@ -45,7 +46,7 @@ class BaseLoader(ABC):
         Used for normalization and rate calculations.
     col_map : CoordToColumns
         Column mapping object specifying how to interpret dataframe columns.
-    strat_prop_data : Optional[Union[StratPropData, List[StratPropData]]], default=None
+    strat_data : Optional[StratificationData], default=None
 
     Attributes
     ----------
@@ -59,8 +60,6 @@ class BaseLoader(ABC):
         Minimum age in the aligned age range.
     max_age : int
         Maximum age in the aligned age range.
-    ds : Optional[xr.Dataset]
-        Generated xarray dataset (created by load() method).
 
     Raises
     ------
@@ -91,7 +90,7 @@ class BaseLoader(ABC):
         data: pd.DataFrame,
         pop_data: pd.DataFrame,
         col_map: CoordToColumns,
-        strat_prop_data: Optional[Union[StratPropData, List[StratPropData]]] = None,
+        strat_data: Optional[StratificationData] = None,
     ) -> None:
         """
         Initialize base loader with data validation.
@@ -104,11 +103,13 @@ class BaseLoader(ABC):
             Population dataframe.
         col_map : CoordToColumns
             Column mapping specification.
+        strat_data : Optional[StratificationData], default=None
+            Optional stratification data for statified models.
         """
         self.data = data
         self.col_map = col_map
         self.pop_data = pop_data
-        self.strat_prop_data = strat_prop_data
+        self.strat_data = strat_data
         self._align_age_range()
 
         # Initialize empty ModelData
@@ -204,7 +205,7 @@ class BaseLoader(ABC):
                 [self.col_map.id_col] + self.col_map.strat_vars_n + [self.col_map.z]
             ]
             .drop_duplicates()
-            .groupby(self.col_map.strat_vars_n, observed=True)["z"]
+            .groupby(self.col_map.strat_vars_n, observed=False)[self.col_map.z]
             .sum()
             .reset_index()
         )
@@ -213,37 +214,19 @@ class BaseLoader(ABC):
                 [self.col_map.id_col] + self.col_map.strat_vars_n + [self.col_map.y]
             ]
             .drop_duplicates()
-            .groupby(self.col_map.strat_vars_n, observed=True)["y"]
+            .groupby(self.col_map.strat_vars_n, observed=False)[self.col_map.y]
             .sum()
             .reset_index()
         )
         df_S = df_yz.merge(df_z, on=self.col_map.strat_vars_n, how="left")
-
-        # For school age children (5-18) assume contacts are with other children
-        mask = (
-            (df_S[self.col_map.age_part] >= 5)
-            & (df_S[self.col_map.age_part] <= 18)
-            & (df_S[self.col_map.z] + df_S[self.col_map.y] > 0)
+        df_S["S"] = 1 - df_S[self.col_map.z] / (
+            df_S[self.col_map.z] + df_S[self.col_map.y]
         )
+        # Little bit arbitrary - to avoid zero offsets
         df_S["S"] = np.where(
-            mask,
-            1 - df_S[self.col_map.z] / (df_S[self.col_map.z] + df_S[self.col_map.y]),
-            1.0,
+            df_S["S"] == 0, 1.0 / (df_S[self.col_map.z] + 1.0), df_S["S"]
         )
-
-        # For adults (18+) assume contacts are random across population
-        mask = (df_S[self.col_map.age_part] > 18) & (
-            df_S[self.col_map.z] + df_S[self.col_map.y] > 0
-        )
-        df_S["S"] = np.where(
-            mask,
-            1
-            - df_S[self.col_map.z]
-            / (df_S[self.col_map.z] + df_S[self.col_map.y])
-            / (self.max_age - self.min_age + 1),
-            1.0,
-        )
-
+        df_S.fillna({"S": 1.0}, inplace=True)
         df_S = df_S.drop(columns=[self.col_map.z, self.col_map.y])
 
         return df_S
@@ -455,12 +438,32 @@ class BaseLoader(ABC):
     def infer_full_strat_labels(
         self, flat_ix: NDArray, dims: Dict[str, int], strat_labels: Dict[str, List[str]]
     ) -> List[str]:
-        """Infer full stratification labels combining participant and contact categories."""
+        """Infer full stratification labels combining participant and contact categories.
+
+        Generates labels for ALL possible category combinations based on dims,
+        not just observed combinations. This is important for cross-validation
+        scenarios where some category combinations may be missing from the data.
+
+        Parameters
+        ----------
+        flat_ix : NDArray
+            Flat index array (unused, kept for API compatibility).
+        dims : Dict[str, int]
+            Dictionary mapping stratification variable names to their dimensions.
+        strat_labels : Dict[str, List[str]]
+            Dictionary mapping variable names to their category labels.
+
+        Returns
+        -------
+        List[str]
+            Full stratification labels for all possible combinations.
+        """
         full_labels: List[str] = []
         strat_vars = list(dims.keys())
-        rev_map = self.make_reverse_mapping(flat_ix, dims)
 
-        for cat_codes in rev_map.values():
+        # Generate all possible combinations of category codes
+        dim_ranges = [range(dim) for dim in dims.values()]
+        for cat_codes in product(*dim_ranges):
             source_label = ""
             target_label = ""
 
@@ -565,11 +568,11 @@ class BaseLoader(ABC):
         flat_ix = self.make_flat_ix(ixs, dims)
         full_labels = self.infer_full_strat_labels(flat_ix, dims, labels)
 
-        if self.strat_prop_data is not None:
-            marginal_multipliers = self.strat_prop_data.compute_marginal_multipliers(
-                modes
-            )
-            multipliers = self.strat_prop_data.compute_multipliers(modes)
+        if self.strat_data is not None:
+            marginal_demopty = self.strat_data.compute_marginal_demopty(modes)
+
+            # Demographic Opportunity
+            demopty = self.strat_data.compute_demopty(modes, full_labels)
 
             return ModelStratData(
                 modes=modes,
@@ -579,8 +582,8 @@ class BaseLoader(ABC):
                 flat_pixs=flat_pixs,
                 flat_ix=flat_ix,
                 full_labels=full_labels,
-                marginal_multipliers=marginal_multipliers,
-                multipliers=multipliers,
+                marginal_multipliers=marginal_demopty,
+                multipliers=demopty,
             )
         else:
             # Multipliers are not needed for vdKassteele models

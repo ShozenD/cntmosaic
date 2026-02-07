@@ -198,7 +198,7 @@ class BaseLoader(ABC):
         return df_n
 
     @property
-    def df_S(self) -> pd.DataFrame:
+    def df_V(self) -> pd.DataFrame:
         """Construct dataframe of group contact offsets (S) stratified by age and grouping variables."""
         df_z = (
             self.data[
@@ -218,18 +218,18 @@ class BaseLoader(ABC):
             .sum()
             .reset_index()
         )
-        df_S = df_yz.merge(df_z, on=self.col_map.strat_vars_n, how="left")
-        df_S["S"] = 1 - df_S[self.col_map.z] / (
-            df_S[self.col_map.z] + df_S[self.col_map.y]
+        df_V = df_yz.merge(df_z, on=self.col_map.strat_vars_n, how="left")
+        df_V["V"] = 1 - df_V[self.col_map.z] / (
+            df_V[self.col_map.z] + df_V[self.col_map.y]
         )
         # Little bit arbitrary - to avoid zero offsets
-        df_S["S"] = np.where(
-            df_S["S"] == 0, 1.0 / (df_S[self.col_map.z] + 1.0), df_S["S"]
+        df_V["V"] = np.where(
+            df_V["V"] == 0, 1.0 / (df_V[self.col_map.z] + 1.0), df_V["V"]
         )
-        df_S.fillna({"S": 1.0}, inplace=True)
-        df_S = df_S.drop(columns=[self.col_map.z, self.col_map.y])
+        df_V.fillna({"V": 1.0}, inplace=True)
+        df_V = df_V.drop(columns=[self.col_map.z, self.col_map.y])
 
-        return df_S
+        return df_V
 
     @property
     def df_y(self) -> pd.DataFrame:
@@ -243,9 +243,19 @@ class BaseLoader(ABC):
 
     @property
     def df_full(self) -> pd.DataFrame:
-        """Construct full dataframe with all combinations of stratification variables."""
+        """Construct full dataframe with all combinations of stratification variables.
+
+        Note: After load() is called, this returns the cached snapshot to ensure
+        consistent row ordering across all accesses.
+        """
+        if hasattr(self, '_df_full_cache') and self._df_full_cache is not None:
+            return self._df_full_cache
+        return self._build_df_full()
+
+    def _build_df_full(self) -> pd.DataFrame:
+        """Build the full dataframe from scratch."""
         df_n = self.df_n
-        df_S = self.df_S
+        df_V = self.df_V
         df_y = self.df_y
 
         # Create a full Cartesian product of all stratification variable levels
@@ -270,6 +280,9 @@ class BaseLoader(ABC):
         )
 
         df_full = pd.DataFrame(list(index), columns=unique_coords.keys())
+        df_full = pd.merge(df_full, df_y, on=self.col_map.strat_vars_y, how="left")
+        df_full = pd.merge(df_full, df_n, on=self.col_map.strat_vars_n, how="left")
+        df_full = pd.merge(df_full, df_V, on=self.col_map.strat_vars_n, how="left")
 
         # Restore all category information for categorical columns
         if self.col_map.age_grp_cnt:
@@ -280,10 +293,7 @@ class BaseLoader(ABC):
             )
         if self.col_map.strat_vars_part:
             for var in self.col_map.strat_vars_part:
-                if isinstance(self.data[var].dtype, pd.CategoricalDtype):
-                    categories = self.data[var].cat.categories
-                else:
-                    categories = self.data[var].unique()
+                categories = self.data[var].cat.categories
                 df_full[var] = pd.Categorical(
                     df_full[var],
                     categories=categories,
@@ -291,54 +301,18 @@ class BaseLoader(ABC):
                 )
         if self.col_map.strat_vars_cnt:
             for var in self.col_map.strat_vars_cnt:
-                if isinstance(self.data[var].dtype, pd.CategoricalDtype):
-                    categories = self.data[var].cat.categories
-                else:
-                    categories = self.data[var].unique()
+                categories = self.data[var].cat.categories
                 df_full[var] = pd.Categorical(
                     df_full[var],
                     categories=categories,
                     ordered=True,
                 )
-
-        df_full = pd.merge(df_full, df_y, on=self.col_map.strat_vars_y, how="left")
-        df_full = pd.merge(df_full, df_n, on=self.col_map.strat_vars_n, how="left")
-        df_full = pd.merge(df_full, df_S, on=self.col_map.strat_vars_n, how="left")
-
-        # Restore categorical dtypes after merges (they can be lost during merge operations)
-        if self.col_map.age_grp_cnt and self.col_map.age_grp_cnt in df_full.columns:
-            if isinstance(
-                self.data[self.col_map.age_grp_cnt].dtype, pd.CategoricalDtype
-            ):
-                df_full[self.col_map.age_grp_cnt] = pd.Categorical(
-                    df_full[self.col_map.age_grp_cnt],
-                    categories=self.data[self.col_map.age_grp_cnt].cat.categories,
-                    ordered=True,
-                )
-        if self.col_map.strat_vars_part:
-            for var in self.col_map.strat_vars_part:
-                if var in df_full.columns:
-                    if isinstance(self.data[var].dtype, pd.CategoricalDtype):
-                        df_full[var] = pd.Categorical(
-                            df_full[var],
-                            categories=self.data[var].cat.categories,
-                            ordered=True,
-                        )
-        if self.col_map.strat_vars_cnt:
-            for var in self.col_map.strat_vars_cnt:
-                if var in df_full.columns:
-                    if isinstance(self.data[var].dtype, pd.CategoricalDtype):
-                        df_full[var] = pd.Categorical(
-                            df_full[var],
-                            categories=self.data[var].cat.categories,
-                            ordered=True,
-                        )
 
         # [Do] Finalise the data
         df_full = df_full.dropna(subset=["N"])
         df_full = df_full[df_full["N"] > 0]
-        df_full["S"] = df_full["S"].fillna(1.0)
-        df_full["log_S"] = np.where(df_full["S"] > 0, np.log(df_full["S"]), 0.0)
+        df_full["V"] = df_full["V"].fillna(1.0)
+        df_full["log_V"] = np.where(df_full["V"] > 0, np.log(df_full["V"]), 0.0)
         df_full["y"] = df_full["y"].fillna(0)
 
         return df_full
@@ -436,9 +410,10 @@ class BaseLoader(ABC):
         return strat_labels
 
     def infer_full_strat_labels(
-        self, flat_ix: NDArray, dims: Dict[str, int], strat_labels: Dict[str, List[str]]
+        self, strat_dims: Dict[str, int], strat_labels: Dict[str, List[str]]
     ) -> List[str]:
-        """Infer full stratification labels combining participant and contact categories.
+        """
+        Infer full stratification labels combining participant and contact categories.
 
         Generates labels for ALL possible category combinations based on dims,
         not just observed combinations. This is important for cross-validation
@@ -446,37 +421,48 @@ class BaseLoader(ABC):
 
         Parameters
         ----------
-        flat_ix : NDArray
-            Flat index array (unused, kept for API compatibility).
-        dims : Dict[str, int]
-            Dictionary mapping stratification variable names to their dimensions.
+        strat_dims : Dict[str, int]
+            Dictionary mapping stratification variable names to their dimensions
+            (already accounting for FULL mode squaring).
         strat_labels : Dict[str, List[str]]
-            Dictionary mapping variable names to their category labels.
+            Dictionary mapping variable names to their category labels
+            (in "source->target" format).
 
         Returns
         -------
         List[str]
             Full stratification labels for all possible combinations.
+
+        Notes
+        -----
+        Labels are generated in row-major order to match make_flat_ix():
+        rightmost variable varies fastest.
         """
         full_labels: List[str] = []
-        strat_vars = list(dims.keys())
+        strat_vars = list(strat_dims.keys())
 
-        # Generate all possible combinations of category codes
-        dim_ranges = [range(dim) for dim in dims.values()]
+        # CRITICAL: Reverse the variable order to match make_flat_ix()
+        # This ensures rightmost variable varies fastest, consistent with how flat_ix is constructed
+        dim_ranges = [range(strat_dims[var]) for var in strat_vars]
+
         for cat_codes in product(*dim_ranges):
-            source_label = ""
-            target_label = ""
-
+            # Build composite label by concatenating source and target parts
+            parts = []
             for i, code in enumerate(cat_codes):
                 var = strat_vars[i]
-                label = strat_labels[var][code]
-                source, target = label.split("->")
-                source_label = source_label + "_" + source if i > 0 else source
+                parts.append(strat_labels[var][code])
 
-                if target != "All":
-                    target_label = target_label + "_" + target if i > 0 else target
+            # Split each "source->target" and combine
+            sources = [p.split("->")[0] for p in parts]
+            targets = [p.split("->")[1] for p in parts]
 
-            full_label = f"{source_label}->{target_label if target_label else 'All'}"
+            # Join with underscores
+            source_label = "_".join(sources)
+            # Filter out "All" targets and join remaining
+            target_parts = [t for t in targets if t != "All"]
+            target_label = "_".join(target_parts) if target_parts else "All"
+
+            full_label = f"{source_label}->{target_label}"
             full_labels.append(full_label)
 
         return full_labels
@@ -496,7 +482,9 @@ class BaseLoader(ABC):
 
         return strat_ixs
 
-    def infer_strat_pixs(self, strat_modes: Dict[str, StratMode]) -> Dict[str, NDArray]:
+    def infer_strat_pixs(
+        self, strat_modes: Dict[str, StratMode], strat_dims: Dict[str, int]
+    ) -> Dict[str, NDArray]:
         """Infer population stratification variable indices for each observation."""
         strat_pixs: Dict[str, NDArray] = {}
 
@@ -513,11 +501,7 @@ class BaseLoader(ABC):
         flat_pixs = np.zeros(n_obs, dtype=int)
         multiplier = 1
         for var, mode in reversed(strat_modes.items()):
-            dim = (
-                len(self.df_full[var + "_part"].cat.categories)
-                if mode == StratMode.FULL
-                else 1
-            )
+            dim = strat_dims[var] if mode == StratMode.FULL else 1
             flat_pixs += strat_pixs[var] * multiplier
             multiplier *= dim
 
@@ -537,36 +521,14 @@ class BaseLoader(ABC):
 
         return flat_ix
 
-    def make_reverse_mapping(
-        self, flat_ix: NDArray, strat_dims: Dict[str, int]
-    ) -> Dict[int, List[int]]:
-        """Create reverse mapping from flat index back to individual variable categories."""
-        reverse_mapping: Dict[int, List[int]] = {}
-        unique_flat_ix = np.sort(np.unique(flat_ix))
-
-        for idx in range(len(unique_flat_ix)):
-            flat_index = unique_flat_ix[idx]
-            indices: List[int] = []
-            remainder = flat_index
-
-            for _, dim in reversed(strat_dims.items()):
-                index = remainder % dim
-                indices.append(index)
-                remainder //= dim
-
-            # Reverse indices to match original variable order
-            reverse_mapping[flat_index] = indices[::-1]
-
-        return reverse_mapping
-
     def make_strat_data(self) -> ModelStratData:
         modes = self.infer_strat_modes()
         dims = self.infer_strat_dims(modes)
         labels = self.infer_strat_labels(modes)
         ixs = self.infer_strat_ixs(modes)
-        flat_pixs = self.infer_strat_pixs(modes)
+        flat_pixs = self.infer_strat_pixs(modes, dims)
         flat_ix = self.make_flat_ix(ixs, dims)
-        full_labels = self.infer_full_strat_labels(flat_ix, dims, labels)
+        full_labels = self.infer_full_strat_labels(dims, labels)
 
         if self.strat_data is not None:
             marginal_demopty = self.strat_data.compute_marginal_demopty(modes)
@@ -607,7 +569,7 @@ class BaseLoader(ABC):
         1. **ModelBaseData**: Contains the numerical arrays needed for inference
            - Contact counts (y), age indices (aid, bid)
            - Sample sizes (log_N), population distribution (log_P)
-           - Optional: offsets (log_S), repeat indicators (rid)
+           - Optional: offsets (log_V), repeat indicators (rid)
 
         2. **ModelStratData**: Contains hierarchical stratification information
            - strat_vars: Variable names and their categories
@@ -675,11 +637,18 @@ class BaseLoader(ABC):
         {'gender': 'full', 'setting': 'partial'}
         >>>
         >>> # Check for specific fields
-        >>> container.has('log_S')  # Check if offset exists
+        >>> container.has('log_V')  # Check if offset exists
         True
         >>> container.age_range
         (0, 75)
         """
+        # ========================
+        # Cache df_full snapshot
+        # ========================
+        # CRITICAL: Cache df_full so all downstream calls (make_strat_data,
+        # infer_strat_ixs, etc.) and post-load access use the same row ordering.
+        self._df_full_cache = self._build_df_full()
+
         # ========================
         # Construct ModelBaseData
         # ========================
@@ -687,7 +656,7 @@ class BaseLoader(ABC):
             y=self.df_full["y"].to_numpy(),
             aid=self.df_full[self.col_map.age_part].to_numpy(),
             log_N=np.log(self.df_full["N"].to_numpy()),
-            log_S=self.df_full["log_S"].to_numpy(),
+            log_V=self.df_full["log_V"].to_numpy(),
             log_P=self.construct_log_P(),
             age_min=self.min_age,
             age_max=self.max_age,

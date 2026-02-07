@@ -97,6 +97,15 @@ class DataValidator:
         else:
             self.strat_vars = set()
 
+        self.part_vars_list = self.part_data.get_strat_vars(suffix=False)
+        self.cnt_vars_list = self.cnt_data.get_strat_vars(suffix=False)
+        self.pop_vars_list = self.pop_data.get_strat_vars(suffix=False)
+
+        if self.strat_data:
+            self.strat_vars_list = self.strat_data.get_strat_vars()
+        else:
+            self.strat_vars_list = []
+
     def _check_strat_var_consistency(self) -> None:
         """
         Check if stratification variables are consistently specified across datasets
@@ -146,6 +155,20 @@ class DataValidator:
                     "These must be identical."
                 )
 
+            # The order in which the stratification variables are specified must also match to ensure consistent category codes
+            # Raise warning if the order is different, and reorder strat_data to match participant data
+            if self.part_vars_list != self.strat_vars_list:
+                warnings.warn(
+                    "The order in which the stratification variables are specified in StratificationData does not match ParticipantData.\n"
+                    f"ParticipantData strat_var_cols (no suffix): {self.part_vars_list}\n"
+                    f"StratificationData strat_var_cols (no suffix): {self.strat_vars_list}\n"
+                    "Reordering strat_var_cols in StratificationData to match ParticipantData variable order.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+                # Reorder strat_data to match participant data variable order
+                self.strat_data.strat_var_cols = [var for var in self.part_vars_list]
+
         if not self.cnt_vars:
             return  # Only participant-level stratification (PARTIAL mode)
 
@@ -160,6 +183,18 @@ class DataValidator:
                 f"Stratification variables in ContactData (no suffix): {sorted(self.cnt_vars)}\n"
                 "For FULL stratification mode, both must have identical variables."
             )
+
+        if self.cnt_vars_list != self.part_vars_list:
+            warnings.warn(
+                "The order in which the stratification variables are specified in ContactData does not match ParticipantData.\n"
+                f"ParticipantData strat_var_cols (no suffix): {self.part_vars_list}\n"
+                f"ContactData strat_var_cols (no suffix): {self.cnt_vars_list}\n"
+                "Reordering strat_var_cols in ContactData to match ParticipantData variable order.",
+                UserWarning,
+                stacklevel=3,
+            )
+            # Reorder contact data to match participant data variable order
+            self.cnt_data.strat_var_cols = [f"{var}_cnt" for var in self.part_vars_list]
 
         # Population must have stratification in FULL mode
         if not self.pop_vars:
@@ -177,6 +212,18 @@ class DataValidator:
                 f"PopulationData strat_var_cols (no suffix): {sorted(self.pop_vars)}\n"
                 "For FULL stratification mode, both must have identical variables."
             )
+
+        if self.pop_vars_list != self.part_vars_list:
+            warnings.warn(
+                "The order in which the stratification variables are specified in PopulationData does not match ParticipantData.\n"
+                f"ParticipantData strat_var_cols (no suffix): {self.part_vars_list}\n"
+                f"PopulationData strat_var_cols (no suffix): {self.pop_vars_list}\n"
+                "Reordering strat_var_cols in PopulationData to match ParticipantData variable order.",
+                UserWarning,
+                stacklevel=3,
+            )
+            # Reorder population data to match participant data variable order
+            self.pop_data.strat_var_cols = [var for var in self.part_vars_list]
 
     def _consolidate_schema_for_variable(
         self, var: str, reference_schema: list

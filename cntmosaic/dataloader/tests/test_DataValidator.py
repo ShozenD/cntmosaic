@@ -188,7 +188,7 @@ def data_partial_multi():
         }
     )
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"])
-    df_part["hhsize"] = pd.Categorical(df_part["hhsize"], categories=["1", "2+"])
+    df_part["hhsize"] = pd.Categorical(df_part["hhsize"], categories=["1", "2"])
 
     df_cnt = pd.DataFrame(
         {
@@ -214,10 +214,10 @@ def data_partial_multi():
     df_strat["sex"] = pd.Categorical(df_strat["sex"], categories=["M", "F"])
     df_strat["hhsize"] = pd.Categorical(df_strat["hhsize"], categories=["1", "2"])
 
-    part_data = ParticipantData(df_part, "id", "age", strat_var_cols="sex")
+    part_data = ParticipantData(df_part, "id", "age", strat_var_cols=["sex", "hhsize"])
     cnt_data = ContactData(df_cnt, "id", "age_cnt", cnt_col="y")
     pop_data = PopulationData(df_pop, "age", "P")
-    strat_data = StratificationData(df_strat, "age", "sex", "prop")
+    strat_data = StratificationData(df_strat, "age", ["sex", "hhsize"], "prop")
 
     return part_data, cnt_data, pop_data, strat_data
 

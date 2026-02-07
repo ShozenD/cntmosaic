@@ -52,7 +52,7 @@ class StratificationData:
     validate()
         Validates the population proportion data structure and values.
     from_counts(data, age_col, strat_var_cols, count_col)
-        Class method to create StratPropData from population counts.
+        Class method to create StratificationData from population counts.
     compute_marginal_demopty(strat_modes)
         Computes marginal multipliers for each stratification variable.
     compute_demopty(strat_modes)
@@ -127,23 +127,6 @@ class StratificationData:
                 f"Available columns: {list(self.data.columns)}"
             )
 
-        # TODO: This should not be done in the __post_init__
-        # Need to validate the order of the categories to ensure the same order is used in the compute_demopty() method
-        # Merge multiple stratification columns into composite if needed
-        if len(self.strat_var_cols) > 1:
-            # Create composite column name from multiple variables
-            composite_name = "_".join(self.strat_var_cols)
-            object.__setattr__(self, "strat_col", composite_name)
-
-            # Merge columns into composite
-            self.data = self.data.copy()
-            self.data[self.strat_col] = self.data[self.strat_var_cols].apply(
-                lambda row: "_".join(row.astype(str)), axis=1
-            )
-        else:
-            # Single column - use it directly
-            object.__setattr__(self, "strat_col", self.strat_var_cols[0])
-
         self.validate()
 
     def validate(self) -> None:
@@ -162,12 +145,12 @@ class StratificationData:
 
         Examples
         --------
-        >>> pop_prop = StratPropData(df, 'age', 'gender', 'proportion')
+        >>> pop_prop = StratificationData(df, 'age', 'gender', 'proportion')
         >>> # Validation happens automatically, but can be called explicitly:
         >>> pop_prop.validate()
         """
         # Check required columns exist
-        required_cols = [self.age_col, self.strat_col, self.prop_col]
+        required_cols = [self.age_col] + self.strat_var_cols + [self.prop_col]
         missing = [col for col in required_cols if col not in self.data.columns]
         if missing:
             raise ValueError(
@@ -197,7 +180,7 @@ class StratificationData:
                 f"Population proportions must sum to 1.0 within each age group (tolerance: 1e-6).\n"
                 f"Ages with invalid sums: {list(bad_groups.index)}\n"
                 f"Actual sums: {bad_groups.to_dict()}\n"
-                f"Hint: Use StratPropData.from_counts() to automatically compute proportions from counts."
+                f"Hint: Use StratificationData.from_counts() to automatically compute proportions from counts."
             )
 
     @classmethod
@@ -209,7 +192,7 @@ class StratificationData:
         count_col: str = "count",
     ) -> "StratificationData":
         """
-        Create StratPropData from population counts (automatically computes proportions).
+        Create StratificationData from population counts (automatically computes proportions).
 
         This is a convenience constructor that automatically normalizes population counts
         to proportions within each age group. More intuitive than manually computing
@@ -231,7 +214,7 @@ class StratificationData:
 
         Returns
         -------
-        StratPropData
+        StratificationData
             New instance with proportions computed from counts.
 
         Examples
@@ -242,7 +225,7 @@ class StratificationData:
         ...     'gender': ['M', 'F', 'M', 'F', 'M', 'F'],
         ...     'population': [5100, 4900, 5050, 4950, 5000, 5000]
         ... })
-        >>> pop_prop = StratPropData.from_counts(
+        >>> pop_prop = StratificationData.from_counts(
         ...     data=df,
         ...     age_col='age',
         ...     count_col='population'
@@ -255,7 +238,7 @@ class StratificationData:
         ...     'region': ['North', 'South', 'North', 'South'],
         ...     'count': [2600, 2400, 2500, 2500]
         ... })
-        >>> pop_prop = StratPropData.from_counts(
+        >>> pop_prop = StratificationData.from_counts(
         ...     data=df_multi,
         ...     age_col='age',
         ...     strat_var_cols=['gender', 'region'],

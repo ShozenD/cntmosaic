@@ -53,7 +53,7 @@ class ModelBaseData(TypedDict, total=False):
     age_max: int
 
     # Optional fields (total=False allows these to be missing)
-    log_S: NDArray
+    log_V: NDArray
     rid: NDArray
     aid_exp: NDArray
     bid: NDArray

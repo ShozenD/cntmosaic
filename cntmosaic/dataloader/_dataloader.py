@@ -227,12 +227,12 @@ class DataLoader(BaseLoader):
             Column mapping configuration for BaseLoader.
         """
         if part_data.strat_var_cols:
-            strat_vars_part = part_data.get_strat_var_cols(suffix=True)
+            strat_vars_part = part_data.get_strat_vars(suffix=True)
         else:
             strat_vars_part = None
 
         if cnt_data.strat_var_cols:
-            strat_vars_cnt = cnt_data.get_strat_var_cols(suffix=True)
+            strat_vars_cnt = cnt_data.get_strat_vars(suffix=True)
         else:
             strat_vars_cnt = None
 
@@ -243,14 +243,14 @@ class DataLoader(BaseLoader):
             age_grp_cnt="age_grp_cnt" if cnt_data.age_grp_col else None,
             id_col="id",
             y="y",
-            z=part_data.grp_cnt_col,  # Use actual group contact count column name
+            z=part_data.amb_cnt_col,  # Use actual group contact count column name
             strat_vars_part=strat_vars_part,
             strat_vars_cnt=strat_vars_cnt,
             repeat_part="repeat_part" if part_data.repeat_col else None,
             age_pop="age",
             P="P",
             strat_vars_pop=(
-                pop_data.get_strat_var_cols() if pop_data.strat_var_cols else None
+                pop_data.get_strat_vars() if pop_data.strat_var_cols else None
             ),
         )
 

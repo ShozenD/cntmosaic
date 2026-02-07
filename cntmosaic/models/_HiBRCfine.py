@@ -71,7 +71,7 @@ class HiBRCfine(BRCfine):
         - bid: contact age indices (fine resolution)
         - log_N: log of survey sample sizes
         - log_P: log of overall population age distribution
-        - log_S: log of setting-specific offsets (optional)
+        - log_V: log of setting-specific offsets (optional)
         - rid: repeat interview indicators (optional)
         - strat_vars: stratification variables (e.g., gender, setting)
         - pop_prop_{var}: stratum-specific population proportions for each strat_var
@@ -338,8 +338,7 @@ class HiBRCfine(BRCfine):
         delta = inverse_clr(Omega)
 
         return numpyro.deterministic(
-            "log_delta",
-            jnp.log(delta) - self.data.strat_data["multipliers"],
+            "log_delta", jnp.log(delta) - jnp.log(self.data.strat_data["multipliers"])
         )
 
     def model(
@@ -351,7 +350,7 @@ class HiBRCfine(BRCfine):
         flat_ix: Optional[ArrayLike] = None,
         flat_pixs: Optional[ArrayLike] = None,
         log_N: Optional[ArrayLike] = None,
-        log_S: Optional[ArrayLike] = None,
+        log_V: Optional[ArrayLike] = None,
     ) -> None:
         """
         NumPyro generative model for hierarchical Bayesian generalized contact matrix estimation.
@@ -396,7 +395,7 @@ class HiBRCfine(BRCfine):
             self.data.strat_data["flat_pixs"] if flat_pixs is None else flat_pixs
         )
         log_N = self.log_N if log_N is None else log_N
-        log_S = self.log_S if log_S is None else log_S
+        log_V = self.log_V if log_V is None else log_V
         len_y = len(self.y) if y is None else len(y)
 
         # Sample baseline log-intensity
@@ -422,7 +421,7 @@ class HiBRCfine(BRCfine):
         repeat_effect = self.hill.sample()[rid] if hasattr(self, "rid") else 0.0
 
         # Compute expected counts
-        mu = jnp.exp(log_cint + log_N + log_S + repeat_effect)
+        mu = jnp.exp(log_cint + log_N + log_V + repeat_effect)
 
         # Likelihood
         if self.likelihood == "poisson":

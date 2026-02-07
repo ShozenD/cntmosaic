@@ -231,6 +231,16 @@ class PopulationData:
                 "This is required for matching population data with survey age ranges."
             )
 
+        object_cols = self.df_pop.select_dtypes(include="object").columns.tolist()
+        for col in object_cols:
+            if not isinstance(self.df_pop[col].dtype, pd.CategoricalDtype):
+                warnings.warn(
+                    f"Converting '{col}' to categorical dtype.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+                self.df_pop[col] = self.df_pop[col].astype("category")
+
         # Normalize strat_var_cols to list format for consistent handling
         if isinstance(self.strat_var_cols, str):
             object.__setattr__(self, "strat_var_cols", [self.strat_var_cols])

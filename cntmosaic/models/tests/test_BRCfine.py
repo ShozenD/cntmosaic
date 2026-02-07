@@ -31,7 +31,7 @@ class TestInit:
         assert len(model.bid) == len(model.y)
         assert len(model.log_N) > 0
         assert model.log_P.shape[1] == model.A
-        assert model.log_S.shape[0] == len(model.y)
+        assert model.log_V.shape[0] == len(model.y)
 
         model = BRCfine(dataloader, priors, likelihood="negbin", inv_odist=2.0)
 
@@ -46,7 +46,7 @@ class TestInit:
         assert len(model.bid) == len(model.y)
         assert len(model.log_N) > 0
         assert model.log_P.shape[1] == model.A
-        assert model.log_S.shape[0] == len(model.y)
+        assert model.log_V.shape[0] == len(model.y)
 
     def test_init_with_rid(self, single_large_sample_with_repeats):
         part_data, cnt_data, pop_data = single_large_sample_with_repeats

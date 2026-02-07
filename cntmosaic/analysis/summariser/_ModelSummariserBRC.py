@@ -18,9 +18,9 @@ def validate_alpha(alpha: float) -> None:
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
 
 
-def get_probs_from_alpha(alpha: float) -> Tuple[float, float, float]:
-    """Convert alpha to (lower, median, upper) probabilities."""
-    return (alpha / 2, 0.5, 1 - alpha / 2)
+def get_probs_from_alpha(alpha: float) -> Tuple[float, float]:
+    """Convert alpha to (lower, upper) probabilities."""
+    return (alpha / 2, 1 - alpha / 2)
 
 
 def compute_quantiles(
@@ -388,6 +388,7 @@ class ModelSummariserBRC:
     def summarise_rate(
         self,
         alpha: float = 0.05,
+        measure: Literal["mean", "median"] = "median",
         probs: Optional[Tuple[float, ...]] = None,
     ) -> NDArray | Dict[str, NDArray]:
         """
@@ -440,14 +441,23 @@ class ModelSummariserBRC:
             validate_alpha(alpha)
             probs = get_probs_from_alpha(alpha)
 
-        cache_key = f"rate_probs{probs}"
+        cache_key = f"rate_{measure}_probs{probs}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
         if self.model_type == "brc":
             # Simple case: rate is directly available
             rate_samples = np.exp(self.post_samples["log_rate"])
-            result = compute_quantiles(rate_samples, probs, axis=0)
+
+            if measure == "mean":
+                rate_central = rate_samples.mean(axis=0)
+            if measure == "median":
+                rate_central = np.median(rate_samples, axis=0)
+
+            rate_summary = compute_quantiles(rate_samples, probs, axis=0)
+            rate_summary = np.insert(rate_summary, 1, rate_central, axis=0)
+
+            result = rate_summary
 
         else:  # hibrc
             # Compute rate for each stratum
@@ -462,7 +472,15 @@ class ModelSummariserBRC:
                 # rate = exp(log_rate + log_delta[flat_idx])
                 log_rate_stratum = log_rate + log_delta[:, flat_idx, :, :]
                 rate_samples = np.exp(log_rate_stratum)
-                result[label] = compute_quantiles(rate_samples, probs, axis=0)
+
+                if measure == "mean":
+                    rate_central = rate_samples.mean(axis=0)
+                if measure == "median":
+                    rate_central = np.median(rate_samples, axis=0)
+
+                rate_summary = compute_quantiles(rate_samples, probs, axis=0)
+                rate_summary = np.insert(rate_summary, 1, rate_central, axis=0)
+                result[label] = rate_summary
 
         self._cache[cache_key] = result
         return result
@@ -470,6 +488,7 @@ class ModelSummariserBRC:
     def summarise_cint(
         self,
         alpha: float = 0.05,
+        measure: Literal["mean", "median"] = "median",
         probs: Optional[Tuple[float, ...]] = None,
     ) -> Dict[str, NDArray]:
         """
@@ -483,6 +502,9 @@ class ModelSummariserBRC:
         alpha : float, default=0.05
             Significance level for credible intervals (e.g., 0.05 for 95% CI).
             Ignored if probs is provided.
+        measure: Literal["mean", "median"] = "median",
+            Summary measure of central tendency to use. Defaults to "median".
+
         probs : Tuple[float, ...], optional
             Specific quantile probabilities to compute.
             If None, uses (alpha/2, 0.5, 1-alpha/2).
@@ -517,22 +539,41 @@ class ModelSummariserBRC:
             validate_alpha(alpha)
             probs = get_probs_from_alpha(alpha)
 
-        cache_key = f"cint_probs{probs}"
+        cache_key = f"cint_{measure}_probs{probs}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
         if self.model_type == "brc":
             # Simple case: direct quantile computation
             result = {}
-            result["All->All"] = compute_quantiles(
-                self.post_cint_samples, probs, axis=0
-            )
+
+            cint_summary = compute_quantiles(self.post_cint_samples, probs, axis=0)
+
+            # Measures of central tendency
+            if measure == "mean":
+                cint_central = self.post_cint_samples.mean(axis=0)
+
+            if measure == "median":
+                cint_central = np.median(self.post_cint_samples, axis=0)
+
+            cint_summary = np.insert(cint_summary, 1, cint_central, axis=0)
+            result["All->All"] = cint_summary
 
         else:  # hibrc
             # Compute quantiles for each stratum
             result = {}
             for label, samples in self.post_cint_samples.items():
-                result[label] = compute_quantiles(samples, probs, axis=0)
+                cint_summary = compute_quantiles(samples, probs, axis=0)
+
+                # Measures of central tendency
+                if measure == "mean":
+                    cint_central = samples.mean(axis=0)
+
+                if measure == "median":
+                    cint_central = np.median(samples, axis=0)
+
+                cint_summary = np.insert(cint_summary, 1, cint_central, axis=0)
+                result[label] = cint_summary
 
         self._cache[cache_key] = result
         return result
@@ -540,6 +581,7 @@ class ModelSummariserBRC:
     def summarise_mcint(
         self,
         alpha: float = 0.05,
+        measure: Literal["mean", "median"] = "median",
         probs: Optional[Tuple[float, ...]] = None,
     ) -> Dict[str, NDArray]:
         """
@@ -553,6 +595,8 @@ class ModelSummariserBRC:
         alpha : float, default=0.05
             Significance level for credible intervals (e.g., 0.05 for 95% CI).
             Ignored if probs is provided.
+        measure: Literal["mean", "median"] = "median",
+            Summary measure of central tendency to use. Defaults to "median".
         probs : Tuple[float, ...], optional
             Specific quantile probabilities to compute.
             If None, uses (alpha/2, 0.5, 1-alpha/2).
@@ -582,30 +626,46 @@ class ModelSummariserBRC:
             validate_alpha(alpha)
             probs = get_probs_from_alpha(alpha)
 
-        cache_key = f"mcint_probs{probs}"
+        cache_key = f"mcint_{measure}_probs{probs}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
+        result = {}
         if self.model_type == "brc":
             # Sum over contact age (last axis)
             mcint_samples = self.post_cint_samples.sum(axis=-1)
-            result = {}
-            result["All->All"] = compute_quantiles(mcint_samples, probs, axis=0)
+
+            mcint_summary = compute_quantiles(mcint_samples, probs, axis=0)
+
+            if measure == "mean":
+                mcint_central = mcint_samples.mean(axis=0)
+            if measure == "median":
+                mcint_central = np.median(mcint_samples, axis=0)
+
+            mcint_summary = np.insert(mcint_summary, 1, mcint_central, axis=0)
+            result["All->All"] = mcint_summary
 
         else:  # hibrc
             # Compute marginal for each stratum
-            result = {}
             for label, samples in self.post_cint_samples.items():
                 # Sum over contact age dimension
                 mcint_samples = samples.sum(axis=-1)
-                result[label] = compute_quantiles(mcint_samples, probs, axis=0)
+                mcint_summary = compute_quantiles(mcint_samples, probs, axis=0)
+
+                if measure == "mean":
+                    mcint_central = mcint_samples.mean(axis=0)
+                if measure == "median":
+                    mcint_central = np.median(mcint_samples, axis=0)
+
+                mcint_summary = np.insert(mcint_summary, 1, mcint_central, axis=0)
+                result[label] = mcint_summary
 
         self._cache[cache_key] = result
         return result
 
     def get_posterior_samples(
         self,
-        quantity: Literal["rate", "cint", "mcint"] = "cint",
+        quantity: Literal["rate", "cint", "mcint", "delta"] = "cint",
     ) -> NDArray | Dict[str, NDArray]:
         """
         Get raw posterior samples for specified quantity.
@@ -614,11 +674,12 @@ class ModelSummariserBRC:
 
         Parameters
         ----------
-        quantity : {"rate", "cint", "mcint"}, default="cint"
+        quantity : {"rate", "cint", "mcint", "delta"}, default="cint"
             Which quantity to return samples for:
-            - "rate": Contact rate matrix R[c,d]
-            - "cint": Contact intensity matrix M[c,d]
-            - "mcint": Marginal contact intensity m[c]
+            - "rate": Contact rate matrix r[a,b]
+            - "cint": Contact intensity matrix m[a,b]
+            - "mcint": Marginal contact intensity m[a] = Σ_b m[a,b]
+            - "delta": Contact rate modifiers[a,b] (HiBRC only)
 
         Returns
         -------
@@ -670,22 +731,25 @@ class ModelSummariserBRC:
                 for label, samples in self.post_cint_samples.items():
                     result[label] = samples.sum(axis=-1)
                 return result
+        elif quantity == "delta":
+            if self.model_type == "hibrc":
+                return np.exp(self.post_samples["log_delta"])
 
         else:
             raise ValueError(
-                f"Unknown quantity: {quantity}. Must be 'rate', 'cint', or 'mcint'"
+                f"Unknown quantity: {quantity}. Must be 'rate', 'cint', 'mcint', or 'delta'"
             )
 
     def get_point_estimates(
         self,
-        quantity: Literal["rate", "cint", "mcint"] = "cint",
+        quantity: Literal["rate", "cint", "mcint", "delta"] = "cint",
     ) -> Dict[str, NDArray] | Dict[str, Dict[str, NDArray]]:
         """
         Get point estimates (mean and std) for specified quantity.
 
         Parameters
         ----------
-        quantity : {"rate", "cint", "mcint"}, default="cint"
+        quantity : {"rate", "cint", "mcint", "delta"}, default="cint"
             Which quantity to compute estimates for.
 
         Returns

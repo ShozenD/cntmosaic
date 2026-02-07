@@ -420,7 +420,13 @@ class StratificationData:
 
         # Ensure consistent ordering if strat_labels provided
         if strat_labels is not None:
-            strat_labels_source = [labels.split("->")[0] for labels in strat_labels]
+            # Deduplicate while preserving order: full_labels contains the
+            # cross-product (e.g. ["M->M","M->F","F->M","F->F"]), so
+            # splitting on "->" yields duplicates ("M","M","F","F").
+            # reindex with duplicates would inflate the DataFrame.
+            strat_labels_source = list(
+                dict.fromkeys(l.split("->")[0] for l in strat_labels)
+            )
             df_Q_sa = df_Q_sa.reindex(strat_labels_source)
         else:
             strat_labels_source = df_Q_source["strat_combined"].unique()
@@ -455,7 +461,9 @@ class StratificationData:
 
         # Ensure consistent ordering if strat_labels provided
         if strat_labels is not None:
-            strat_labels_target = [labels.split("->")[1] for labels in strat_labels]
+            strat_labels_target = list(
+                dict.fromkeys(l.split("->")[1] for l in strat_labels)
+            )
         else:
             strat_labels_target = df_Q_target["strat_combined"].unique()
 

@@ -54,7 +54,7 @@ class BRCfine(BRC):
         - bid: contact age indices
         - log_N: log of survey sample sizes
         - log_P: log of population age distribution
-        - log_S: log of setting-specific offsets (optional)
+        - log_V: log of setting-specific offsets (optional)
         - rid: repeat interview indicators (optional)
     priors : dict
         Dictionary of prior specifications. Must contain:
@@ -80,7 +80,7 @@ class BRCfine(BRC):
         Log of sample sizes, shape (n_obs,)
     log_P : jax.Array
         Log of population age distribution, shape (1, A)
-    log_S : jax.Array
+    log_V : jax.Array
         Log of offsets, shape (n_obs,)
     rid : jax.Array, optional
         Repeat interview indicators, shape (n_obs,)
@@ -179,9 +179,9 @@ class BRCfine(BRC):
         self.log_P = jnp.array(self.data.base_data["log_P"])
 
         # Optional offset for different settings (e.g., home, work, school)
-        self.log_S = (
-            jnp.array(self.data.base_data["log_S"])
-            if "log_S" in self.data.base_data
+        self.log_V = (
+            jnp.array(self.data.base_data["log_V"])
+            if "log_V" in self.data.base_data
             else jnp.zeros_like(self.y)
         )
 
@@ -197,7 +197,7 @@ class BRCfine(BRC):
         bid: Optional[ArrayLike] = None,
         rid: Optional[ArrayLike] = None,
         log_N: Optional[ArrayLike] = None,
-        log_S: Optional[ArrayLike] = None,
+        log_V: Optional[ArrayLike] = None,
     ) -> None:
         """
         Define the generative model for contact matrix estimation.
@@ -245,12 +245,12 @@ class BRCfine(BRC):
             Repeat interview indicators. If None, uses self.rid.
         log_N : ArrayLike, optional
             Log of sample sizes. If None, uses self.log_N.
-        log_S : ArrayLike, optional
-            Log of group contact offsets. If None, uses self.log_S.
+        log_V : ArrayLike, optional
+            Log of group contact offsets. If None, uses self.log_V.
 
         Notes
         -----
-        - aid, bid, rid, log_N, and log_S are exposed as parameters to allow model selection using ELPD-LOO.
+        - aid, bid, rid, log_N, and log_V are exposed as parameters to allow model selection using ELPD-LOO.
 
         Examples
         --------
@@ -269,7 +269,7 @@ class BRCfine(BRC):
         aid = self.aid if aid is None else aid
         bid = self.bid if bid is None else bid
         log_N = self.log_N if log_N is None else log_N
-        log_S = self.log_S if log_S is None else log_S
+        log_V = self.log_V if log_V is None else log_V
         rid = getattr(self, "rid", None) if rid is None else rid
         len_y = len(self.y) if y is None else len(y)
 
@@ -292,7 +292,7 @@ class BRCfine(BRC):
         # Expected number of contacts
         mu = numpyro.deterministic(
             "mu",
-            jnp.exp(log_cint[aid, bid] + log_N + log_S + repeat_effect),
+            jnp.exp(log_cint[aid, bid] + log_N + log_V + repeat_effect),
         )
 
         # Observation likelihood

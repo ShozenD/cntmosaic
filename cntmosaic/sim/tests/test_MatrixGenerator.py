@@ -30,7 +30,7 @@ def real_templates():
 
 
 @pytest.fixture
-def simple_pop_constructor():
+def simple_popcon():
     """Create simple PopulationConstructor with single stratification."""
     ref_age_dist = np.array([1000, 1500, 2000, 1800, 1200])
     gender_strat = Stratification(
@@ -40,7 +40,7 @@ def simple_pop_constructor():
 
 
 @pytest.fixture
-def multi_pop_constructor():
+def multi_popcon():
     """Create PopulationConstructor with multiple stratifications."""
     ref_age_dist = np.array([1000, 1500, 2000, 1800, 1200])
     gender_strat = Stratification(
@@ -125,11 +125,11 @@ def test_template_normalization(simple_templates):
 # ===== Single Matrix Generation Tests =====
 
 
-def test_generate_single_basic(simple_templates, simple_pop_constructor):
+def test_generate_single_basic(simple_templates, simple_popcon):
     """Test basic single matrix generation."""
     generator = MatrixGenerator(simple_templates)
     M_dict = generator.generate_single(
-        simple_pop_constructor, mean_intensity=15.0, seed=42
+        simple_popcon, mean_intensity=15.0, seed=42
     )
     M = M_dict["All->All"]
 
@@ -145,16 +145,16 @@ def test_generate_single_basic(simple_templates, simple_pop_constructor):
     assert np.all(M >= 0), "All values should be non-negative"
 
 
-def test_generate_single_reciprocity(simple_templates, simple_pop_constructor):
+def test_generate_single_reciprocity(simple_templates, simple_popcon):
     """Test that reciprocity condition PM = (PM)^T is satisfied."""
     generator = MatrixGenerator(simple_templates)
     M_dict = generator.generate_single(
-        simple_pop_constructor, mean_intensity=15.0, seed=42
+        simple_popcon, mean_intensity=15.0, seed=42
     )
     M = M_dict["All->All"]
     M = M_dict["All->All"]
 
-    P = np.diag(simple_pop_constructor.ref_age_dist)
+    P = np.diag(simple_popcon.ref_age_dist)
     PM = P @ M
     PM_T = PM.T
 
@@ -163,23 +163,23 @@ def test_generate_single_reciprocity(simple_templates, simple_pop_constructor):
     ), "Reciprocity condition PM = (PM)^T not satisfied"
 
 
-def test_generate_single_reproducibility(simple_templates, simple_pop_constructor):
+def test_generate_single_reproducibility(simple_templates, simple_popcon):
     """Test that same seed produces same results."""
     generator = MatrixGenerator(simple_templates)
 
     M1_dict = generator.generate_single(
-        simple_pop_constructor, mean_intensity=15.0, seed=123
+        simple_popcon, mean_intensity=15.0, seed=123
     )
     M1 = M1_dict["All->All"]
     M2_dict = generator.generate_single(
-        simple_pop_constructor, mean_intensity=15.0, seed=123
+        simple_popcon, mean_intensity=15.0, seed=123
     )
     M2 = M2_dict["All->All"]
 
     assert np.allclose(M1, M2), "Same seed should produce identical matrices"
 
 
-def test_generate_single_different_seeds(simple_pop_constructor):
+def test_generate_single_different_seeds(simple_popcon):
     """Test that different seeds produce different results."""
     # Use random templates so different seeds will produce different mixtures
     np.random.seed(100)
@@ -192,27 +192,27 @@ def test_generate_single_different_seeds(simple_pop_constructor):
     generator = MatrixGenerator(templates)
 
     M1_dict = generator.generate_single(
-        simple_pop_constructor, mean_intensity=15.0, seed=111
+        simple_popcon, mean_intensity=15.0, seed=111
     )
     M1 = M1_dict["All->All"]
     M2_dict = generator.generate_single(
-        simple_pop_constructor, mean_intensity=15.0, seed=222
+        simple_popcon, mean_intensity=15.0, seed=222
     )
     M2 = M2_dict["All->All"]
 
     assert not np.allclose(M1, M2), "Different seeds should produce different matrices"
 
 
-def test_generate_single_scaling(simple_templates, simple_pop_constructor):
+def test_generate_single_scaling(simple_templates, simple_popcon):
     """Test that mean_intensity parameter affects matrix values."""
     generator = MatrixGenerator(simple_templates)
 
     M1_dict = generator.generate_single(
-        simple_pop_constructor, mean_intensity=10.0, seed=42
+        simple_popcon, mean_intensity=10.0, seed=42
     )
     M1 = M1_dict["All->All"]
     M2_dict = generator.generate_single(
-        simple_pop_constructor, mean_intensity=20.0, seed=42
+        simple_popcon, mean_intensity=20.0, seed=42
     )
     M2 = M2_dict["All->All"]
 
@@ -225,11 +225,11 @@ def test_generate_single_scaling(simple_templates, simple_pop_constructor):
 # ===== Partial Matrix Generation Tests =====
 
 
-def test_generate_partial_basic(simple_templates, simple_pop_constructor):
+def test_generate_partial_basic(simple_templates, simple_popcon):
     """Test basic partial matrix generation."""
     generator = MatrixGenerator(simple_templates)
     M_partial = generator.generate_partial(
-        simple_pop_constructor, mean_intensity=15.0, seed=42
+        simple_popcon, mean_intensity=15.0, seed=42
     )
 
     # Should have one matrix per stratum (2 for gender)
@@ -242,11 +242,11 @@ def test_generate_partial_basic(simple_templates, simple_pop_constructor):
         assert np.all(M >= 0), f"All values in matrix {key} should be non-negative"
 
 
-def test_generate_partial_reciprocity(simple_templates, simple_pop_constructor):
+def test_generate_partial_reciprocity(simple_templates, simple_popcon):
     """Test that partial matrices are properly normalized."""
     generator = MatrixGenerator(simple_templates)
     M_partial = generator.generate_partial(
-        simple_pop_constructor, mean_intensity=15.0, seed=42
+        simple_popcon, mean_intensity=15.0, seed=42
     )
 
     # For partial case, no reciprocity is enforced on deviation matrices
@@ -260,15 +260,15 @@ def test_generate_partial_reciprocity(simple_templates, simple_pop_constructor):
         assert avg_intensity > 0, f"Zero average intensity for {key}"
 
 
-def test_generate_partial_reproducibility(simple_templates, simple_pop_constructor):
+def test_generate_partial_reproducibility(simple_templates, simple_popcon):
     """Test reproducibility of partial matrix generation."""
     generator = MatrixGenerator(simple_templates)
 
     M1 = generator.generate_partial(
-        simple_pop_constructor, mean_intensity=15.0, seed=99
+        simple_popcon, mean_intensity=15.0, seed=99
     )
     M2 = generator.generate_partial(
-        simple_pop_constructor, mean_intensity=15.0, seed=99
+        simple_popcon, mean_intensity=15.0, seed=99
     )
 
     assert len(M1) == len(M2)
@@ -276,11 +276,11 @@ def test_generate_partial_reproducibility(simple_templates, simple_pop_construct
         assert np.allclose(M1[key], M2[key]), f"Matrix for {key} not reproducible"
 
 
-def test_generate_partial_multi_stratification(simple_templates, multi_pop_constructor):
+def test_generate_partial_multi_stratification(simple_templates, multi_popcon):
     """Test partial generation with multiple stratifications."""
     generator = MatrixGenerator(simple_templates)
     M_partial = generator.generate_partial(
-        multi_pop_constructor, mean_intensity=15.0, seed=42
+        multi_popcon, mean_intensity=15.0, seed=42
     )
 
     # Should have 2×2 = 4 strata
@@ -296,11 +296,11 @@ def test_generate_partial_multi_stratification(simple_templates, multi_pop_const
 # ===== Full Matrix Generation Tests =====
 
 
-def test_generate_full_basic(simple_templates, simple_pop_constructor):
+def test_generate_full_basic(simple_templates, simple_popcon):
     """Test basic full matrix generation."""
     generator = MatrixGenerator(simple_templates)
     M_full = generator.generate_full(
-        simple_pop_constructor, mean_intensity=15.0, seed=42
+        simple_popcon, mean_intensity=15.0, seed=42
     )
 
     # Should have 2×2 = 4 matrices for 2 strata
@@ -314,30 +314,30 @@ def test_generate_full_basic(simple_templates, simple_pop_constructor):
         assert np.all(M_full[key] >= 0)
 
 
-def test_generate_full_diagonal_symmetry(simple_templates, simple_pop_constructor):
+def test_generate_full_diagonal_symmetry(simple_templates, simple_popcon):
     """Test that diagonal blocks (within-stratum) are symmetric."""
     generator = MatrixGenerator(simple_templates)
     M_full = generator.generate_full(
-        simple_pop_constructor, mean_intensity=15.0, seed=42
+        simple_popcon, mean_intensity=15.0, seed=42
     )
 
     # For diagonal blocks, PM should be symmetric
     diagonal_keys = [("M->M", 0), ("F->F", 1)]
     for key, s in diagonal_keys:
         M_ss = M_full[key]
-        P_s = np.diag(simple_pop_constructor.P[s, :])
+        P_s = np.diag(simple_popcon.P[s, :])
         PM = P_s @ M_ss
         # Note: Due to numerical precision, we allow small tolerance
         assert np.allclose(PM, PM.T, atol=1e-6), f"Diagonal block {key} not symmetric"
 
 
 def test_generate_full_off_diagonal_reciprocity(
-    simple_templates, simple_pop_constructor
+    simple_templates, simple_popcon
 ):
     """Test reciprocity between off-diagonal blocks."""
     generator = MatrixGenerator(simple_templates)
     M_full = generator.generate_full(
-        simple_pop_constructor, mean_intensity=15.0, seed=42
+        simple_popcon, mean_intensity=15.0, seed=42
     )
 
     # Note: Due to the deviation normalization step, perfect reciprocity
@@ -363,23 +363,23 @@ def test_generate_full_off_diagonal_reciprocity(
         ), f"Matrices {key_st} and {key_ts} should differ"
 
 
-def test_generate_full_reproducibility(simple_templates, simple_pop_constructor):
+def test_generate_full_reproducibility(simple_templates, simple_popcon):
     """Test reproducibility of full matrix generation."""
     generator = MatrixGenerator(simple_templates)
 
-    M1 = generator.generate_full(simple_pop_constructor, mean_intensity=15.0, seed=333)
-    M2 = generator.generate_full(simple_pop_constructor, mean_intensity=15.0, seed=333)
+    M1 = generator.generate_full(simple_popcon, mean_intensity=15.0, seed=333)
+    M2 = generator.generate_full(simple_popcon, mean_intensity=15.0, seed=333)
 
     assert len(M1) == len(M2)
     for key in M1.keys():
         assert np.allclose(M1[key], M2[key]), f"Matrix for pair {key} not reproducible"
 
 
-def test_generate_full_multi_stratification(simple_templates, multi_pop_constructor):
+def test_generate_full_multi_stratification(simple_templates, multi_popcon):
     """Test full generation with multiple stratifications (2×2 strata)."""
     generator = MatrixGenerator(simple_templates)
     M_full = generator.generate_full(
-        multi_pop_constructor, mean_intensity=15.0, seed=42
+        multi_popcon, mean_intensity=15.0, seed=42
     )
 
     # Should have 4×4 = 16 matrices
@@ -395,26 +395,26 @@ def test_generate_full_multi_stratification(simple_templates, multi_pop_construc
         assert M.shape == (5, 5), f"Wrong shape for {key}"
 
 
-def test_deviation_normalization(simple_templates, simple_pop_constructor):
+def test_deviation_normalization(simple_templates, simple_popcon):
     """Test that deviations are normalized correctly."""
     generator = MatrixGenerator(simple_templates)
     M_full = generator.generate_full(
-        simple_pop_constructor, mean_intensity=15.0, seed=42
+        simple_popcon, mean_intensity=15.0, seed=42
     )
 
     # Get baseline matrix for comparison
     M_baseline_dict = generator.generate_single(
-        simple_pop_constructor, mean_intensity=15.0, seed=42
+        simple_popcon, mean_intensity=15.0, seed=42
     )
     M_baseline = M_baseline_dict["All->All"]
 
     # Convert to rates
-    P_global = np.diag(simple_pop_constructor.ref_age_dist)
+    P_global = np.diag(simple_popcon.ref_age_dist)
     P_global_inv = np.linalg.inv(P_global)
     Gamma_baseline = M_baseline @ P_global_inv
 
     # For each age pair, check weighted deviation sum
-    Q = simple_pop_constructor.Q
+    Q = simple_popcon.Q
     strat_keys = [(0, "M->M"), (0, "M->F"), (1, "F->M"), (1, "F->F")]
     for a in range(5):
         for b in range(5):
@@ -432,7 +432,7 @@ def test_deviation_normalization(simple_templates, simple_pop_constructor):
                     s_idx, t_idx = 1, 1
 
                 M_st = M_full[key]
-                P_t = simple_pop_constructor.P[t_idx, :]
+                P_t = simple_popcon.P[t_idx, :]
                 Gamma_st = M_st @ np.linalg.inv(np.diag(P_t))
 
                 weight = Q[s_idx, a] * Q[t_idx, b]

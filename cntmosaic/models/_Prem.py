@@ -635,7 +635,7 @@ class Prem:
 
         # Aggregate by age groups (and stratification if present)
         self.data = (
-            self.data.groupby(groupby_cols, observed=True)["y"].sum().reset_index()
+            self.data.groupby(groupby_cols, observed=False)["y"].sum().reset_index()
         )
 
         # Create stratification encoding

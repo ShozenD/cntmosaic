@@ -582,7 +582,7 @@ class SocialMixValidator:
                     strata_age_counts = self.part_data.data.groupby(
                         group_cols, observed=False
                     ).size()
-                    age_min_counts = strata_age_counts.groupby("age_grp_part").min()
+                    age_min_counts = strata_age_counts.groupby("age_grp_part", observed=False).min()
                     age_min_counts = age_min_counts.reindex(
                         pd.Index(self.part_data.data["age_grp_part"].cat.categories),
                         fill_value=0,

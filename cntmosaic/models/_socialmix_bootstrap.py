@@ -415,7 +415,7 @@ class SocialMixBootstrap:
         if self.K_cnt == 1:
             # No contact stratification: aggregate by (id, age_grp_cnt)
             df_agg = (
-                self.cnt_data.data.groupby(["id", "age_grp_cnt"], observed=True)["y"]
+                self.cnt_data.data.groupby(["id", "age_grp_cnt"], observed=False)["y"]
                 .sum()
                 .reset_index()
             )
@@ -432,7 +432,7 @@ class SocialMixBootstrap:
                 ["id"] + [f"{v}_cnt" for v in self.strat_vars_cnt] + ["age_grp_cnt"]
             )
             df_agg = (
-                self.cnt_data.data.groupby(group_cols, observed=True)["y"]
+                self.cnt_data.data.groupby(group_cols, observed=False)["y"]
                 .sum()
                 .reset_index()
             )

@@ -460,7 +460,7 @@ class ModelSummariserPrem:
         if pop_data.strat_var_cols:
             group_cols.extend(pop_data.strat_var_cols)
 
-        df_pop_agg = df_pop.groupby(group_cols, observed=True)["P"].sum().reset_index()
+        df_pop_agg = df_pop.groupby(group_cols, observed=False)["P"].sum().reset_index()
         df_pop_agg = df_pop_agg.rename(columns={"age_grp": "age"})
 
         # Convert age back to int (it's categorical from pd.cut)

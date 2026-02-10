@@ -1,53 +1,99 @@
-import pytest
-import jax.numpy as jnp
 import numpy as np
 import pandas as pd
+import pytest
+from jax.random import PRNGKey
+from numpyro.infer.autoguide import AutoNormal
 
-from ...dataloader import CoordToColumns, DataLoader
+from ...dataloader import DataLoader
 from .._BRCrefine import BRCrefine
+from ..priors import PSpline2D
+from .fixtures import (
+    single_coarse_large_sample,
+    single_coarse_large_sample_with_repeats,
+    single_small_sample,
+)
 
-def test_initialisation():
-    df_part = pd.DataFrame({
-        'id': [1, 2, 3],
-        'y': [1, 2, 3],
-        'N': [10, 20, 30],
-        'age_part': [0, 1, 2],
-        'age_grp_cnt': [
-            pd.Interval(0, 1, closed='left'),
-            pd.Interval(1, 5, closed='left'),
-            pd.Interval(5, 10, closed='left')
-        ],
-    })
-    
-    df_cnt = pd.DataFrame({
-        'id': [1, 2, 3],
-        'age_grp_cnt': [
-            pd.Interval(0, 1, closed='left'),
-            pd.Interval(1, 5, closed='left'),
-            pd.Interval(5, 10, closed='left')
-        ]
-    })
-    df_cnt['age_grp_cnt'] = pd.Categorical(df_cnt['age_grp_cnt'], ordered=True)
 
-    df_age_dist = pd.DataFrame({
-        'age': np.arange(0, 10),
-        'P': np.abs(np.random.rand(10))
-    })
-    
-    col_map = CoordToColumns(
-        id_var='id',
-        age_part='age_part',
-        age_grp_cnt='age_grp_cnt',
-        age_pop='age',
-        size_pop='P'
-    )
+# Test initialization
+class TestInit:
 
-    dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map)
-    model = BRCrefine(dataloader)
-    
-    # Offsets
-    assert jnp.array_equal(model.log_P, jnp.log(df_age_dist['P'].values)[jnp.newaxis,:])
-    
-    # Likelihood
-    assert model.likelihood == 'negbin'
-    
+    def test_single_coarse(self, single_coarse_large_sample):
+        part_data, cnt_data, pop_data = single_coarse_large_sample
+        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        model = BRCrefine(dataloader, likelihood="poisson")
+
+        assert len(model.y) > 0
+        assert len(model.aid) == len(model.y)
+        assert len(model.bid_pad) == len(model.y)
+        assert len(model.log_N) > 0
+        assert model.log_P.shape[1] == model.A
+        assert model.log_V.shape[0] == len(model.y)
+
+        model = BRCrefine(dataloader, likelihood="negbin")
+
+    def test_single_coarse_repeats(self, single_coarse_large_sample_with_repeats):
+        part_data, cnt_data, pop_data = single_coarse_large_sample_with_repeats
+        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        model = BRCrefine(dataloader, likelihood="poisson")
+
+        assert hasattr(model, "rid")
+        assert len(model.rid) == len(model.y)
+        assert model.hill.max_value == 4
+
+
+class TestModel:
+
+    def test_model_callable(self, single_coarse_large_sample):
+        """Test that model is callable"""
+        from numpyro.handlers import seed
+
+        part_data, cnt_data, pop_data = single_coarse_large_sample
+        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        priors = {"rate": PSpline2D(prior_type="global", M=5)}
+        model = BRCrefine(dataloader, priors, likelihood="negbin")
+
+        try:
+            with seed(rng_seed=0):
+                model.model(y=model.y)
+        except Exception as e:
+            pytest.fail(f"Model call raised exception: {e}")
+
+    def test_print_model_shape(self, single_coarse_large_sample):
+        """Test print_model_shape method."""
+        part_data, cnt_data, pop_data = single_coarse_large_sample
+        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        priors = {"rate": PSpline2D(prior_type="global", M=5)}
+        model = BRCrefine(dataloader, priors, likelihood="negbin")
+
+        try:
+            model.print_model_shape()
+        except Exception as e:
+            pytest.fail(f"print_model_shape raised exception: {e}")
+
+
+# Test inference
+class TestInference:
+
+    def test_svi_inference(self, single_coarse_large_sample):
+        part_data, cnt_data, pop_data = single_coarse_large_sample
+        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        priors = {"rate": PSpline2D(prior_type="global")}
+        model = BRCrefine(dataloader, priors, likelihood="negbin")
+
+        prng_key = PRNGKey(0)
+        guide = AutoNormal(model.model)
+        model.run_inference_svi(prng_key, guide, num_steps=1000, peak_lr=0.01)
+
+        assert model._svi_result is not None
+
+    # Test MCMC inference
+    def test_mcmc_inference(self, single_coarse_large_sample):
+        part_data, cnt_data, pop_data = single_coarse_large_sample
+        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        priors = {"rate": PSpline2D(prior_type="global")}
+        model = BRCrefine(dataloader, priors, likelihood="negbin")
+
+        prng_key = PRNGKey(1)
+        model.run_inference_mcmc(prng_key, num_warmup=10, num_samples=10, num_chains=1)
+
+        assert model._mcmc_result is not None

@@ -16,41 +16,12 @@ from numpy.typing import NDArray
 from numpyro import distributions as dist
 from numpyro.handlers import plate, scope
 
+from .._types import StratMode
 from ..dataloader import DataLoader
 from ._BRCrefine import BRCrefine
+from ._math import clr, inverse_clr, kron_sum_mode_1
 from ._utils import index_mask_logsumexp
 from .priors import Hill, Prior2D, PSpline2D
-
-
-def _expand_id_array(id_array: NDArray, length: int) -> NDArray:
-    """
-    Expand a 1D ID array by repeating each element along a new axis.
-
-    This helper function is used to broadcast participant-level categorical IDs
-    across the maximum coarse age group width for age aggregation.
-
-    Parameters
-    ----------
-    id_array : NDArray
-        1D array of categorical IDs, shape (n_obs,)
-    length : int
-        Number of repetitions along the new axis (typically max coarse age group width)
-
-    Returns
-    -------
-    NDArray
-        2D array with shape (n_obs, length) where each row contains repeated IDs
-
-    Examples
-    --------
-    >>> ids = np.array([0, 1, 0, 2])
-    >>> _expand_id_array(ids, 3)
-    array([[0, 0, 0],
-           [1, 1, 1],
-           [0, 0, 0],
-           [2, 2, 2]])
-    """
-    return np.repeat(id_array[:, np.newaxis], length, axis=1)
 
 
 class HiBRCrefine(BRCrefine):
@@ -115,15 +86,15 @@ class HiBRCrefine(BRCrefine):
         - bid_pad: padded contact age indices for coarse groups
         - log_N: log of survey sample sizes
         - log_P: log of overall population age distribution
-        - log_S: log of setting-specific offsets (optional)
+        - log_V: log of setting-specific offsets (optional)
         - rid: repeat interview indicators (optional)
-        - grp_vars: stratification variables (e.g., gender, setting)
-        - pop_prop_{var}: stratum-specific population proportions for each grp_var
+        - strat_vars: stratification variables (e.g., gender, setting)
+        - pop_prop_{var}: stratum-specific population proportions for each strat_var
     priors : dict
         Dictionary of prior specifications. Must contain:
         - 'rate': Prior2D for baseline smooth age-age contact rates
           (e.g., HSGP2D, PSpline2D)
-        - One Prior2D per stratification variable in grp_vars
+        - One Prior2D per stratification variable in strat_vars
           (e.g., 'gender', 'setting') for hierarchical deviations
     likelihood : str, default='negbin'
         Observation likelihood:
@@ -134,9 +105,9 @@ class HiBRCrefine(BRCrefine):
     ----------
     X_vars : list[str]
         Names of stratification variables (keys in priors except 'rate')
-    X_ids : dict[str, NDArray]
+    strat_ix : dict[str, NDArray]
         Categorical codes for each stratification variable, shape (n_obs,)
-    X_ids_exp : dict[str, NDArray]
+    strat_ix_exp : dict[str, NDArray]
         Expanded categorical codes for age aggregation, shape (n_obs, max_int_length)
     log_age_dist_props : dict[str, jax.Array]
         Log population proportions for each stratum, used to center deviations
@@ -144,14 +115,14 @@ class HiBRCrefine(BRCrefine):
     Raises
     ------
     ValueError
-        If priors don't match grp_vars in dataset
+        If priors don't match strat_vars in dataset
         If population proportions have incorrect shapes
         If required data fields are missing
 
     Notes
     -----
     Data Preparation Requirements:
-    1. DataLoader must include stratification via grp_vars_part in CoordToColumns
+    1. DataLoader must include stratification via strat_vars_part in CoordToColumns
     2. Must use age_grp_cnt (not age_cnt) for coarse contact ages
     3. Population data must include proportions for each stratum combination
 
@@ -176,8 +147,8 @@ class HiBRCrefine(BRCrefine):
     ...     age_part="age_part",
     ...     age_grp_cnt="age_grp_cnt",  # Coarse contact age groups
     ...     age_pop="age",
-    ...     size_pop="P",
-    ...     grp_vars_part=["gender"]  # Stratification variable
+    ...     P="P",
+    ...     strat_vars_part=["gender"]  # Stratification variable
     ... )
     >>> dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
     >>>
@@ -251,26 +222,11 @@ class HiBRCrefine(BRCrefine):
         # Initialize parent class (BRCrefine) - this calls BRC.__init__ internally
         super().__init__(dataloader, effective_priors, likelihood)
 
-        # Extract stratification variable names BEFORE validation
-        # (all priors except 'rate')
-        self.X_vars = [key for key in self.priors.keys() if key != "rate"]
+        # Override log_P for stratified case
+        self.log_P = jnp.array(self.data.base_data["log_P"])
 
         # Validate hierarchical-specific requirements
         self._validate_hierarchical_inputs()
-
-        # Encode categorical stratification variables as integer codes
-        self.X_ids = {
-            var: pd.Categorical(
-                self.ds[var].values, categories=sorted(set(self.ds[var].values))
-            ).codes
-            for var in self.X_vars
-        }
-
-        # Expand categorical IDs for age aggregation (repeat across max coarse age width)
-        self.X_ids_exp = {
-            var: _expand_id_array(self.X_ids[var], self.bid_pad.shape[1])
-            for var in self.X_vars
-        }
 
         # Configure prior dimensions based on dataset structure
         self.set_prior_event_dim()
@@ -278,13 +234,10 @@ class HiBRCrefine(BRCrefine):
         # Set prior locations centered on population proportions
         self.set_prior_loc()
 
-        # Compute log population proportions for each stratum
-        self.set_log_age_dist_props()
-
         # Optional: Set up repeat interview effects if present
-        if hasattr(self.ds, "rid"):
-            self.rid = jnp.array(self.ds.rid.values, dtype=jnp.int32)
-            self.hill = Hill(max_value=int(self.ds.rid.max()))
+        if self.data.base_data.get("rid") is not None:
+            self.rid = jnp.array(self.data.base_data["rid"], dtype=jnp.int32)
+            self.hill = Hill(max_value=int(self.data.base_data["rid"].max()))
 
     def _validate_hierarchical_inputs(self) -> None:
         """
@@ -306,59 +259,43 @@ class HiBRCrefine(BRCrefine):
         This validation ensures the hierarchical model is properly configured
         before inference begins, preventing cryptic errors later.
         """
-        # Check population proportions exist for each stratification variable
-        for var in self.X_vars:
-            pop_prop_key = f"pop_prop_{var}"
-            if not hasattr(self.ds, pop_prop_key):
+        # Check that 'rate' prior exists and has correct prior_type
+        if "rate" not in self.priors:
+            raise ValueError("'rate' prior must be provided in the priors dictionary.")
+
+        if self.priors["rate"].prior_type != "global":
+            raise ValueError(
+                f"'rate' prior_type must be 'global', but got '{self.priors['rate'].prior_type}'."
+            )
+
+        # Check that stratification variables match between priors and data
+        data_strat_vars = set(self.data.strat_data["modes"].keys())
+        prior_strat_vars = set(var for var in self.priors.keys() if var != "rate")
+
+        if prior_strat_vars != data_strat_vars:
+            raise ValueError(
+                f"Mismatch between stratification variables in priors and dataset.\n"
+                f"Priors contain: {sorted(prior_strat_vars)}\n"
+                f"Data strat_vars contain: {sorted(data_strat_vars)}\n"
+                f"They must match exactly."
+            )
+
+        # Check that each stratification prior has compatible prior_type
+        data_strat_modes = self.data.strat_data["modes"]
+        prior_strat_modes = {
+            var: self.priors[var].prior_type for var in prior_strat_vars
+        }
+        for var, mode in data_strat_modes.items():
+            prior_type = prior_strat_modes[var]
+            if mode == StratMode.PARTIAL and prior_type not in ["partial", "full"]:
                 raise ValueError(
-                    f"Missing population proportions for stratification variable '{var}'.\n"
-                    f"Expected dataset to have '{pop_prop_key}' attribute.\n"
-                    f"Ensure your DataLoader includes population data for this variable."
+                    f"Stratification variable '{var}' is PARTIAL but prior_type is "
+                    f"'{prior_type}'. Must be 'partial'."
                 )
-
-    def set_log_age_dist_props(self) -> None:
-        """
-        Compute log-transformed population age proportions for each stratum.
-
-        These proportions are used to center the stratum-specific deviations (δ_s)
-        around the population structure, ensuring that the model doesn't simply
-        learn the population age distribution.
-
-        The shape depends on the prior_type:
-        - prior_type='partial': (n_strata, A) - row/column-specific
-        - prior_type='full': (n_strata, A, A) - full matrix for each stratum
-
-        Raises
-        ------
-        ValueError
-            If population proportion shapes don't match expected dimensions
-
-        Notes
-        -----
-        The computed log proportions are stored in self.log_age_dist_props[var]
-        and are subtracted from the prior samples in sample_log_delta() to create
-        centered deviations.
-        """
-        self.log_age_dist_props = {}
-        for var in self.ds.attrs["grp_vars"].keys():
-            pop_prop = self.ds[f"pop_prop_{var}"].to_numpy()
-            expected_event_dim = self.priors[var].event_dim
-
-            # Check shape and apply appropriate transformation
-            if pop_prop.shape == (expected_event_dim, self.A):
-                # Partial prior: add trailing dimension for broadcasting
-                self.log_age_dist_props[var] = jnp.log(pop_prop)[:, :, jnp.newaxis]
-            elif pop_prop.shape == (expected_event_dim, self.A, self.A):
-                # Full prior: use as-is
-                self.log_age_dist_props[var] = jnp.log(pop_prop)
-            else:
+            if mode == StratMode.FULL and prior_type != "full":
                 raise ValueError(
-                    f"Invalid shape for population proportions of '{var}'.\n"
-                    f"Expected shape: ({expected_event_dim}, {self.A}) or "
-                    f"({expected_event_dim}, {self.A}, {self.A})\n"
-                    f"Got shape: {pop_prop.shape}\n"
-                    f"This mismatch may be due to incorrect prior_type or "
-                    f"malformed population data."
+                    f"Stratification variable '{var}' is FULL but prior_type is "
+                    f"'{prior_type}'. Must be 'full'."
                 )
 
     def set_prior_event_dim(self) -> None:
@@ -368,24 +305,28 @@ class HiBRCrefine(BRCrefine):
         The event dimension determines how many independent realizations of a prior
         are needed:
         - 'rate' prior: Always 1 (shared baseline across all strata)
-        - Stratification priors: Equal to number of categories in that variable
+        - Stratification priors: Equal to number of categories in that variable and
+            prior_type (e.g., PARTIAL or FULL).
 
-        For example, if gender has categories [male, female], then
+        For example, if gender has categories [male, female], and prior_type is 'partial', then
         priors['gender'].event_dim = 2.
-
-        Notes
-        -----
-        This method is called during initialization and should not be called manually.
-        The event_dim affects how samples are drawn from the prior and how they're
-        indexed during the model evaluation.
         """
         for var, prior in self.priors.items():
             if var == "rate":
                 prior.set_event_dim(1)  # Shared baseline
             else:
                 # Number of strata for this variable
-                n_strata = len(self.ds.grp_vars[var])
-                prior.set_event_dim(n_strata)
+                if self.data.strat_data["modes"][var] == StratMode.PARTIAL:
+                    n_strata = self.data.strat_data["dims"][var]
+                    prior.set_event_dim(n_strata)
+                elif self.data.strat_data["modes"][var] == StratMode.FULL:
+                    n_strata = self.data.strat_data["dims"][var]
+                    prior.set_event_dim(int(np.sqrt(n_strata)))
+                else:
+                    raise ValueError(
+                        f"Unknown stratification mode for variable '{var}': "
+                        f"{self.data.strat_data['modes'][var]}"
+                    )
 
     def set_prior_loc(self) -> None:
         """
@@ -407,45 +348,62 @@ class HiBRCrefine(BRCrefine):
         """
         for var, prior in self.priors.items():
             if var != "rate":
-                pop_prop_data = self.ds[f"pop_prop_{var}"].to_numpy()
-                prior.set_loc(pop_prop_data)
+                loc = clr(
+                    self.data.strat_data["marginal_multipliers"][var], axis=0
+                )  # Apply CLR transform
+                prior.set_loc(loc)
 
-    def sample_log_delta(self, var: str) -> ArrayLike:
+    def sample_log_delta(self) -> ArrayLike:
         """
         Sample stratum-specific log-scale deviations from population baseline.
 
         This method generates hierarchical adjustments for a given stratification
         variable by:
-        1. Sampling from the specified prior
-        2. Taking the log (if prior outputs are in probability space)
-        3. Centering around population proportions by subtracting log(P_s)
-
-        The result represents multiplicative deviations: δ_s = sample / P_s
+        1. Sampling from the specified prior and taking the log
+        2. Centering around population proportions by subtracting log(P_s)
 
         Parameters
         ----------
         var : str
-            Name of the stratification variable (must be in self.X_vars)
+            Name of the stratification variable
 
         Returns
         -------
         ArrayLike
             Log-scale deviations with shape depending on prior_type:
             - prior_type='partial': (n_strata, A, 1)
-            - prior_type='full': (n_strata, A, A)
-
-        Notes
-        -----
-        The returned values are registered as a deterministic site in NumPyro
-        with name 'log_delta', allowing posterior tracking.
+            - prior_type='full': (n_strata**2, A, A)
         """
-        log_delta = numpyro.deterministic(
-            "log_delta",
-            jnp.log(self.priors[var].sample()) - self.log_age_dist_props[var],
-        )
-        return log_delta
+        Omega = None
+        for var, prior in self.priors.items():
+            if var == "rate":
+                continue  # Skip baseline prior
 
-    def model(self, y: Optional[ArrayLike] = None) -> None:
+            # Use scope to ensure unique parameter names for each stratification variable
+            with scope(prefix=var):
+                if Omega is None:
+                    Omega = prior.sample()
+                else:
+                    # Recursively build Kronecker sum for multiple strat variables
+                    Omega = kron_sum_mode_1(Omega, prior.sample())
+
+        # Apply inverse CLR transformation
+        delta = inverse_clr(Omega)
+
+        return numpyro.deterministic(
+            "log_delta", jnp.log(delta) - jnp.log(self.data.strat_data["multipliers"])
+        )
+
+    def model(
+        self,
+        y: Optional[ArrayLike] = None,
+        aid_exp: Optional[ArrayLike] = None,
+        bid_pad: Optional[ArrayLike] = None,
+        flat_ix_exp: Optional[ArrayLike] = None,
+        log_N: Optional[ArrayLike] = None,
+        log_V: Optional[ArrayLike] = None,
+        rid: Optional[ArrayLike] = None,
+    ) -> None:
         """
         Define the hierarchical generative model with age refinement.
 
@@ -477,7 +435,7 @@ class HiBRCrefine(BRCrefine):
            The age aggregation happens here using index_mask_logsumexp:
            - Sums over fine ages b ∈ [b_l, b_u) within each coarse group
            - Uses aid_exp and bid_pad for indexing
-           - Applies stratum-specific adjustment (X_ids_exp)
+           - Applies stratum-specific adjustment (strat_ix_exp)
 
         6. **Total log contact intensity**:
            log(cint) = Σ_s contribution_s (sum over stratification variables)
@@ -521,69 +479,52 @@ class HiBRCrefine(BRCrefine):
         HiBRCfine.model : Hierarchical model without age aggregation
         index_mask_logsumexp : Age aggregation function
         """
-        # 1. Global baseline intercept
+        len_y = len(self.y) if y is None else len(y)
+        aid_exp = self.data.base_data["aid_exp"] if aid_exp is None else aid_exp
+        bid_pad = self.data.base_data["bid_pad"] if bid_pad is None else bid_pad
+        flat_ix_exp = (
+            self.data.strat_data["flat_ix_exp"] if flat_ix_exp is None else flat_ix_exp
+        )
+        log_N = self.log_N if log_N is None else log_N
+        log_V = self.log_V if log_V is None else log_V
+        rid = self.rid if hasattr(self, "rid") and rid is None else rid
+
+        # Baseline log rate
         beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
 
-        # 2. Shared smooth baseline function
+        # Shared rate
         with scope(prefix="rate"):
             f = self.priors["rate"].sample()
 
-        # 3. Log contact rate (fine-age resolution)
+        # Log contact rate
         log_rate = numpyro.deterministic("log_rate", beta0 + f)
 
-        # 4. Baseline contact intensity with population structure
-        log_cint_base = log_rate + self.log_P
-
-        # 5. Initialize total contact intensity (will accumulate stratum contributions)
-        log_cint = jnp.zeros(self.y.shape[0])
-
-        # 6. Add stratum-specific contributions with age aggregation
-        for var in self.X_vars:
-            with scope(prefix=var):
-                # Sample stratum-specific deviations centered on population
-                log_delta = self.sample_log_delta(var)
-
-                # Age aggregation: sum over coarse contact age groups with stratum indexing
-                # - aid_exp: expanded participant ages (n_obs, max_int_length)
-                # - bid_pad: padded contact ages (n_obs, max_int_length)
-                # - X_ids_exp[var]: expanded stratum IDs (n_obs, max_int_length)
-                # - log_cint_base: baseline intensity (1, A)
-                # - log_delta: stratum adjustments (n_strata, A, 1 or A, A)
-                #
-                # index_mask_logsumexp computes:
-                #   logsumexp(log_cint_base[aid_exp, bid_pad] +
-                #             log_delta[X_ids_exp, aid_exp, bid_pad])
-                # where invalid entries (bid_pad == -1) are masked with -inf
-                contribution = index_mask_logsumexp(
-                    log_cint_base + log_delta,
-                    self.aid_exp,
-                    self.bid_pad,
-                    self.X_ids_exp[var],
-                )
-
-                # Accumulate contribution (additive in log space)
-                log_cint += contribution
-
-        # 7. Optional repeat interview effect
-        repeat_effect = self.hill.sample()[self.rid] if hasattr(self, "rid") else 0.0
-
-        # 8. Expected number of contacts
-        mu = jnp.exp(
-            log_cint  # Aggregated contact intensity
-            + self.log_N  # Sample size adjustment
-            + self.log_S  # Setting offset
-            + repeat_effect  # Repeat interview correction
+        # Stratified contact intensity
+        log_delta = self.sample_log_delta()
+        log_cint_tensor = (
+            log_rate[jnp.newaxis, :, :]  # Shape (1, A, A)
+            + self.log_P[:, jnp.newaxis, :]  # Shape (K, 1, A)
+            + log_delta  # Shape (K, A, A)
         )
 
-        # 9. Observation likelihood
+        # Sum over fine ages within each coarse group using index_mask_logsumexp
+        log_cint = index_mask_logsumexp(log_cint_tensor, aid_exp, bid_pad, flat_ix_exp)
+
+        # Optional repeat interview effect
+        repeat_effect = self.hill.sample()[rid] if hasattr(self, "rid") else 0.0
+
+        # Expected number of contacts
+        mu = jnp.exp(log_cint + log_N + log_V + repeat_effect)
+
+        # Likelihood
         if self.likelihood == "poisson":
-            with plate("data", len(self.y)):
+            with plate("data", len_y):
                 numpyro.sample("obs", dist.Poisson(rate=mu), obs=y)
 
         if self.likelihood == "negbin":
             # Overdispersion parameter (smaller = more overdispersion)
             inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
-            with plate("data", len(self.y)):
+            with plate("data", len_y):
                 numpyro.sample(
                     "obs",
                     dist.NegativeBinomial2(mean=mu, concentration=1.0 / inv_disp),

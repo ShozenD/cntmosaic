@@ -1,10 +1,24 @@
-from typing import Dict, List, Optional, Tuple
+from __future__ import annotations
+
+from dataclasses import dataclass
+from itertools import product
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import pandas as pd
 from numpy.typing import NDArray
 
 from ._PopulationConstructor import PopulationConstructor
 from ._Stratification import Stratification
+
+
+@dataclass
+class _StratInfo:
+    """Lightweight stratification info extracted from DataFrame."""
+
+    name: str
+    n_strata: int
+    labels: List[str]
 
 
 class MatrixGenerator:
@@ -154,6 +168,188 @@ class MatrixGenerator:
             normalized[name] = T / mean_intensity if mean_intensity > 0 else T
         return normalized
 
+    def _preprocess_df(
+        self,
+        df: pd.DataFrame,
+        strat_var_cols: Optional[List[str]] = None,
+        age_col: str = "age",
+        pop_col: str = "P",
+    ) -> Tuple[NDArray, NDArray, NDArray, List[_StratInfo]]:
+        """
+        Preprocess a population DataFrame into arrays needed for matrix generation.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame containing population sizes with columns for age,
+            population size, and optionally stratification variables.
+        strat_var_cols : list of str, optional
+            Names of columns to use as stratification variables.
+            If None, all columns except age_col and pop_col are used.
+        age_col : str, default "age"
+            Name of the column containing age values.
+        pop_col : str, default "P"
+            Name of the column containing population sizes.
+
+        Returns
+        -------
+        ref_age_dist : NDArray
+            Reference age distribution (population counts by age). Shape: (n_ages,)
+        Q : NDArray
+            Population proportion matrix Q[s, a] = P(stratum=s | age=a).
+            Shape: (n_strata, n_ages)
+        P : NDArray
+            Population counts matrix P[s, a]. Shape: (n_strata, n_ages)
+        strat_infos : list of _StratInfo
+            Stratification metadata for each stratification variable.
+
+        Raises
+        ------
+        ValueError
+            If required columns are missing.
+        """
+        # Validate required columns
+        if age_col not in df.columns:
+            raise ValueError(f"Age column '{age_col}' not found in DataFrame")
+        if pop_col not in df.columns:
+            raise ValueError(f"Population column '{pop_col}' not found in DataFrame")
+
+        # Determine stratification variables
+        if strat_var_cols is None:
+            strat_var_cols = [c for c in df.columns if c not in [age_col, pop_col]]
+
+        for var in strat_var_cols:
+            if var not in df.columns:
+                raise ValueError(
+                    f"Stratification variable '{var}' not found in DataFrame"
+                )
+
+        # Get unique ages (sorted)
+        ages = np.sort(df[age_col].unique())
+        n_ages = len(ages)
+        age_to_idx = {age: idx for idx, age in enumerate(ages)}
+
+        # Handle case with no stratification variables
+        if len(strat_var_cols) == 0:
+            # Unstratified: single stratum
+            ref_age_dist = np.zeros(n_ages)
+            for _, row in df.iterrows():
+                age_idx = age_to_idx[row[age_col]]
+                ref_age_dist[age_idx] = row[pop_col]
+
+            Q = np.ones((1, n_ages))
+            P = ref_age_dist[np.newaxis, :]
+            strat_infos = []
+            return ref_age_dist, Q, P, strat_infos
+
+        # Get unique categories for each stratification variable
+        strat_categories = {var: sorted(df[var].unique()) for var in strat_var_cols}
+
+        # Create _StratInfo for each variable
+        strat_infos = [
+            _StratInfo(
+                name=var,
+                n_strata=len(strat_categories[var]),
+                labels=strat_categories[var],
+            )
+            for var in strat_var_cols
+        ]
+
+        # Build stratum tuples (all combinations)
+        strat_tuples = list(product(*[strat_categories[var] for var in strat_var_cols]))
+        n_strata = len(strat_tuples)
+
+        # Create mapping from stratum tuple to index
+        strat_to_idx = {tup: idx for idx, tup in enumerate(strat_tuples)}
+
+        # Build population matrix P[s, a]
+        P_matrix = np.zeros((n_strata, n_ages))
+
+        for _, row in df.iterrows():
+            age_idx = age_to_idx[row[age_col]]
+            strat_tuple = tuple(row[var] for var in strat_var_cols)
+            if strat_tuple in strat_to_idx:
+                strat_idx = strat_to_idx[strat_tuple]
+                P_matrix[strat_idx, age_idx] = row[pop_col]
+
+        # Compute reference age distribution (sum across strata)
+        ref_age_dist = P_matrix.sum(axis=0)
+
+        # Compute Q matrix: Q[s, a] = P[s, a] / sum_s(P[s, a])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            Q = P_matrix / ref_age_dist[np.newaxis, :]
+            # Set Q to uniform for ages with zero population
+            zero_pop_ages = ref_age_dist == 0
+            if zero_pop_ages.any():
+                Q[:, zero_pop_ages] = 1.0 / n_strata
+
+        return ref_age_dist, Q, P_matrix, strat_infos
+
+    def _get_stratum_label_from_infos(
+        self, stratum_idx: int, strat_infos: List[_StratInfo]
+    ) -> str:
+        """
+        Get stratum label from _StratInfo objects.
+
+        Parameters
+        ----------
+        stratum_idx : int
+            Global stratum index.
+        strat_infos : list of _StratInfo
+            Stratification metadata.
+
+        Returns
+        -------
+        str
+            Label for the stratum (e.g., "Male" or "Male_Urban").
+        """
+        if len(strat_infos) == 0:
+            return "All"
+
+        if len(strat_infos) == 1:
+            return strat_infos[0].labels[stratum_idx]
+
+        # Multiple stratifications: decode index
+        indices = self._decode_stratum_index_from_infos(stratum_idx, strat_infos)
+        labels = [strat_infos[j].labels[indices[j]] for j in range(len(strat_infos))]
+        return "_".join(labels)
+
+    def _decode_stratum_index_from_infos(
+        self, stratum_idx: int, strat_infos: List[_StratInfo]
+    ) -> List[int]:
+        """
+        Decode global stratum index into per-stratification category indices.
+
+        Parameters
+        ----------
+        stratum_idx : int
+            Global stratum index.
+        strat_infos : list of _StratInfo
+            Stratification metadata.
+
+        Returns
+        -------
+        list of int
+            Category indices [k_1, k_2, ..., k_J].
+        """
+        indices = []
+        remaining = stratum_idx
+
+        # Compute strides (in reverse order)
+        strides = []
+        stride = 1
+        for info in reversed(strat_infos):
+            strides.append(stride)
+            stride *= info.n_strata
+        strides = list(reversed(strides))
+
+        for j, info in enumerate(strat_infos):
+            idx = remaining // strides[j]
+            indices.append(idx)
+            remaining = remaining % strides[j]
+
+        return indices
+
     def _sample_mixture_weights(self, rng: np.random.Generator) -> NDArray:
         """
         Sample mixing weights from Dirichlet(1,1,1,1).
@@ -218,7 +414,7 @@ class MatrixGenerator:
 
     def generate_single(
         self,
-        pop_constructor: PopulationConstructor,
+        popcon: PopulationConstructor,
         mean_intensity: float = 15.0,
         seed: Optional[int] = None,
     ) -> Dict[str, NDArray]:
@@ -236,7 +432,7 @@ class MatrixGenerator:
 
         Parameters
         ----------
-        pop_constructor : PopulationConstructor
+        popcon : PopulationConstructor
             Population structure (stratifications are ignored for baseline)
         mean_intensity : float, default=15.0
             Average marginal contact intensity C
@@ -278,7 +474,78 @@ class MatrixGenerator:
         M = pattern * mean_intensity
 
         # Enforce reciprocity using global population
-        P_global = np.diag(pop_constructor.ref_age_dist)
+        P_global = np.diag(popcon.ref_age_dist)
+        M = self._enforce_reciprocity(M, P_global)
+
+        return {"All->All": M}
+
+    def generate_single_from_df(
+        self,
+        df: pd.DataFrame,
+        mean_intensity: float = 15.0,
+        seed: Optional[int] = None,
+        age_col: str = "age",
+        pop_col: str = "P",
+    ) -> Dict[str, NDArray]:
+        """
+        Generate global baseline contact intensity matrix from a DataFrame.
+
+        This is an alternative to `generate_single` that accepts a pandas
+        DataFrame directly instead of a PopulationConstructor.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame containing population sizes with columns for age and
+            population size.
+        mean_intensity : float, default=15.0
+            Average marginal contact intensity C.
+        seed : int, optional
+            Random seed for reproducibility.
+        age_col : str, default "age"
+            Name of the column containing age values.
+        pop_col : str, default "P"
+            Name of the column containing population sizes.
+
+        Returns
+        -------
+        dict
+            Dictionary with single key "All->All" mapping to contact intensity
+            matrix M (A, A).
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> from cntmosaic.sim import MatrixGenerator
+        >>> from cntmosaic.datasets import load_template_patterns
+
+        >>> templates = load_template_patterns('United_States', max_age=10)
+        >>> mg = MatrixGenerator(templates)
+
+        >>> df_pop = pd.DataFrame({
+        ...     'age': [0, 1, 2],
+        ...     'P': [1000, 1500, 2000]
+        ... })
+        >>> M_dict = mg.generate_single_from_df(df_pop, mean_intensity=15.0, seed=123)
+        >>> M_dict['All->All'].shape
+        (3, 3)
+        """
+        rng = np.random.default_rng(seed)
+
+        # Preprocess DataFrame (ignore stratification for baseline)
+        ref_age_dist, _, _, _ = self._preprocess_df(
+            df, strat_var_cols=[], age_col=age_col, pop_col=pop_col
+        )
+
+        # Sample mixture weights and create mixed pattern
+        weights = self._sample_mixture_weights(rng)
+        pattern = self._create_mixed_pattern(weights)
+
+        # Scale by mean intensity
+        M = pattern * mean_intensity
+
+        # Enforce reciprocity using global population
+        P_global = np.diag(ref_age_dist)
         M = self._enforce_reciprocity(M, P_global)
 
         return {"All->All": M}
@@ -288,6 +555,8 @@ class MatrixGenerator:
         strat_idx_pair: Tuple[int, int],
         eta: float,
         rng: np.random.Generator,
+        assortativity: float = 0.0,
+        intra_group: bool = False,
     ) -> NDArray:
         """
         Generate deviation matrix D^{k,l} for a stratification category pair.
@@ -324,7 +593,7 @@ class MatrixGenerator:
         E = log_T - mean_log_T
 
         # Apply scaling
-        D = np.exp(eta * E)
+        D = np.exp(eta * E + assortativity * intra_group)
 
         # Enforce reciprocity
         is_diagonal = k == ell
@@ -435,7 +704,7 @@ class MatrixGenerator:
 
     def generate_partial(
         self,
-        pop_constructor: PopulationConstructor,
+        popcon: PopulationConstructor,
         mean_intensity: float = 15.0,
         seed: Optional[int] = None,
     ) -> Dict[int, NDArray]:
@@ -453,7 +722,7 @@ class MatrixGenerator:
 
         Parameters
         ----------
-        pop_constructor : PopulationConstructor
+        popcon : PopulationConstructor
             Population structure with stratifications
         mean_intensity : float, default=15.0
             Average marginal contact intensity
@@ -493,18 +762,18 @@ class MatrixGenerator:
         weights = self._sample_mixture_weights(rng)
         pattern = self._create_mixed_pattern(weights)
         M_baseline = pattern * mean_intensity
-        P_global_diag = np.diag(pop_constructor.ref_age_dist)
+        P_global_diag = np.diag(popcon.ref_age_dist)
         M_baseline = self._enforce_reciprocity(M_baseline, P_global_diag)
         Gamma_baseline = M_baseline @ np.linalg.inv(P_global_diag)
 
         # Check if we have stratifications
-        if isinstance(pop_constructor.strats, Stratification):
-            strats = [pop_constructor.strats]
+        if isinstance(popcon.strats, Stratification):
+            strats = [popcon.strats]
         else:
-            strats = pop_constructor.strats
+            strats = popcon.strats
 
-        n_strata = pop_constructor.Q.shape[0]
-        Q = pop_constructor.Q
+        n_strata = popcon.Q.shape[0]
+        Q = popcon.Q
 
         # Sample eta for each stratification variable
         eta_values = {strat.name: rng.uniform(0, 1) for strat in strats}
@@ -571,10 +840,146 @@ class MatrixGenerator:
 
         return partial_matrices
 
+    def generate_partial_from_df(
+        self,
+        df: pd.DataFrame,
+        strat_var_cols: Optional[List[str]] = None,
+        mean_intensity: float = 15.0,
+        seed: Optional[int] = None,
+        age_col: str = "age",
+        pop_col: str = "P",
+    ) -> Dict[str, NDArray]:
+        """
+        Generate partial contact matrices from a DataFrame.
+
+        This is an alternative to `generate_partial` that accepts a pandas
+        DataFrame directly instead of a PopulationConstructor.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame containing population sizes with columns for age,
+            population size, and stratification variables.
+        strat_var_cols : list of str, optional
+            Names of columns to use as stratification variables.
+            If None, all columns except age_col and pop_col are used.
+        mean_intensity : float, default=15.0
+            Average marginal contact intensity.
+        seed : int, optional
+            Random seed for reproducibility.
+        age_col : str, default "age"
+            Name of the column containing age values.
+        pop_col : str, default "P"
+            Name of the column containing population sizes.
+
+        Returns
+        -------
+        dict
+            Maps stratum label to contact intensity matrix {"label->All": M^s}.
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> from cntmosaic.sim import MatrixGenerator
+        >>> from cntmosaic.datasets import load_template_patterns
+
+        >>> templates = load_template_patterns('United_States', max_age=10)
+        >>> mg = MatrixGenerator(templates)
+
+        >>> df_pop = pd.DataFrame({
+        ...     'age': [0, 0, 1, 1, 2, 2],
+        ...     'gender': ['Male', 'Female', 'Male', 'Female', 'Male', 'Female'],
+        ...     'P': [500, 500, 750, 750, 1000, 1000]
+        ... })
+        >>> M_partial = mg.generate_partial_from_df(
+        ...     df_pop, strat_var_cols=['gender'], mean_intensity=15.0, seed=123
+        ... )
+        >>> list(M_partial.keys())
+        ['Female->All', 'Male->All']
+        """
+        rng = np.random.default_rng(seed)
+
+        # Preprocess DataFrame
+        ref_age_dist, Q, P_matrix, strat_infos = self._preprocess_df(
+            df, strat_var_cols=strat_var_cols, age_col=age_col, pop_col=pop_col
+        )
+
+        n_strata = Q.shape[0]
+        n_ages = len(ref_age_dist)
+
+        # Generate baseline matrix and convert to rates
+        weights = self._sample_mixture_weights(rng)
+        pattern = self._create_mixed_pattern(weights)
+        M_baseline = pattern * mean_intensity
+        P_global_diag = np.diag(ref_age_dist)
+        M_baseline = self._enforce_reciprocity(M_baseline, P_global_diag)
+        Gamma_baseline = M_baseline @ np.linalg.inv(P_global_diag)
+
+        # Handle unstratified case
+        if len(strat_infos) == 0:
+            return {"All->All": M_baseline}
+
+        # Sample eta for each stratification variable
+        eta_values = {info.name: rng.uniform(0, 1) for info in strat_infos}
+
+        # Generate deviation matrices for each stratification variable (diagonal only)
+        deviation_matrices_by_strat = {}
+        for info in strat_infos:
+            eta = eta_values[info.name]
+            dev_dict = {}
+            for k in range(info.n_strata):
+                # For partial, diagonal deviations only, NO reciprocity enforcement
+                weights = self._sample_mixture_weights(rng)
+                T = self._create_mixed_pattern(weights)
+
+                # Center in log-space
+                log_T = np.log(T + 1e-10)
+                mean_log_T = log_T.mean()
+                E = log_T - mean_log_T
+
+                # Apply scaling (no reciprocity for partial case)
+                D = np.exp(eta * E)
+                dev_dict[k] = D
+            deviation_matrices_by_strat[info.name] = dev_dict
+
+        # Combine deviations for each stratum
+        d_all = {}
+        for s in range(n_strata):
+            # Get stratification indices for this stratum
+            if len(strat_infos) == 1:
+                strat_indices = [s]
+            else:
+                strat_indices = self._decode_stratum_index_from_infos(s, strat_infos)
+
+            # Combine deviations across stratification variables
+            deviation_list = [
+                deviation_matrices_by_strat[info.name][strat_indices[j]]
+                for j, info in enumerate(strat_infos)
+            ]
+            d_all[s] = self._combine_deviations(deviation_list)
+
+        # Normalize deviations
+        d_array = np.zeros((n_strata, n_ages, n_ages))
+        for s in range(n_strata):
+            d_array[s, :, :] = d_all[s]
+
+        denominator = (d_array * Q[:, :, None]).sum(axis=0)
+        delta_array = d_array / denominator[None, :, :]
+
+        # Compute stratified contact intensities
+        partial_matrices = {}
+        for s in range(n_strata):
+            M_s = (Gamma_baseline * delta_array[s, :, :]) @ P_global_diag
+            label = self._get_stratum_label_from_infos(s, strat_infos)
+            partial_matrices[f"{label}->All"] = M_s
+
+        return partial_matrices
+
     def generate_full(
         self,
-        pop_constructor: PopulationConstructor,
+        popcon: PopulationConstructor,
         mean_intensity: float = 15.0,
+        assortativity: float = 0.0,
         seed: Optional[int] = None,
     ) -> Dict[Tuple[int, int], NDArray]:
         """
@@ -593,7 +998,7 @@ class MatrixGenerator:
 
         Parameters
         ----------
-        pop_constructor : PopulationConstructor
+        popcon : PopulationConstructor
             Population structure with stratifications
         mean_intensity : float, default=15.0
             Average marginal contact intensity
@@ -634,18 +1039,18 @@ class MatrixGenerator:
         weights = self._sample_mixture_weights(rng)
         pattern = self._create_mixed_pattern(weights)
         M_baseline = pattern * mean_intensity
-        P_global_diag = np.diag(pop_constructor.ref_age_dist)
+        P_global_diag = np.diag(popcon.ref_age_dist)
         M_baseline = self._enforce_reciprocity(M_baseline, P_global_diag)
         Gamma_baseline = M_baseline @ np.linalg.inv(P_global_diag)
 
         # Get stratification structure
-        if isinstance(pop_constructor.strats, Stratification):
-            strats = [pop_constructor.strats]
+        if isinstance(popcon.strats, Stratification):
+            strats = [popcon.strats]
         else:
-            strats = pop_constructor.strats
+            strats = popcon.strats
 
-        n_strata = pop_constructor.Q.shape[0]
-        Q = pop_constructor.Q
+        n_strata = popcon.Q.shape[0]
+        Q = popcon.Q
 
         # Sample eta for each stratification variable
         eta_values = {strat.name: rng.uniform(0, 1) for strat in strats}
@@ -667,7 +1072,9 @@ class MatrixGenerator:
 
                     if k == ell:
                         # Diagonal: enforce symmetry
-                        D = self._generate_deviation_matrix((k, ell), eta, rng)
+                        D = self._generate_deviation_matrix(
+                            (k, ell), eta, rng, assortativity, True
+                        )
                         dev_dict[(k, ell)] = D
                         generated_pairs.add((k, ell))
                     else:
@@ -708,11 +1115,164 @@ class MatrixGenerator:
         M_full = {}
         for s in range(n_strata):
             for t in range(n_strata):
-                P_t = np.diag(pop_constructor.P[t, :])
+                P_t = np.diag(popcon.P[t, :])
                 # Element-wise multiplication, then matrix multiply
                 M_st = (Gamma_baseline * delta_all[(s, t)]) @ P_t
                 label_s = self._get_stratum_label(s, strats)
                 label_t = self._get_stratum_label(t, strats)
+                M_full[f"{label_s}->{label_t}"] = M_st
+
+        return M_full
+
+    def generate_full_from_df(
+        self,
+        df: pd.DataFrame,
+        strat_var_cols: Optional[List[str]] = None,
+        mean_intensity: float = 15.0,
+        assortativity: float = 0.0,
+        seed: Optional[int] = None,
+        age_col: str = "age",
+        pop_col: str = "P",
+    ) -> Dict[str, NDArray]:
+        """
+        Generate full stratified contact matrices from a DataFrame.
+
+        This is an alternative to `generate_full` that accepts a pandas
+        DataFrame directly instead of a PopulationConstructor.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame containing population sizes with columns for age,
+            population size, and stratification variables.
+        strat_var_cols : list of str, optional
+            Names of columns to use as stratification variables.
+            If None, all columns except age_col and pop_col are used.
+        mean_intensity : float, default=15.0
+            Average marginal contact intensity.
+        assortativity : float, default=0.0
+            Assortativity parameter for intra-group contacts.
+        seed : int, optional
+            Random seed for reproducibility.
+        age_col : str, default "age"
+            Name of the column containing age values.
+        pop_col : str, default "P"
+            Name of the column containing population sizes.
+
+        Returns
+        -------
+        dict
+            Maps "source_label->target_label" to contact intensity matrix.
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> from cntmosaic.sim import MatrixGenerator
+        >>> from cntmosaic.datasets import load_template_patterns
+
+        >>> templates = load_template_patterns('United_States', max_age=10)
+        >>> mg = MatrixGenerator(templates)
+
+        >>> df_pop = pd.DataFrame({
+        ...     'age': [0, 0, 1, 1, 2, 2],
+        ...     'gender': ['Male', 'Female', 'Male', 'Female', 'Male', 'Female'],
+        ...     'P': [500, 500, 750, 750, 1000, 1000]
+        ... })
+        >>> M_full = mg.generate_full_from_df(
+        ...     df_pop, strat_var_cols=['gender'], mean_intensity=15.0, seed=123
+        ... )
+        >>> sorted(M_full.keys())
+        ['Female->Female', 'Female->Male', 'Male->Female', 'Male->Male']
+        """
+        rng = np.random.default_rng(seed)
+
+        # Preprocess DataFrame
+        ref_age_dist, Q, P_matrix, strat_infos = self._preprocess_df(
+            df, strat_var_cols=strat_var_cols, age_col=age_col, pop_col=pop_col
+        )
+
+        n_strata = Q.shape[0]
+        n_ages = len(ref_age_dist)
+
+        # Generate baseline matrix and convert to rates
+        weights = self._sample_mixture_weights(rng)
+        pattern = self._create_mixed_pattern(weights)
+        M_baseline = pattern * mean_intensity
+        P_global_diag = np.diag(ref_age_dist)
+        M_baseline = self._enforce_reciprocity(M_baseline, P_global_diag)
+        Gamma_baseline = M_baseline @ np.linalg.inv(P_global_diag)
+
+        # Handle unstratified case
+        if len(strat_infos) == 0:
+            return {"All->All": M_baseline}
+
+        # Sample eta for each stratification variable
+        eta_values = {info.name: rng.uniform(0, 1) for info in strat_infos}
+
+        # Generate all deviation matrices for each stratification variable
+        deviation_matrices_by_strat = {}
+        for info in strat_infos:
+            eta = eta_values[info.name]
+            dev_dict = {}
+
+            # Generate deviation matrices for all category pairs
+            generated_pairs = set()
+
+            for k in range(info.n_strata):
+                for ell in range(info.n_strata):
+                    if (k, ell) in generated_pairs:
+                        continue
+
+                    if k == ell:
+                        # Diagonal: enforce symmetry
+                        D = self._generate_deviation_matrix(
+                            (k, ell), eta, rng, assortativity, True
+                        )
+                        dev_dict[(k, ell)] = D
+                        generated_pairs.add((k, ell))
+                    else:
+                        # Off-diagonal: generate D^{k,l}, then set D^{l,k} = D^{k,l}.T
+                        D_kl = self._generate_deviation_matrix((k, ell), eta, rng)
+                        dev_dict[(k, ell)] = D_kl
+                        dev_dict[(ell, k)] = D_kl.T
+                        generated_pairs.add((k, ell))
+                        generated_pairs.add((ell, k))
+
+            deviation_matrices_by_strat[info.name] = dev_dict
+
+        # Combine deviations for all stratum pairs
+        d_all = {}
+        for s in range(n_strata):
+            for t in range(n_strata):
+                # Get stratification indices for each stratum
+                if len(strat_infos) == 1:
+                    s_indices = [s]
+                    t_indices = [t]
+                else:
+                    s_indices = self._decode_stratum_index_from_infos(s, strat_infos)
+                    t_indices = self._decode_stratum_index_from_infos(t, strat_infos)
+
+                # Combine deviations across stratification variables
+                deviation_list = [
+                    deviation_matrices_by_strat[info.name][
+                        (s_indices[j], t_indices[j])
+                    ]
+                    for j, info in enumerate(strat_infos)
+                ]
+                d_all[(s, t)] = self._combine_deviations(deviation_list)
+
+        # Normalize deviations
+        delta_all = self._normalize_deviations(d_all, Q)
+
+        # Compute stratified contact intensities: m^{s,t} = \gamma \delta^{s,t} P^t
+        M_full = {}
+        for s in range(n_strata):
+            for t in range(n_strata):
+                P_t = np.diag(P_matrix[t, :])
+                # Element-wise multiplication, then matrix multiply
+                M_st = (Gamma_baseline * delta_all[(s, t)]) @ P_t
+                label_s = self._get_stratum_label_from_infos(s, strat_infos)
+                label_t = self._get_stratum_label_from_infos(t, strat_infos)
                 M_full[f"{label_s}->{label_t}"] = M_st
 
         return M_full

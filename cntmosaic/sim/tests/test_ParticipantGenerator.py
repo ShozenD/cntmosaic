@@ -23,10 +23,10 @@ def test_single_stratification():
     )
 
     # Build population constructor
-    pop_constructor = PopulationConstructor(gender_strat)
+    popcon = PopulationConstructor(gender_strat)
 
     # Generate participants
-    pg = ParticipantGenerator(pop_constructor, n_part=1000)
+    pg = ParticipantGenerator(popcon, n_part=1000)
     df_part = pg.generate(seed=123)
 
     # Check the shape of the generated DataFrame
@@ -83,10 +83,10 @@ def test_multiple_stratifications():
     )
 
     # Build joint population
-    pop_constructor = PopulationConstructor([gender_strat, region_strat])
+    popcon = PopulationConstructor([gender_strat, region_strat])
 
     # Generate participants
-    pg = ParticipantGenerator(pop_constructor, n_part=2000)
+    pg = ParticipantGenerator(popcon, n_part=2000)
     df_part = pg.generate(seed=456)
 
     # Check the shape - should have id, age, gender, region
@@ -135,12 +135,12 @@ def test_reproducibility_with_seed():
         seed=100,
     )
 
-    pop_constructor = PopulationConstructor(gender_strat)
+    popcon = PopulationConstructor(gender_strat)
 
-    pg1 = ParticipantGenerator(pop_constructor, n_part=500)
+    pg1 = ParticipantGenerator(popcon, n_part=500)
     df_part1 = pg1.generate(seed=12345)
 
-    pg2 = ParticipantGenerator(pop_constructor, n_part=500)
+    pg2 = ParticipantGenerator(popcon, n_part=500)
     df_part2 = pg2.generate(seed=12345)
 
     # Check that the generated data is identical
@@ -161,12 +161,12 @@ def test_different_seeds_produce_different_results():
         seed=100,
     )
 
-    pop_constructor = PopulationConstructor(gender_strat)
+    popcon = PopulationConstructor(gender_strat)
 
-    pg1 = ParticipantGenerator(pop_constructor, n_part=500)
+    pg1 = ParticipantGenerator(popcon, n_part=500)
     df_part1 = pg1.generate(seed=111)
 
-    pg2 = ParticipantGenerator(pop_constructor, n_part=500)
+    pg2 = ParticipantGenerator(popcon, n_part=500)
     df_part2 = pg2.generate(seed=222)
 
     # Check that the generated data is different
@@ -189,15 +189,15 @@ def test_invalid_n_part():
         seed=42,
     )
 
-    pop_constructor = PopulationConstructor(gender_strat)
+    popcon = PopulationConstructor(gender_strat)
 
     # Test with n_part=0
     with pytest.raises(ValueError, match="n_part must be positive"):
-        pg = ParticipantGenerator(pop_constructor, n_part=0)
+        pg = ParticipantGenerator(popcon, n_part=0)
 
     # Test with negative n_part
     with pytest.raises(ValueError, match="n_part must be positive"):
-        pg = ParticipantGenerator(pop_constructor, n_part=-10)
+        pg = ParticipantGenerator(popcon, n_part=-10)
 
 
 def test_invalid_input_types():
@@ -220,10 +220,10 @@ def test_age_distribution_matches_population():
         seed=42,
     )
 
-    pop_constructor = PopulationConstructor(gender_strat)
+    popcon = PopulationConstructor(gender_strat)
 
     # Generate large sample
-    pg = ParticipantGenerator(pop_constructor, n_part=10000)
+    pg = ParticipantGenerator(popcon, n_part=10000)
     df_part = pg.generate(seed=789)
 
     # Check that age distribution approximates population
@@ -253,14 +253,14 @@ def test_conditional_stratum_sampling():
         seed=50,
     )
 
-    pop_constructor = PopulationConstructor(gender_strat)
+    popcon = PopulationConstructor(gender_strat)
 
     # Generate participants
-    pg = ParticipantGenerator(pop_constructor, n_part=3000)
+    pg = ParticipantGenerator(popcon, n_part=3000)
     df_part = pg.generate(seed=999)
 
     # Check Q matrix structure
-    Q = pop_constructor.Q
+    Q = popcon.Q
     assert Q.shape == (2, 3), "Q should have shape (n_strata, n_ages)"
 
     # Each column should sum to 1 (probabilities for each age)
@@ -285,8 +285,8 @@ def test_column_order():
         seed=42,
     )
 
-    pop_constructor = PopulationConstructor(gender_strat)
-    pg = ParticipantGenerator(pop_constructor, n_part=100)
+    popcon = PopulationConstructor(gender_strat)
+    pg = ParticipantGenerator(popcon, n_part=100)
     df_part = pg.generate(seed=1)
 
     # Check column order: id, age, then stratification variables
@@ -324,10 +324,10 @@ def test_three_way_stratification():
     )
 
     # Build joint population
-    pop_constructor = PopulationConstructor([gender_strat, region_strat, ses_strat])
+    popcon = PopulationConstructor([gender_strat, region_strat, ses_strat])
 
     # Generate participants
-    pg = ParticipantGenerator(pop_constructor, n_part=1000)
+    pg = ParticipantGenerator(popcon, n_part=1000)
     df_part = pg.generate(seed=500)
 
     # Check columns

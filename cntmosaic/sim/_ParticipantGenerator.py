@@ -1,4 +1,7 @@
-from typing import Dict, Optional, Tuple, Union
+from __future__ import annotations
+
+from itertools import product
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -24,7 +27,7 @@ class ParticipantGenerator:
 
     Parameters
     ----------
-    pop_constructor : PopulationConstructor
+    popcon : PopulationConstructor
         Population structure defining stratifications and age distributions.
         Contains the reference age distribution and proportion matrix Q.
     n_part : int
@@ -32,7 +35,7 @@ class ParticipantGenerator:
 
     Attributes
     ----------
-    pop_constructor : PopulationConstructor
+    popcon : PopulationConstructor
         The population constructor with stratification information.
     n_part : int
         Total sample size.
@@ -70,10 +73,10 @@ class ParticipantGenerator:
     ... )
 
     >>> # Build population constructor
-    >>> pop_constructor = PopulationConstructor(gender_strat)
+    >>> popcon = PopulationConstructor(gender_strat)
 
     >>> # Generate 1000 participants
-    >>> pg = ParticipantGenerator(pop_constructor, n_part=1000)
+    >>> pg = ParticipantGenerator(popcon, n_part=1000)
     >>> df_participants = pg.generate(seed=123)
 
     >>> print(df_participants.head())
@@ -113,10 +116,10 @@ class ParticipantGenerator:
     ... )
 
     >>> # Build joint population
-    >>> pop_constructor = PopulationConstructor([gender_strat, region_strat])
+    >>> popcon = PopulationConstructor([gender_strat, region_strat])
 
     >>> # Generate participants
-    >>> pg = ParticipantGenerator(pop_constructor, n_part=2000)
+    >>> pg = ParticipantGenerator(popcon, n_part=2000)
     >>> df_participants = pg.generate(seed=456)
 
     >>> print(df_participants.head())
@@ -149,13 +152,13 @@ class ParticipantGenerator:
     structure defined by the PopulationConstructor.
     """
 
-    def __init__(self, pop_constructor: PopulationConstructor, n_part: int) -> None:
+    def __init__(self, popcon: PopulationConstructor, n_part: int) -> None:
         """
         Initialize ParticipantGenerator with population structure.
 
         Parameters
         ----------
-        pop_constructor : PopulationConstructor
+        popcon : PopulationConstructor
             Population structure defining stratifications and age distributions.
         n_part : int
             Total number of participants to generate. Must be positive.
@@ -165,31 +168,229 @@ class ParticipantGenerator:
         ValueError
             If n_part is not positive.
         TypeError
-            If pop_constructor is not a PopulationConstructor instance.
+            If popcon is not a PopulationConstructor instance.
         """
-        if not isinstance(pop_constructor, PopulationConstructor):
-            raise TypeError(
-                f"pop_constructor must be PopulationConstructor, got {type(pop_constructor)}"
-            )
+        if not isinstance(popcon, PopulationConstructor):
+            raise TypeError(f"popcon must be PopulationConstructor, got {type(popcon)}")
 
         if n_part <= 0:
             raise ValueError(f"n_part must be positive, got {n_part}")
 
-        self.pop_constructor = pop_constructor
+        self.popcon = popcon
         self.n_part = n_part
 
         # Extract population structure
         self._extract_population_structure()
 
+    @classmethod
+    def from_df(
+        cls,
+        df: pd.DataFrame,
+        n_part: int,
+        strat_var_cols: Optional[List[str]] = None,
+        age_col: str = "age",
+        pop_col: str = "P",
+    ) -> ParticipantGenerator:
+        """
+        Create a ParticipantGenerator from a DataFrame with population sizes.
+
+        This alternative constructor allows initialization directly from a
+        DataFrame containing population counts by age and stratification
+        variables, without needing to create Stratification and
+        PopulationConstructor objects.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame containing population sizes. Must have:
+            - An age column (default: "age")
+            - A population size column (default: "P")
+            - Zero or more stratification variable columns
+        n_part : int
+            Total number of participants to generate. Must be positive.
+        strat_var_cols : list of str, optional
+            Names of columns to use as stratification variables.
+            If None, all columns except age_col and pop_col are used.
+        age_col : str, default "age"
+            Name of the column containing age values.
+        pop_col : str, default "P"
+            Name of the column containing population sizes.
+
+        Returns
+        -------
+        ParticipantGenerator
+            Initialized generator ready to produce participant samples.
+
+        Raises
+        ------
+        ValueError
+            If required columns are missing or if n_part is not positive.
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> import numpy as np
+        >>> from cntmosaic.sim import ParticipantGenerator
+
+        >>> # Create population DataFrame
+        >>> df_pop = pd.DataFrame({
+        ...     'age': [0, 0, 1, 1, 2, 2],
+        ...     'gender': ['Male', 'Female', 'Male', 'Female', 'Male', 'Female'],
+        ...     'P': [100, 110, 150, 160, 120, 130]
+        ... })
+
+        >>> # Create generator from DataFrame
+        >>> pg = ParticipantGenerator.from_df(df_pop, n_part=500, strat_var_cols=['gender'])
+        >>> df_participants = pg.generate(seed=42)
+
+        >>> print(df_participants.head())
+           id  age  gender
+        0   1    1  Female
+        1   2    2  Female
+        2   3    1    Male
+        3   4    0  Female
+        4   5    2    Male
+
+        Notes
+        -----
+        The DataFrame should have one row per (age, stratum) combination.
+        The population proportion matrix Q is computed as:
+        Q[s, a] = P[s, a] / sum_s(P[s, a])
+
+        This represents the probability of being in stratum s given age a.
+        """
+        if n_part <= 0:
+            raise ValueError(f"n_part must be positive, got {n_part}")
+
+        # Validate required columns
+        if age_col not in df.columns:
+            raise ValueError(f"Age column '{age_col}' not found in DataFrame")
+        if pop_col not in df.columns:
+            raise ValueError(f"Population column '{pop_col}' not found in DataFrame")
+
+        # Determine stratification variables
+        if strat_var_cols is None:
+            strat_var_cols = [c for c in df.columns if c not in [age_col, pop_col]]
+
+        for var in strat_var_cols:
+            if var not in df.columns:
+                raise ValueError(
+                    f"Stratification variable '{var}' not found in DataFrame"
+                )
+
+        # Create instance without calling __init__
+        instance = cls.__new__(cls)
+        instance.popcon = None  # No PopulationConstructor in this mode
+        instance.n_part = n_part
+
+        # Extract population structure from DataFrame
+        instance._extract_population_structure_from_df(
+            df, strat_var_cols, age_col, pop_col
+        )
+
+        return instance
+
+    def _extract_population_structure_from_df(
+        self,
+        df: pd.DataFrame,
+        strat_var_cols: List[str],
+        age_col: str,
+        pop_col: str,
+    ) -> None:
+        """
+        Extract population structure from a DataFrame.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame with population sizes.
+        strat_var_cols : list of str
+            Names of stratification variable columns.
+        age_col : str
+            Name of age column.
+        pop_col : str
+            Name of population size column.
+        """
+        # Get unique ages (sorted)
+        ages = np.sort(df[age_col].unique())
+        self.n_ages = len(ages)
+        age_to_idx = {age: idx for idx, age in enumerate(ages)}
+
+        # Handle case with no stratification variables
+        if len(strat_var_cols) == 0:
+            # Unstratified: single stratum
+            self.n_strata = 1
+            self.strat_names = []
+            self.strat_labels = [()]
+            self.is_multi_strat = False
+
+            # Global age distribution
+            ref_age_dist = np.zeros(self.n_ages)
+            for _, row in df.iterrows():
+                age_idx = age_to_idx[row[age_col]]
+                ref_age_dist[age_idx] = row[pop_col]
+
+            self.global_age_dist = ref_age_dist / ref_age_dist.sum()
+
+            # Q matrix is trivially all ones (single stratum)
+            self.Q = np.ones((1, self.n_ages))
+            return
+
+        # Get unique categories for each stratification variable
+        strat_categories = {var: sorted(df[var].unique()) for var in strat_var_cols}
+
+        # Build stratum labels as tuples (for multiple vars) or single values
+        if len(strat_var_cols) == 1:
+            self.is_multi_strat = False
+            self.strat_names = strat_var_cols
+            self.strat_labels = strat_categories[strat_var_cols[0]]
+            strat_tuples = [(cat,) for cat in self.strat_labels]
+        else:
+            self.is_multi_strat = True
+            self.strat_names = strat_var_cols
+            # Generate all combinations of categories
+            strat_tuples = list(
+                product(*[strat_categories[var] for var in strat_var_cols])
+            )
+            self.strat_labels = strat_tuples
+
+        self.n_strata = len(strat_tuples)
+
+        # Create mapping from stratum tuple to index
+        strat_to_idx = {tup: idx for idx, tup in enumerate(strat_tuples)}
+
+        # Build population matrix P[s, a]
+        P_matrix = np.zeros((self.n_strata, self.n_ages))
+
+        for _, row in df.iterrows():
+            age_idx = age_to_idx[row[age_col]]
+            strat_tuple = tuple(row[var] for var in strat_var_cols)
+            if strat_tuple in strat_to_idx:
+                strat_idx = strat_to_idx[strat_tuple]
+                P_matrix[strat_idx, age_idx] = row[pop_col]
+
+        # Compute global age distribution (sum across strata)
+        ref_age_dist = P_matrix.sum(axis=0)
+        self.global_age_dist = ref_age_dist / ref_age_dist.sum()
+
+        # Compute Q matrix: Q[s, a] = P[s, a] / sum_s(P[s, a])
+        # Handle potential division by zero for ages with no population
+        with np.errstate(divide="ignore", invalid="ignore"):
+            self.Q = P_matrix / ref_age_dist[np.newaxis, :]
+            # Set Q to uniform for ages with zero population
+            zero_pop_ages = ref_age_dist == 0
+            if zero_pop_ages.any():
+                self.Q[:, zero_pop_ages] = 1.0 / self.n_strata
+
     def _extract_population_structure(self) -> None:
         """Extract and validate population structure from PopulationConstructor."""
         # Get reference age distribution and normalize to proportions
-        ref_age_dist = self.pop_constructor.ref_age_dist
+        ref_age_dist = self.popcon.ref_age_dist
         self.global_age_dist = ref_age_dist / ref_age_dist.sum()
         self.n_ages = len(self.global_age_dist)
 
         # Get population proportion matrix Q
-        self.Q = self.pop_constructor.Q  # Shape: (n_strata, n_ages)
+        self.Q = self.popcon.Q  # Shape: (n_strata, n_ages)
         self.n_strata = self.Q.shape[0]
 
         # Extract stratification metadata
@@ -198,15 +399,15 @@ class ParticipantGenerator:
     def _extract_stratification_info(self) -> None:
         """Extract stratification variable names and labels."""
         # Check if single or multiple stratifications
-        if isinstance(self.pop_constructor.strats, Stratification):
+        if isinstance(self.popcon.strats, Stratification):
             # Single stratification
-            self.strat_names = [self.pop_constructor.strats.name]
-            self.strat_labels = self.pop_constructor.strats.labels
+            self.strat_names = [self.popcon.strats.name]
+            self.strat_labels = self.popcon.strats.labels
             self.is_multi_strat = False
         else:
             # Multiple stratifications
-            self.strat_names = [strat.name for strat in self.pop_constructor.strats]
-            self.strat_labels = self.pop_constructor.coord_labels
+            self.strat_names = [strat.name for strat in self.popcon.strats]
+            self.strat_labels = self.popcon.coord_labels
             self.is_multi_strat = True
 
     def _sample_ages(self, rng: np.random.Generator) -> NDArray:
@@ -260,7 +461,9 @@ class ParticipantGenerator:
 
         return strata
 
-    def _map_strata_to_labels(self, strata: NDArray) -> Union[pd.Series, pd.DataFrame]:
+    def _map_strata_to_labels(
+        self, strata: NDArray
+    ) -> Optional[Union[pd.Series, pd.DataFrame]]:
         """
         Map stratum indices to stratification variable labels.
 
@@ -271,10 +474,15 @@ class ParticipantGenerator:
 
         Returns
         -------
-        pd.Series or pd.DataFrame
+        pd.Series, pd.DataFrame, or None
+            If no stratification: None.
             If single stratification: Series with stratification values.
             If multiple stratifications: DataFrame with columns for each variable.
         """
+        # Handle unstratified case
+        if len(self.strat_names) == 0:
+            return None
+
         if not self.is_multi_strat:
             # Single stratification: return Series
             labels = [self.strat_labels[s] for s in strata]
@@ -311,7 +519,7 @@ class ParticipantGenerator:
 
         Examples
         --------
-        >>> pg = ParticipantGenerator(pop_constructor, n_part=500)
+        >>> pg = ParticipantGenerator(popcon, n_part=500)
         >>> df = pg.generate(seed=42)
         >>> df.columns
         Index(['id', 'age', 'gender'], dtype='object')
@@ -337,8 +545,10 @@ class ParticipantGenerator:
             }
         )
 
-        # Append stratification columns
-        if isinstance(strat_data, pd.Series):
+        # Append stratification columns (if any)
+        if strat_data is None:
+            pass  # No stratification variables
+        elif isinstance(strat_data, pd.Series):
             df[strat_data.name] = strat_data.values
         else:
             for col in strat_data.columns:

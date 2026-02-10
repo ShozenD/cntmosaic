@@ -297,10 +297,10 @@ def add_grp_cnt_offsets(
         strat_vars = ["age_part"] + strat_vars
 
     df_cnt_part = (
-        df_cnt.groupby(strat_vars, observed=True).agg({"y": "sum"}).reset_index()
+        df_cnt.groupby(strat_vars, observed=False).agg({"y": "sum"}).reset_index()
     )
     df_grp_sum = (
-        df_grp.groupby(strat_vars, observed=True).agg({"z": "sum"}).reset_index()
+        df_grp.groupby(strat_vars, observed=False).agg({"z": "sum"}).reset_index()
     )
 
     if max is not None:  # Cap the sum of group contacts

@@ -200,7 +200,7 @@ class ContactGenerator:
                 "Overdispersion parameter 'odisp' must be provided for negative binomial model."
             )
 
-        self.df_part = df_part
+        self.df_part = df_part.copy()
         self.cint_matrices = cint_matrices
         self.model = model
         self.odisp = odisp
@@ -227,7 +227,7 @@ class ContactGenerator:
 
         # Determine case based on key format
         first_key = next(iter(self.cint_matrices.keys()))
-        
+
         # Single population case: "All->All"
         if first_key == "All->All":
             if len(self.cint_matrices) != 1:
@@ -244,22 +244,25 @@ class ContactGenerator:
         if "->All" in first_key:
             self.is_full_case = False
             self.is_single_case = False
-            
+
             # Extract stratum labels from keys
             matrix_labels = set(
                 key.replace("->All", "") for key in self.cint_matrices.keys()
             )
-            
+
             # Find stratification column in df_part
             # Look for columns that match the extracted labels
-            strat_cols = [col for col in self.df_part.columns 
-                         if col not in ['id', 'age', 'age_group']]
-            
+            strat_cols = [
+                col
+                for col in self.df_part.columns
+                if col not in ["id", "age", "age_group"]
+            ]
+
             if len(strat_cols) == 0:
                 raise ValueError(
                     "Partial case matrices provided but df_part has no stratification columns"
                 )
-            
+
             # For multi-stratification, labels are combined with underscores
             # We need to find which combination of columns produces these labels
             found_match = False
@@ -271,22 +274,22 @@ class ContactGenerator:
                     self.strat_labels = list(matrix_labels)
                     found_match = True
                     break
-            
+
             # Try multi-stratification (combined labels)
             if not found_match and len(strat_cols) > 1:
                 # Create combined labels from df_part
                 df_temp = self.df_part.copy()
-                combined_labels = df_temp[strat_cols].astype(str).agg('_'.join, axis=1)
+                combined_labels = df_temp[strat_cols].astype(str).agg("_".join, axis=1)
                 part_labels_combined = set(combined_labels.unique())
-                
+
                 if part_labels_combined == matrix_labels:
-                    self.strat_column = '_'.join(strat_cols)
+                    self.strat_column = "_".join(strat_cols)
                     self.strat_columns = strat_cols  # Multiple stratifications
                     self.strat_labels = list(matrix_labels)
                     # Add combined column to df_part for easier processing
                     self.df_part[self.strat_column] = combined_labels
                     found_match = True
-            
+
             if not found_match:
                 raise ValueError(
                     f"Cannot match matrix labels {matrix_labels} with participant stratifications. "
@@ -298,23 +301,26 @@ class ContactGenerator:
         if "->" in first_key and "->All" not in first_key:
             self.is_full_case = True
             self.is_single_case = False
-            
+
             # Extract unique stratum labels from keys
             all_labels = set()
             for key in self.cint_matrices.keys():
                 source, target = key.split("->", 1)
                 all_labels.add(source)
                 all_labels.add(target)
-            
+
             # Find stratification column(s) in df_part
-            strat_cols = [col for col in self.df_part.columns 
-                         if col not in ['id', 'age', 'age_group']]
-            
+            strat_cols = [
+                col
+                for col in self.df_part.columns
+                if col not in ["id", "age", "age_group"]
+            ]
+
             if len(strat_cols) == 0:
                 raise ValueError(
                     "Full case matrices provided but df_part has no stratification columns"
                 )
-            
+
             # Try to match labels
             found_match = False
             for col in strat_cols:
@@ -325,26 +331,26 @@ class ContactGenerator:
                     self.strat_labels = list(all_labels)
                     found_match = True
                     break
-            
+
             # Try multi-stratification
             if not found_match and len(strat_cols) > 1:
                 df_temp = self.df_part.copy()
-                combined_labels = df_temp[strat_cols].astype(str).agg('_'.join, axis=1)
+                combined_labels = df_temp[strat_cols].astype(str).agg("_".join, axis=1)
                 part_labels_combined = set(combined_labels.unique())
-                
+
                 if part_labels_combined == all_labels:
-                    self.strat_column = '_'.join(strat_cols)
+                    self.strat_column = "_".join(strat_cols)
                     self.strat_columns = strat_cols  # Multiple stratifications
                     self.strat_labels = list(all_labels)
                     self.df_part[self.strat_column] = combined_labels
                     found_match = True
-            
+
             if not found_match:
                 raise ValueError(
                     f"Cannot match matrix labels {all_labels} with participant stratifications. "
                     f"Available columns: {strat_cols}"
                 )
-            
+
             # Validate all stratum pairs exist
             for source in self.strat_labels:
                 for target in self.strat_labels:
@@ -435,13 +441,20 @@ class ContactGenerator:
                 if target_label is not None:
                     # Full case: include stratification column(s)
                     # For multi-stratification, split combined label
-                    if '_' in target_label and len(self.strat_columns) > 1:
+                    if "_" in target_label and len(self.strat_columns) > 1:
                         # Multi-stratification: split label and create separate columns
-                        label_parts = target_label.split('_')
-                        row_data = [participant_id, age_cnt] + label_parts + [contact_count]
+                        label_parts = target_label.split("_")
+                        row_data = (
+                            [participant_id, age_cnt] + label_parts + [contact_count]
+                        )
                     else:
                         # Single stratification
-                        row_data = [participant_id, age_cnt, target_label, contact_count]
+                        row_data = [
+                            participant_id,
+                            age_cnt,
+                            target_label,
+                            contact_count,
+                        ]
                     data.append(row_data)
                 else:
                     # Single or partial case: no stratum info
@@ -455,12 +468,22 @@ class ContactGenerator:
                 columns = ["id", "age_cnt"] + strat_cnt_cols + ["y"]
             else:
                 # Single stratification
-                strat_cnt_col = f"{strat_col_name}_cnt" if strat_col_name else "stratum_cnt"
+                strat_cnt_col = (
+                    f"{strat_col_name}_cnt" if strat_col_name else "stratum_cnt"
+                )
                 columns = ["id", "age_cnt", strat_cnt_col, "y"]
         else:
             columns = ["id", "age_cnt", "y"]
 
-        return pd.DataFrame(data, columns=columns)
+        df = pd.DataFrame(data, columns=columns)
+
+        # Ensure integer types for id, age_cnt, and y columns
+        # This is important when data is empty or when pd.concat mixes types
+        if len(df) > 0:
+            df["age_cnt"] = df["age_cnt"].astype(int)
+            df["y"] = df["y"].astype(int)
+
+        return df
 
     def generate(self, seed: int = None) -> pd.DataFrame:
         """
@@ -530,11 +553,11 @@ class ContactGenerator:
         # Single population case
         if self.is_single_case:
             return self._generate_single(
-                self.df_part, 
-                self.cint_matrices["All->All"], 
+                self.df_part,
+                self.cint_matrices["All->All"],
                 rng,
                 target_label=None,
-                strat_col_name=None
+                strat_col_name=None,
             )
 
         # Partial case - stratified participants, contacts with general population
@@ -552,7 +575,7 @@ class ContactGenerator:
                     self.cint_matrices[f"{label}->All"],
                     rng,
                     target_label=None,
-                    strat_col_name=None
+                    strat_col_name=None,
                 )
                 dfs.append(df_contacts)
 
@@ -574,11 +597,11 @@ class ContactGenerator:
 
                 # Generate contacts from source to target
                 df_contacts = self._generate_single(
-                    df_part_source, 
-                    matrix, 
-                    rng, 
+                    df_part_source,
+                    matrix,
+                    rng,
                     target_label=target_label,
-                    strat_col_name=self.strat_column
+                    strat_col_name=self.strat_column,
                 )
 
                 dfs.append(df_contacts)
@@ -775,9 +798,7 @@ class ContactGenerator:
             empirical = np.zeros((n_age_groups, n_age_groups))
 
             # Merge with participant ages
-            contacts_with_age = contacts.merge(
-                self.df_part[["id", "age"]], on="id"
-            )
+            contacts_with_age = contacts.merge(self.df_part[["id", "age"]], on="id")
 
             # Aggregate contacts
             for _, row in contacts_with_age.iterrows():
@@ -811,15 +832,19 @@ class ContactGenerator:
                     # Filter contacts to target subgroup based on stratification structure
                     if len(self.strat_columns) > 1:
                         # Multi-stratification: filter by each column
-                        target_parts = target_label.split('_')
+                        target_parts = target_label.split("_")
                         contacts_pair = contacts.copy()
                         for i, col in enumerate(self.strat_columns):
                             col_cnt = f"{col}_cnt"
-                            contacts_pair = contacts_pair[contacts_pair[col_cnt] == target_parts[i]]
+                            contacts_pair = contacts_pair[
+                                contacts_pair[col_cnt] == target_parts[i]
+                            ]
                     else:
                         # Single stratification
                         strat_col_name = f"{self.strat_column}_cnt"
-                        contacts_pair = contacts[contacts[strat_col_name] == target_label]
+                        contacts_pair = contacts[
+                            contacts[strat_col_name] == target_label
+                        ]
 
                     # Merge with participant ages
                     contacts_with_age = contacts_pair.merge(
@@ -834,9 +859,7 @@ class ContactGenerator:
 
                     # Normalize if requested
                     if normalize:
-                        age_counts = (
-                            df_part_source["age"].value_counts().sort_index()
-                        )
+                        age_counts = df_part_source["age"].value_counts().sort_index()
                         for i in range(n_age_groups):
                             if i in age_counts.index and age_counts[i] > 0:
                                 empirical[i, :] /= age_counts[i]
@@ -860,9 +883,7 @@ class ContactGenerator:
             empirical = np.zeros((n_age_groups, n_age_groups))
 
             # Merge with participant ages
-            contacts_with_age = contacts_sub.merge(
-                df_part_sub[["id", "age"]], on="id"
-            )
+            contacts_with_age = contacts_sub.merge(df_part_sub[["id", "age"]], on="id")
 
             # Aggregate contacts
             for _, row in contacts_with_age.iterrows():

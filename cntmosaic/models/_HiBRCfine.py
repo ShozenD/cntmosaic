@@ -398,7 +398,7 @@ class HiBRCfine(BRCfine):
         log_V = self.log_V if log_V is None else log_V
         len_y = len(self.y) if y is None else len(y)
 
-        # Sample baseline log-intensity
+        # Sample baseline log rate
         beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
 
         # Sample shared rate pattern

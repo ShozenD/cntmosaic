@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 
 from .._types import StratMode
 from ._CoordToColumns import CoordToColumns
-from ._utils import make_idarrs_for_intervals
+from ._utils import expand_ix_array, make_idarrs_for_intervals
 from .containers._ModelData import ModelBaseData, ModelData, ModelStratData
 from .containers._StratificationData import StratificationData
 
@@ -248,7 +248,7 @@ class BaseLoader(ABC):
         Note: After load() is called, this returns the cached snapshot to ensure
         consistent row ordering across all accesses.
         """
-        if hasattr(self, '_df_full_cache') and self._df_full_cache is not None:
+        if hasattr(self, "_df_full_cache") and self._df_full_cache is not None:
             return self._df_full_cache
         return self._build_df_full()
 
@@ -683,6 +683,10 @@ class BaseLoader(ABC):
         # ============================
         if len(self.col_map.strat_vars_part) > 0:
             strat_data = self.make_strat_data()
+            if self.col_map.age_grp_cnt:
+                strat_data["flat_ix_exp"] = expand_ix_array(
+                    strat_data["flat_ix"], base_data["bid_pad"].shape[1]
+                )
         else:
             strat_data = {}
 

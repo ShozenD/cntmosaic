@@ -29,7 +29,7 @@ from ...dataloader import (
     DataLoader,
     ParticipantData,
     PopulationData,
-    StratPropData,
+    StratificationData,
 )
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator, Subgroup

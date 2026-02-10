@@ -70,6 +70,7 @@ class ModelStratData(TypedDict):
     ixs: Dict[str, NDArray]  # {var_name: categorical_codes}
     flat_pixs: NDArray  # Combined flat population category indices
     flat_ix: NDArray  # Combined flat indices
+    flat_ix_exp: NDArray  # Expanded flat indices for HiBRCrefine model
     full_labels: List[str]
     marginal_multipliers: Optional[Dict[str, NDArray]] = None  # {var_name: NDArray}
     multipliers: Optional[NDArray] = None

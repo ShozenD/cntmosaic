@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 
 from .._types import StratMode
 from ._CoordToColumns import CoordToColumns
-from ._utils import expand_ix_array, make_idarrs_for_intervals
+from ._utils import expand_ix_array, gaussian_smooth_by_group, make_idarrs_for_intervals
 from .containers._ModelData import ModelBaseData, ModelData, ModelStratData
 from .containers._StratificationData import StratificationData
 
@@ -91,6 +91,7 @@ class BaseLoader(ABC):
         pop_data: pd.DataFrame,
         col_map: CoordToColumns,
         strat_data: Optional[StratificationData] = None,
+        smooth_amb_cnt_offsets: bool = True,
     ) -> None:
         """
         Initialize base loader with data validation.
@@ -105,11 +106,15 @@ class BaseLoader(ABC):
             Column mapping specification.
         strat_data : Optional[StratificationData], default=None
             Optional stratification data for statified models.
+        smooth_amb_cnt_offsets : bool, optional
+            Whether to apply Gaussian smoothing to the ambiguous contact offsets (V). By default, True.
+            The scale of smoothing is determined by leave-one-out cross-validation across all stratification groups.
         """
         self.data = data
         self.col_map = col_map
         self.pop_data = pop_data
         self.strat_data = strat_data
+        self.smooth_amb_cnt_offsets = smooth_amb_cnt_offsets
         self._align_age_range()
 
         # Initialize empty ModelData
@@ -199,7 +204,9 @@ class BaseLoader(ABC):
 
     @property
     def df_V(self) -> pd.DataFrame:
-        """Construct dataframe of group contact offsets (S) stratified by age and grouping variables."""
+        """
+        Construct dataframe of ambiguous contact offsets (V) stratified by age and grouping variables.
+        """
         df_z = (
             self.data[
                 [self.col_map.id_col] + self.col_map.strat_vars_n + [self.col_map.z]
@@ -228,6 +235,33 @@ class BaseLoader(ABC):
         )
         df_V.fillna({"V": 1.0}, inplace=True)
         df_V = df_V.drop(columns=[self.col_map.z, self.col_map.y])
+
+        if self.smooth_amb_cnt_offsets:
+            # For smoothing, group by stratification vars EXCLUDING age_part
+            # so we smooth V across ages within each stratification group
+            smooth_group_vars = [
+                var for var in self.col_map.strat_vars_n if var != self.col_map.age_part
+            ]
+            # Only smooth if there are grouping variables (otherwise just one group)
+            if len(smooth_group_vars) > 0:
+                df_V = gaussian_smooth_by_group(
+                    df_V,
+                    group_by=smooth_group_vars,
+                    target="V",
+                    cv=True,
+                    sort_by=self.col_map.age_part,
+                )
+            else:
+                # No stratification - smooth the entire column
+                df_V = gaussian_smooth_by_group(
+                    df_V,
+                    group_by=None,
+                    target="V",
+                    cv=True,
+                    sort_by=self.col_map.age_part,
+                )
+            # Replace original V with smoothed V_gs
+            df_V["V"] = df_V["V_gs"]
 
         return df_V
 
@@ -531,7 +565,7 @@ class BaseLoader(ABC):
         full_labels = self.infer_full_strat_labels(dims, labels)
 
         if self.strat_data is not None:
-            marginal_demopty = self.strat_data.compute_marginal_demopty(modes)
+            marginal_demopty = self.strat_data.compute_marginal_demopty(modes, labels)
 
             # Demographic Opportunity
             demopty = self.strat_data.compute_demopty(modes, full_labels)

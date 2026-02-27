@@ -33,23 +33,11 @@ class DataLoader(BaseLoader):
     pop_data : PopulationData
         Validated population data object containing population age distribution.
         Already validated with standardized column names (age, P).
-    strat_data : Union[StratPropData, List[StratPropData], None], optional
-        Population proportion specification(s) for demographic adjustment.
-        Can be either:
-        - A single StratPropData object
-        - A list of StratPropData objects for multiple stratifications
-        If None, no stratified population proportions are used.
-
-        Example with single stratification:
-            strat_data = StratPropData.from_counts(
-                data=df_gender, age_col='age', strat_col='gender', count_col='N'
-            )
-            DataLoader(part_data, cnt_data, pop_data, strat_data=strat_data)
-
-        Example with multiple stratifications:
-            strat_prop_gender = StratPropData.from_counts(...)
-            strat_prop_region = StratPropData.from_counts(...)
-            DataLoader(part_data, cnt_data, pop_data, strat_data=[strat_prop_gender, strat_prop_region])
+    strat_data : Union[StratificationData, None], optional
+        An instance of StratificationData for stratified models, or None for unstratified models.
+    smooth_amb_cnt_offsets : bool, optional
+        Whether to apply Gaussian smoothing to the ambiguous contact offsets (V). By default, True.
+        The scale of smoothing is determined by leave-one-out cross-validation across all stratification groups.
 
     Attributes
     ----------
@@ -167,6 +155,7 @@ class DataLoader(BaseLoader):
         cnt_data: ContactData,
         pop_data: PopulationData,
         strat_data: Union[StratificationData, None] = None,
+        smooth_amb_cnt_offsets: bool = True,
     ) -> None:
 
         self.part_data, self.cnt_data, self.pop_data, self.strat_data = DataValidator(
@@ -203,7 +192,9 @@ class DataLoader(BaseLoader):
                     )
 
         # Initialize parent class with merged data
-        super().__init__(data, self.pop_data.data, col_map, self.strat_data)
+        super().__init__(
+            data, self.pop_data.data, col_map, self.strat_data, smooth_amb_cnt_offsets
+        )
 
     def _create_col_map(self, part_data, cnt_data, pop_data) -> CoordToColumns:
         """

@@ -141,3 +141,137 @@ def expand_ix_array(id_array: NDArray, length: int) -> NDArray:
            [2, 2, 2]])
     """
     return np.repeat(id_array[:, np.newaxis], length, axis=1)
+
+
+def _loocv_mse(y, sigma):
+    """Compute leave-one-out CV MSE for a given sigma.
+
+    Returns np.nan if the array has fewer than 3 points (insufficient for LOOCV).
+    """
+    from scipy.ndimage import gaussian_filter1d
+
+    n = len(y)
+    if n < 3:
+        # Need at least 3 points: 2 for smoothing after leaving one out,
+        # plus the held-out point
+        return np.nan
+
+    residuals = np.empty(n)
+    idx_all = np.arange(n)
+    for i in range(n):
+        mask = idx_all != i
+        y_loo = y[mask]
+        smoothed = gaussian_filter1d(y_loo, sigma=sigma)
+        pred = np.interp(i, idx_all[mask], smoothed)
+        residuals[i] = (y[i] - pred) ** 2
+    return residuals.mean()
+
+
+def _select_sigma_cv_global(groups, sigma_grid):
+    """Select a single optimal sigma across all groups via pooled LOOCV.
+
+    Groups with fewer than 3 points are skipped. If all groups are too small,
+    returns the first value in sigma_grid as a fallback.
+    """
+    # Filter groups with sufficient data for LOOCV
+    valid_groups = [g for g in groups if len(g) >= 3]
+
+    if len(valid_groups) == 0:
+        # All groups too small for CV - return default sigma
+        return sigma_grid[0]
+
+    best_sigma, best_mse = sigma_grid[0], np.inf
+    for s in sigma_grid:
+        mse_values = [_loocv_mse(g, s) for g in valid_groups]
+        # Filter out nan values (shouldn't happen now, but defensive)
+        mse_values = [m for m in mse_values if not np.isnan(m)]
+        if len(mse_values) == 0:
+            continue
+        total_mse = np.mean(mse_values)
+        if total_mse < best_mse:
+            best_mse = total_mse
+            best_sigma = s
+    return best_sigma
+
+
+def gaussian_smooth_by_group(
+    df, group_by, target, sort_by=None, sigma=2, cv=False, sigma_grid=None
+):
+    """
+    Apply Gaussian kernel smoothing to grouped data.
+
+    Parameters
+    ----------
+    df : pandas DataFrame
+        Input DataFrame.
+    group_by : str, list, or None
+        Columns to group by. If None, treats entire column as one group.
+    target : str
+        The column to which we apply the Gaussian smoothing.
+    sort_by : str or list, optional
+        The columns to sort the grouped data.
+    sigma : float, optional
+        Standard deviation of the Gaussian kernel (default=2).
+        Ignored when ``cv=True``.
+    cv : bool, optional
+        If True, select a single global sigma via leave-one-out
+        cross-validation pooled across all groups.
+    sigma_grid : array-like, optional
+        Grid of sigma values to search over when ``cv=True``.
+        Defaults to ``np.linspace(0.5, 10, 20)``.
+
+    Returns
+    -------
+    pandas DataFrame
+        DataFrame with smoothed column appended as {target}_gs.
+    """
+    from scipy.ndimage import gaussian_filter1d
+
+    df_result = df.copy()
+
+    # Handle None or empty group_by - treat entire column as one group
+    if group_by is None or (isinstance(group_by, list) and len(group_by) == 0):
+        if sort_by is not None:
+            sort_cols = [sort_by] if isinstance(sort_by, str) else sort_by
+            df_result = df_result.sort_values(by=sort_cols)
+
+        if sigma_grid is None:
+            sigma_grid = np.linspace(0.5, 10, 20)
+
+        # CV on entire column as single group
+        if cv:
+            y_vals = df_result[target].values.astype(float)
+            sigma = _select_sigma_cv_global([y_vals], sigma_grid)
+            print(f"CV-selected sigma for V offset smoothing: {sigma:.2f}")
+
+        df_result[f"{target}_gs"] = gaussian_filter1d(
+            df_result[target].values.astype(float), sigma=sigma
+        )
+        return df_result
+
+    if isinstance(group_by, str):
+        group_by = [group_by]
+
+    if sort_by is not None:
+        sort_cols = [sort_by] if isinstance(sort_by, str) else sort_by
+        df_result = df_result.sort_values(by=group_by + sort_cols)
+
+    if sigma_grid is None:
+        sigma_grid = np.linspace(0.5, 10, 20)
+
+    # Select a single sigma from pooled LOOCV across all groups
+    if cv:
+        groups = [
+            g[target].values.astype(float)
+            for _, g in df_result.groupby(group_by, as_index=False, observed=True)
+        ]
+        sigma = _select_sigma_cv_global(groups, sigma_grid)
+        print(f"CV-selected sigma for V offset smoothing: {sigma:.2f}")
+
+    df_result[f"{target}_gs"] = df_result.groupby(
+        group_by, as_index=False, observed=True
+    )[target].transform(
+        lambda x: gaussian_filter1d(x.values.astype(float), sigma=sigma)
+    )
+
+    return df_result

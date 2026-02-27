@@ -314,8 +314,77 @@ class StratificationData:
 
         return schema
 
+    def _build_Q_and_labels(
+        self,
+        vars_list: List[str],
+        strat_labels_for_vars: Optional[List] = None,
+    ) -> Tuple[NDArray, List]:
+        """
+        Build ordered Q matrix and corresponding labels for given stratification variable(s).
+
+        Parameters
+        ----------
+        vars_list : List[str]
+            List of stratification variable column names to combine (length 1 for single-var case).
+        strat_labels_for_vars : List, optional
+            Optional ordering of labels to reindex the pivot (preserves order).
+
+        Returns
+        -------
+        Q : NDArray
+            Array shape (n_strata, A) giving proportions by stratum and age.
+        labels : List
+            Ordered list of stratum labels corresponding to rows of Q.
+        """
+        df_Q_source = self.data[[self.age_col] + vars_list + [self.prop_col]]
+        sort_vars = [self.age_col] + vars_list
+        df_Q_source = df_Q_source.sort_values(by=sort_vars)
+
+        if len(vars_list) == 1:
+            var = vars_list[0]
+            df_pivot = (
+                df_Q_source.groupby([self.age_col, var], observed=False)[self.prop_col]
+                .sum()
+                .reset_index()
+                .pivot(index=var, columns=self.age_col, values=self.prop_col)
+            )
+            if strat_labels_for_vars is not None:
+                # If caller passed full cross-product labels like 'A->B',
+                # deduplicate by splitting on '->' to obtain source labels
+                if any("->" in str(l) for l in strat_labels_for_vars):
+                    strat_labels_for_vars = list(
+                        dict.fromkeys(l.split("->")[0] for l in strat_labels_for_vars)
+                    )
+                df_pivot = df_pivot.reindex(strat_labels_for_vars)
+                labels = strat_labels_for_vars
+            else:
+                labels = df_pivot.index.tolist()
+        else:
+            # Combine multiple vars into single label
+            df_Q_source["strat_combined"] = df_Q_source[vars_list].apply(
+                lambda row: "_".join(row.astype(str)), axis=1
+            )
+            df_pivot = (
+                df_Q_source.groupby([self.age_col, "strat_combined"], observed=False)[
+                    self.prop_col
+                ]
+                .sum()
+                .reset_index()
+                .pivot(
+                    index="strat_combined", columns=self.age_col, values=self.prop_col
+                )
+            )
+            if strat_labels_for_vars is not None:
+                df_pivot = df_pivot.reindex(strat_labels_for_vars)
+                labels = strat_labels_for_vars
+            else:
+                labels = df_Q_source["strat_combined"].unique().tolist()
+
+        Q = df_pivot.values
+        return Q, labels
+
     def compute_marginal_demopty(
-        self, strat_modes: Dict[str, StratMode]
+        self, strat_modes: Dict[str, StratMode], strat_labels: Dict[str, List] = None
     ) -> Dict[str, NDArray]:
         """
         Compute the marginal multipliers for each stratification variable.
@@ -325,44 +394,55 @@ class StratificationData:
         ----------
         strat_modes : Dict[str, StratMode]
             Dictionary mapping stratification variable names to their StratMode (PARTIAL or FULL).
+        strat_labels : Dict[str, List], optional
+            Optional mapping of variable -> label ordering to preserve.
 
         Returns
         -------
         Dict[str, NDArray]
             Dictionary mapping each stratification variable to its marginal multipliers array.
         """
-
         strat_vars = list(strat_modes.keys())
-        marginal_dempoty = {}
-        for var in strat_vars:
-            mode = strat_modes[var]
+        margin_dempoty: Dict[str, NDArray] = {}
 
-            # Sum over other stratification variables to get marginal proportions
-            df_marginal = (
-                self.data.groupby([self.age_col] + [var], observed=False)[self.prop_col]
-                .sum()
-                .reset_index()
+        for var in strat_vars:
+            labels_for_var = None
+            if (
+                strat_labels is not None
+                and isinstance(strat_labels, dict)
+                and var in strat_labels
+            ):
+                labels_for_var = strat_labels[var]
+
+            Q, strat_labels_source = self._build_Q_and_labels(
+                [var], strat_labels_for_vars=labels_for_var
             )
 
-            # Sort by age and strat variable
-            df_marginal = df_marginal.sort_values(by=[self.age_col, var])
-            prop_array = df_marginal.pivot(
-                index=var, columns=self.age_col, values=self.prop_col
-            ).values  # shape (n_strata, A)
+            if strat_modes[var] == StratMode.PARTIAL:
+                result = Q[:, :, None]
+                margin_dempoty[var] = self._handle_nans(
+                    result, strat_labels_source, None, mode="PARTIAL"
+                )
 
-            if mode == StratMode.PARTIAL:
-                marginal_dempoty[var] = prop_array[:, :, None]  # shape (n_strata, A, 1)
-            elif mode == StratMode.FULL:
-                mult_array = prop_array[:, None, :, None] * prop_array[None, :, None, :]
-                n_strata = prop_array.shape[0]
-                A = prop_array.shape[1]
-                marginal_dempoty[var] = mult_array.reshape(
-                    n_strata * n_strata, A, A
-                )  # shape (n_strata^2, A, A)
+            elif strat_modes[var] == StratMode.FULL:
+                mult_array = Q[:, None, :, None] * Q[None, :, None, :]
+                n_strata = Q.shape[0]
+                A = Q.shape[1]
+                reshaped = mult_array.reshape(n_strata * n_strata, A, A)
+
+                # For marginal full case the target labels equal the source labels
+                strat_labels_target = strat_labels_source
+
+                margin_dempoty[var] = self._handle_nans(
+                    reshaped, strat_labels_source, strat_labels_target, mode="FULL"
+                )
+
             else:
-                raise ValueError(f"Unknown StratMode: {mode}")
+                raise ValueError(
+                    f"Unknown StratMode: {strat_modes[var]} for variable {var}"
+                )
 
-        return marginal_dempoty
+        return margin_dempoty
 
     def compute_demopty(
         self, strat_modes: Dict[str, StratMode], strat_labels: List = None
@@ -395,43 +475,19 @@ class StratificationData:
         strat_vars_target = [
             var for var in strat_vars_source if strat_modes[var] == StratMode.FULL
         ]
-
-        df_Q_source = self.data[[self.age_col] + strat_vars_source + [self.prop_col]]
-        sort_vars = [self.age_col] + strat_vars_source
-        df_Q_source = df_Q_source.sort_values(by=sort_vars)
-
-        # Combine stratification variables into single column for grouping
         if len(strat_vars_source) == 0:
             raise ValueError("No stratification variables provided")
 
-        df_Q_source["strat_combined"] = df_Q_source[strat_vars_source].apply(
-            lambda row: "_".join(row.astype(str)), axis=1
-        )
-
-        # Aggregate and pivot to get source proportions
-        df_Q_sa = (
-            df_Q_source.groupby([self.age_col, "strat_combined"], observed=False)[
-                self.prop_col
-            ]
-            .sum()
-            .reset_index()
-            .pivot(index="strat_combined", columns=self.age_col, values=self.prop_col)
-        )
-
-        # Ensure consistent ordering if strat_labels provided
-        if strat_labels is not None:
-            # Deduplicate while preserving order: full_labels contains the
-            # cross-product (e.g. ["M->M","M->F","F->M","F->F"]), so
-            # splitting on "->" yields duplicates ("M","M","F","F").
-            # reindex with duplicates would inflate the DataFrame.
+        # Determine source label ordering if caller provided flat full-labels
+        strat_labels_source = None
+        if strat_labels is not None and not isinstance(strat_labels, dict):
             strat_labels_source = list(
                 dict.fromkeys(l.split("->")[0] for l in strat_labels)
             )
-            df_Q_sa = df_Q_sa.reindex(strat_labels_source)
-        else:
-            strat_labels_source = df_Q_source["strat_combined"].unique()
 
-        Q_sa = df_Q_sa.values  # shape (n_strata_source, A)
+        Q_sa, strat_labels_source = self._build_Q_and_labels(
+            strat_vars_source, strat_labels_for_vars=strat_labels_source
+        )
 
         # =======================================================================
         # PARTIAL case: single variable stratification
@@ -443,36 +499,20 @@ class StratificationData:
         # =======================================================================
         # FULL case: compute outer product for source × target
         # =======================================================================
-        df_Q_target = self.data[[self.age_col] + strat_vars_target + [self.prop_col]]
-        sort_vars = [self.age_col] + strat_vars_target
-        df_Q_target = df_Q_target.sort_values(by=sort_vars)
-        df_Q_target["strat_combined"] = df_Q_target[strat_vars_target].apply(
-            lambda row: "_".join(row.astype(str)), axis=1
-        )
-
-        df_Q_tb = (
-            df_Q_target.groupby([self.age_col, "strat_combined"], observed=False)[
-                self.prop_col
-            ]
-            .sum()
-            .reset_index()
-            .pivot(index="strat_combined", columns=self.age_col, values=self.prop_col)
-        )
-
-        # Ensure consistent ordering if strat_labels provided
-        if strat_labels is not None:
+        # Build target Q and labels (if FULL exists)
+        strat_labels_target = None
+        if strat_labels is not None and not isinstance(strat_labels, dict):
             strat_labels_target = list(
                 dict.fromkeys(l.split("->")[1] for l in strat_labels)
             )
-        else:
-            strat_labels_target = df_Q_target["strat_combined"].unique()
 
-        # Compute outer product and reshape
-        Q_tb = df_Q_tb.values  # shape (n_strata_target, A)
+        Q_tb, strat_labels_target = self._build_Q_and_labels(
+            strat_vars_target, strat_labels_for_vars=strat_labels_target
+        )
         Q_stab = Q_sa[:, None, :, None] * Q_tb[None, :, None, :]
         n_strata_source, n_strata_target, A = (
             Q_sa.shape[0],
-            df_Q_tb.shape[0],
+            Q_tb.shape[0],
             Q_sa.shape[1],
         )
 

@@ -206,8 +206,9 @@ class PSpline2D(Spline2D):
         tau_rate: float = 0.01,
         tau_ratio: float = 1.0,
         grid_type: str = "age-age",
+        bound_ext: float = 0.05,
     ):
-        super().__init__(prior_type, M, degree, grid_type)
+        super().__init__(prior_type, M, degree, grid_type, bound_ext)
         self.order = order
         self.tau_shape = tau_shape
         self.tau_rate = tau_rate

@@ -23,12 +23,14 @@ def plot_mosaic(
     color_reverse: bool = True,
     color_min: float = None,
     color_max: float = None,
+    color_mid: float = None,
     x_tick_values: list = None,
     x_tick_labels: list = None,
     y_tick_values: list = None,
     y_tick_labels: list = None,
+    z_tick_values: list = None,
     legend_position: str = "right",
-    style_config: dict = None,
+    config: dict = None,
 ) -> alt.Chart:
     """
     Plot a mosaic visualization of a contact matrix.
@@ -69,17 +71,19 @@ def plot_mosaic(
     y_tick_labels : list, optional
         List of labels corresponding to y_tick_values. If None, uses y_tick_values as labels.
         Must be the same length as y_tick_values if provided.
+    z_tick_values : list, optional
+        List of values where ticks should be placed on the color scale legend.
     legend_position : str, optional
         Position of the legend. Valid values include 'left', 'right', 'top', 'bottom',
         'top-left', 'top-right', 'bottom-left', 'bottom-right', 'none'. Default is 'right'.
-    style_config : dict, optional
+    config : dict, optional
         A dictionary to override default style settings for axes, title, and legend.
         The keys can include 'x_axis', 'y_axis', 'title', and 'legend'.
 
     Returns
     -------
     alt.Chart
-                    An Altair Chart object representing the mosaic visualisation of a contact matrix.
+        An Altair Chart object representing the mosaic visualisation of a contact matrix.
 
     Notes
     -----
@@ -112,16 +116,27 @@ def plot_mosaic(
             "titleFontWeight": "normal",
             "orient": legend_position,
         },
+        "color_scale": {"scheme": color_scheme, "reverse": color_reverse},
     }
-    if style_config:
-        for key in style_config:
+    if config:
+        for key in config:
             if key in default_config:
-                default_config[key].update(style_config[key])
+                default_config[key].update(config[key])
             else:
-                default_config[key] = style_config[key]
+                default_config[key] = config[key]
+    if color_mid is not None:
+        default_config["color_scale"]["domainMid"] = color_mid
+    if color_min is not None and color_max is not None:
+        default_config["color_scale"]["domain"] = [color_min, color_max]
+
+    if z_tick_values is not None:
+        default_config["legend"]["values"] = z_tick_values
 
     x_indices, y_indices, values = ravel_matrix(matrix)
-    source = pd.DataFrame({"x": x_indices, "y": y_indices, "z": values})
+    color_values = values
+    source = pd.DataFrame(
+        {"x": x_indices, "y": y_indices, "z": color_values, "z_orig": values}
+    )
 
     # Configure x-axis tick values and labels
     if x_tick_values is None:
@@ -147,11 +162,6 @@ def plot_mosaic(
             y_tick_values, y_tick_labels
         )
 
-    # Configure color scale
-    scale_params = {"scheme": color_scheme, "reverse": color_reverse}
-    if color_min is not None or color_max is not None:
-        scale_params["domain"] = [color_min, color_max]
-
     chart = (
         alt.Chart(source)
         .mark_rect()
@@ -175,7 +185,7 @@ def plot_mosaic(
             ),
             color=alt.Color(
                 "z:Q",
-                scale=alt.Scale(**scale_params),
+                scale=alt.Scale(**default_config["color_scale"]),
                 title=zlabel,
                 legend=alt.Legend(**default_config["legend"]) if zlabel else None,
             ),

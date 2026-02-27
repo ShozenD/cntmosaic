@@ -241,7 +241,12 @@ class Spline2D(Prior2D):
     )
 
     def __init__(
-        self, prior_type: str, M: int = 30, degree: int = 3, grid_type: str = "age-age"
+        self,
+        prior_type: str,
+        M: int = 30,
+        degree: int = 3,
+        grid_type: str = "age-age",
+        bound_ext: float = 0.05,
     ):
 
         validate_init_params(M, degree)
@@ -250,6 +255,7 @@ class Spline2D(Prior2D):
         self.degree = degree  # Degree of B-splines (same for both dimensions)
         self.n_knots_inner = M + degree + 1
         self.n_knots_outer = 2 * (degree + 1)
+        self.bound_ext = bound_ext
 
     def set_age_bounds(self, min_age: int, max_age: int):
         """
@@ -373,7 +379,7 @@ class Spline2D(Prior2D):
         >>> print(len(knots))  # 2*(3+1) + 10 = 18
         >>> print(knots[:4])  # First 4 are repeated boundary knots
         """
-        boundary_extension = (x.max() - x.min()) * 0.05
+        boundary_extension = (x.max() - x.min()) * self.bound_ext
         x_quantiles = np.quantile(x, np.linspace(0, 1, n_knots))
         return np.hstack(
             [

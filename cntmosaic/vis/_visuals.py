@@ -164,7 +164,7 @@ def plot_mosaic(
 
     chart = (
         alt.Chart(source)
-        .mark_rect()
+        .mark_rect(stroke=None)
         .encode(
             x=alt.X(
                 "x:O",

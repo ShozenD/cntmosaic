@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from numpy.typing import NDArray
 
 
 @dataclass
@@ -679,6 +680,138 @@ class PopulationData:
                 schema[var] = {"categories": categories, "codes": codes}
 
         return schema
+
+    def _build_pop_matrix(
+        self,
+        vars_list: List[str],
+        strat_labels_for_vars: Optional[List] = None,
+    ) -> Tuple[NDArray, List]:
+        """
+        Build ordered population size matrix and corresponding labels for given stratification variable(s).
+
+        Parameters
+        ----------
+        vars_list : List[str]
+            List of stratification variable column names to combine.
+        strat_labels_for_vars : List, optional
+            Optional ordering of labels to reindex the pivot (preserves order).
+
+        Returns
+        -------
+        P_matrix : NDArray
+            Array shape (n_strata, A) giving population sizes by stratum and age.
+        labels : List
+            Ordered list of stratum labels corresponding to rows of P_matrix.
+        """
+        df = self.df_pop[["age"] + vars_list + ["P"]]
+        sort_vars = ["age"] + vars_list
+        df = df.sort_values(by=sort_vars)
+
+        if len(vars_list) == 1:
+            var = vars_list[0]
+            df_pivot = (
+                df.groupby(["age", var], observed=False)["P"]
+                .sum()
+                .reset_index()
+                .pivot(index=var, columns="age", values="P")
+            )
+            if strat_labels_for_vars is not None:
+                if any("->" in str(l) for l in strat_labels_for_vars):
+                    strat_labels_for_vars = list(
+                        dict.fromkeys(l.split("->")[0] for l in strat_labels_for_vars)
+                    )
+                df_pivot = df_pivot.reindex(strat_labels_for_vars)
+                labels = strat_labels_for_vars
+            else:
+                labels = df_pivot.index.tolist()
+        else:
+            df = df.copy()
+            df["strat_combined"] = df[vars_list].apply(
+                lambda row: "_".join(row.astype(str)), axis=1
+            )
+            df_pivot = (
+                df.groupby(["age", "strat_combined"], observed=False)["P"]
+                .sum()
+                .reset_index()
+                .pivot(index="strat_combined", columns="age", values="P")
+            )
+            if strat_labels_for_vars is not None:
+                df_pivot = df_pivot.reindex(strat_labels_for_vars)
+                labels = strat_labels_for_vars
+            else:
+                labels = df["strat_combined"].unique().tolist()
+
+        P_matrix = df_pivot.values
+        return P_matrix, labels
+
+    def get_stratified_pop_sizes(
+        self, strat_var_cols: Optional[Union[List[str], str]] = None
+    ) -> Dict[str, NDArray]:
+        """
+        Compute stratified population sizes P^{s}_{a} as a dictionary keyed by stratum label.
+
+        This method computes the population sizes by age for each stratum defined by the
+        stratification variable(s). Unlike ``compute_demopty`` in ``StratificationData``
+        which outputs normalised demographic opportunity (proportions), this method returns
+        the raw (unnormalised) population sizes.
+
+        Parameters
+        ----------
+        strat_var_cols : str or List[str], optional
+            Stratification variable column name(s) to group by. If None, uses the
+            ``strat_var_cols`` specified at construction time. This argument is useful
+            in the PARTIAL stratification scenario where the user may not have specified
+            ``strat_var_cols`` on the ``PopulationData`` object.
+
+        Returns
+        -------
+        Dict[str, NDArray]
+            Dictionary mapping stratum labels to population size arrays of shape ``(A,)``.
+            For a single variable (e.g. ``'gender'`` with categories ``['M', 'F']``),
+            keys are ``'M'`` and ``'F'``.
+            For multiple variables (e.g. ``['gender', 'region']``), keys are composite
+            labels like ``'M_North'``, ``'M_South'``, ``'F_North'``, ``'F_South'``.
+
+        Raises
+        ------
+        ValueError
+            If no stratification variables are provided (neither at construction nor via argument).
+        KeyError
+            If specified ``strat_var_cols`` are not present in the population data.
+
+        Examples
+        --------
+        >>> pop_data = PopulationData(df, age_col='age', size_col='count', strat_var_cols='gender')
+        >>> pop_sizes = pop_data.get_stratified_pop_sizes()
+        >>> pop_sizes['M'].shape
+        (86,)
+        >>> # Or specify strat_var_cols explicitly (e.g. for PARTIAL mode)
+        >>> pop_sizes = pop_data.get_stratified_pop_sizes(strat_var_cols='gender')
+        """
+        # Resolve strat_var_cols
+        if strat_var_cols is not None:
+            if isinstance(strat_var_cols, str):
+                strat_var_cols = [strat_var_cols]
+        else:
+            strat_var_cols = self.strat_var_cols
+
+        if not strat_var_cols:
+            raise ValueError(
+                "No stratification variables provided. "
+                "Specify strat_var_cols either at construction or as an argument."
+            )
+
+        # Validate columns exist
+        missing = [v for v in strat_var_cols if v not in self.df_pop.columns]
+        if missing:
+            raise KeyError(
+                f"Stratification columns not found in population data: {missing}\n"
+                f"Available columns: {list(self.df_pop.columns)}"
+            )
+
+        P_matrix, labels = self._build_pop_matrix(strat_var_cols)
+
+        return {str(lab): P_matrix[i] for i, lab in enumerate(labels)}
 
     def summary(self) -> Dict[str, Any]:
         """

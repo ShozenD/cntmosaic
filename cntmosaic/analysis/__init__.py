@@ -1,4 +1,13 @@
 from ._arviz import svi_to_inference_data
+from ._utils import (
+    frechet_bounds,
+    predict_full_matrices,
+    rtruncated_beta,
+    rtruncated_dirichlet,
+    sample_eta,
+    spectral_radius,
+    z_marginals,
+)
 from ._visualiser import ModelVisualiser
 from .evaluator import ModelEvaluatorBRC, ModelEvaluatorPrem, ModelEvaluatorSocialMix
 from .summariser._ModelSummariserBRC import ModelSummariserBRC
@@ -13,4 +22,11 @@ __all__ = [
     "ModelEvaluatorSocialMix",
     "ModelEvaluatorPrem",
     "ModelVisualiser",
+    "z_marginals",
+    "frechet_bounds",
+    "rtruncated_beta",
+    "rtruncated_dirichlet",
+    "sample_eta",
+    "spectral_radius",
+    "predict_full_matrices",
 ]

@@ -33,22 +33,22 @@ class DataLoader(BaseLoader):
     pop_data : PopulationData
         Validated population data object containing population age distribution.
         Already validated with standardized column names (age, P).
-    strat_prop_data : Union[StratPropData, List[StratPropData], None], optional
+    strat_prop_data : Union[StratificationData, List[StratificationData], None], optional
         Population proportion specification(s) for demographic adjustment.
         Can be either:
-        - A single StratPropData object
-        - A list of StratPropData objects for multiple stratifications
+        - A single StratificationData object
+        - A list of StratificationData objects for multiple stratifications
         If None, no stratified population proportions are used.
 
         Example with single stratification:
-            strat_prop_data = StratPropData.from_counts(
+            strat_prop_data = StratificationData.from_counts(
                 data=df_gender, age_col='age', strat_col='gender', count_col='N'
             )
             DataLoader(part_data, cnt_data, pop_data, strat_prop_data=strat_prop_data)
 
         Example with multiple stratifications:
-            strat_prop_gender = StratPropData.from_counts(...)
-            strat_prop_region = StratPropData.from_counts(...)
+            strat_prop_gender = StratificationData.from_counts(...)
+            strat_prop_region = StratificationData.from_counts(...)
             DataLoader(part_data, cnt_data, pop_data, strat_prop_data=[strat_prop_gender, strat_prop_region])
 
     Attributes
@@ -59,7 +59,7 @@ class DataLoader(BaseLoader):
         Validated contact data object.
     pop_data : PopulationData
         Validated population data object.
-    strat_prop_data : Union[StratPropData, None]
+    strat_prop_data : Union[StratificationData, None]
         Population proportion specification(s) for demographic adjustment.
     col_map : CoordToColumns
         Generated column mapping object based on dataclass structures.
@@ -75,7 +75,7 @@ class DataLoader(BaseLoader):
     ------
     TypeError
         If inputs are not the correct dataclass types.
-        If pop_prop contains non-StratPropData objects.
+        If pop_prop contains non-StratificationData objects.
 
     Notes
     -----
@@ -91,14 +91,14 @@ class DataLoader(BaseLoader):
       * ParticipantData.strat_var_cols
       * ContactData.strat_var_cols (if FULL mode)
       * PopulationData.strat_var_cols (if stratified population)
-      * StratPropData.var_name (must match composite name if multiple vars)
+      * StratificationData.var_name (must match composite name if multiple vars)
     - No redundant validation is performed in DataLoader
 
     Examples
     --------
     >>> from cntmosaic.dataloader import (
     ...     DataLoader, ParticipantData, ContactData, PopulationData,
-    ...     StratPropData
+    ...     StratificationData
     ... )
     >>>
     >>> # Create validated data objects
@@ -123,7 +123,7 @@ class DataLoader(BaseLoader):
     ... )
     >>>
     >>> # Create population proportion (single stratification)
-    >>> pop_prop = StratPropData.from_counts(
+    >>> pop_prop = StratificationData.from_counts(
     ...     data=df_gender,
     ...     age_col='age',
     ...     strat_col='gender',
@@ -152,7 +152,7 @@ class DataLoader(BaseLoader):
     ...     'gender_region': ['M_North', 'M_South', 'F_North', 'F_South'],
     ...     'count': [2600, 2400, 2500, 2500]
     ... })
-    >>> pop_prop = StratPropData.from_counts(
+    >>> pop_prop = StratificationData.from_counts(
     ...     data=df_composite,
     ...     age_col='age',
     ...     strat_var_cols='gender_region',  # Will auto-detect if omitted
@@ -166,7 +166,7 @@ class DataLoader(BaseLoader):
         part_data,  # ParticipantData type hint removed to avoid circular import
         cnt_data,  # ContactData type hint removed to avoid circular import
         pop_data,  # PopulationData type hint removed to avoid circular import
-        strat_prop_data: Union[StratPropData, None] = None,
+        strat_prop_data: Union[StratificationData, None] = None,
     ) -> None:
 
         self.part_data, self.cnt_data, self.pop_data, self.strat_prop_data = (

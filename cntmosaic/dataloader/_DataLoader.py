@@ -174,7 +174,7 @@ class DataLoader(BaseLoader):
                 part_data=part_data,
                 cnt_data=cnt_data,
                 pop_data=pop_data,
-                strat_prop_data=strat_prop_data,
+                strat_data=strat_prop_data,
             ).validate()
         )
 

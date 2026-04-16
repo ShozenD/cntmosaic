@@ -33,11 +33,23 @@ class DataLoader(BaseLoader):
     pop_data : PopulationData
         Validated population data object containing population age distribution.
         Already validated with standardized column names (age, P).
-    strat_data : Union[StratificationData, None], optional
-        An instance of StratificationData for stratified models, or None for unstratified models.
-    smooth_amb_cnt_offsets : bool, optional
-        Whether to apply Gaussian smoothing to the ambiguous contact offsets (V). By default, True.
-        The scale of smoothing is determined by leave-one-out cross-validation across all stratification groups.
+    strat_prop_data : Union[StratificationData, List[StratificationData], None], optional
+        Population proportion specification(s) for demographic adjustment.
+        Can be either:
+        - A single StratificationData object
+        - A list of StratificationData objects for multiple stratifications
+        If None, no stratified population proportions are used.
+
+        Example with single stratification:
+            strat_prop_data = StratificationData.from_counts(
+                data=df_gender, age_col='age', strat_col='gender', count_col='N'
+            )
+            DataLoader(part_data, cnt_data, pop_data, strat_prop_data=strat_prop_data)
+
+        Example with multiple stratifications:
+            strat_prop_gender = StratificationData.from_counts(...)
+            strat_prop_region = StratificationData.from_counts(...)
+            DataLoader(part_data, cnt_data, pop_data, strat_prop_data=[strat_prop_gender, strat_prop_region])
 
     Attributes
     ----------
@@ -47,7 +59,7 @@ class DataLoader(BaseLoader):
         Validated contact data object.
     pop_data : PopulationData
         Validated population data object.
-    strat_data : Union[StratPropData, None]
+    strat_prop_data : Union[StratificationData, None]
         Population proportion specification(s) for demographic adjustment.
     col_map : CoordToColumns
         Generated column mapping object based on dataclass structures.
@@ -63,7 +75,7 @@ class DataLoader(BaseLoader):
     ------
     TypeError
         If inputs are not the correct dataclass types.
-        If pop_prop contains non-StratPropData objects.
+        If pop_prop contains non-StratificationData objects.
 
     Notes
     -----
@@ -79,14 +91,14 @@ class DataLoader(BaseLoader):
       * ParticipantData.strat_var_cols
       * ContactData.strat_var_cols (if FULL mode)
       * PopulationData.strat_var_cols (if stratified population)
-      * StratPropData.var_name (must match composite name if multiple vars)
+      * StratificationData.var_name (must match composite name if multiple vars)
     - No redundant validation is performed in DataLoader
 
     Examples
     --------
     >>> from cntmosaic.dataloader import (
     ...     DataLoader, ParticipantData, ContactData, PopulationData,
-    ...     StratPropData
+    ...     StratificationData
     ... )
     >>>
     >>> # Create validated data objects
@@ -111,7 +123,7 @@ class DataLoader(BaseLoader):
     ... )
     >>>
     >>> # Create population proportion (single stratification)
-    >>> pop_prop = StratPropData.from_counts(
+    >>> pop_prop = StratificationData.from_counts(
     ...     data=df_gender,
     ...     age_col='age',
     ...     strat_col='gender',
@@ -140,30 +152,31 @@ class DataLoader(BaseLoader):
     ...     'gender_region': ['M_North', 'M_South', 'F_North', 'F_South'],
     ...     'count': [2600, 2400, 2500, 2500]
     ... })
-    >>> pop_prop = StratPropData.from_counts(
+    >>> pop_prop = StratificationData.from_counts(
     ...     data=df_composite,
     ...     age_col='age',
     ...     strat_var_cols='gender_region',  # Will auto-detect if omitted
     ...     count_col='count'
     ... )
-    >>> loader = DataLoader(part_data, cnt_data, pop_data, strat_data=pop_prop)
+    >>> loader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data=pop_prop)
     """
 
     def __init__(
         self,
-        part_data: ParticipantData,
-        cnt_data: ContactData,
-        pop_data: PopulationData,
-        strat_data: Union[StratificationData, None] = None,
-        smooth_amb_cnt_offsets: bool = True,
+        part_data,  # ParticipantData type hint removed to avoid circular import
+        cnt_data,  # ContactData type hint removed to avoid circular import
+        pop_data,  # PopulationData type hint removed to avoid circular import
+        strat_prop_data: Union[StratificationData, None] = None,
     ) -> None:
 
-        self.part_data, self.cnt_data, self.pop_data, self.strat_data = DataValidator(
-            part_data=part_data,
-            cnt_data=cnt_data,
-            pop_data=pop_data,
-            strat_data=strat_data,
-        ).validate()
+        self.part_data, self.cnt_data, self.pop_data, self.strat_prop_data = (
+            DataValidator(
+                part_data=part_data,
+                cnt_data=cnt_data,
+                pop_data=pop_data,
+                strat_data=strat_prop_data,
+            ).validate()
+        )
 
         # Create CoordToColumns from dataclass structures
         col_map = self._create_col_map(self.part_data, self.cnt_data, self.pop_data)
@@ -176,7 +189,7 @@ class DataLoader(BaseLoader):
         for col in data.columns:
             # Check if column exists in participant data and is categorical
             if col in self.part_data.data.columns:
-                if isinstance(self.part_data.data[col].dtype, pd.CategoricalDtype):
+                if pd.api.types.is_categorical_dtype(self.part_data.data[col]):
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.part_data.data[col].cat.categories,
@@ -184,7 +197,7 @@ class DataLoader(BaseLoader):
                     )
             # Check if column exists in contact data and is categorical
             elif col in self.cnt_data.data.columns:
-                if isinstance(self.cnt_data.data[col].dtype, pd.CategoricalDtype):
+                if pd.api.types.is_categorical_dtype(self.cnt_data.data[col]):
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.cnt_data.data[col].cat.categories,
@@ -192,9 +205,7 @@ class DataLoader(BaseLoader):
                     )
 
         # Initialize parent class with merged data
-        super().__init__(
-            data, self.pop_data.data, col_map, self.strat_data, smooth_amb_cnt_offsets
-        )
+        super().__init__(data, self.pop_data.data, col_map, self.strat_prop_data)
 
     def _create_col_map(self, part_data, cnt_data, pop_data) -> CoordToColumns:
         """
@@ -218,12 +229,22 @@ class DataLoader(BaseLoader):
             Column mapping configuration for BaseLoader.
         """
         if part_data.strat_var_cols:
-            strat_vars_part = part_data.get_strat_vars(suffix=True)
+            strat_vars_part = []
+            for var in part_data.strat_var_cols:
+                if var.endswith("_part"):
+                    strat_vars_part.append(var)
+                else:
+                    strat_vars_part.append(f"{var}_part")
         else:
             strat_vars_part = None
 
         if cnt_data.strat_var_cols:
-            strat_vars_cnt = cnt_data.get_strat_vars(suffix=True)
+            strat_vars_cnt = []
+            for var in cnt_data.strat_var_cols:
+                if var.endswith("_cnt"):
+                    strat_vars_cnt.append(var)
+                else:
+                    strat_vars_cnt.append(f"{var}_cnt")
         else:
             strat_vars_cnt = None
 
@@ -234,15 +255,13 @@ class DataLoader(BaseLoader):
             age_grp_cnt="age_grp_cnt" if cnt_data.age_grp_col else None,
             id_col="id",
             y="y",
-            z=part_data.amb_cnt_col,  # Use actual group contact count column name
+            z="z",
             strat_vars_part=strat_vars_part,
             strat_vars_cnt=strat_vars_cnt,
             repeat_part="repeat_part" if part_data.repeat_col else None,
             age_pop="age",
             P="P",
-            strat_vars_pop=(
-                pop_data.get_strat_vars() if pop_data.strat_var_cols else None
-            ),
+            strat_vars_pop=pop_data.strat_var_cols if pop_data.strat_var_cols else None,
         )
 
         return col_map

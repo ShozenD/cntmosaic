@@ -1002,6 +1002,10 @@ class MatrixGenerator:
             Population structure with stratifications
         mean_intensity : float, default=15.0
             Average marginal contact intensity
+        assortativity : float, default=0.0
+            Controls the strength of preferential within-stratum mixing.
+            Higher values increase contact intensity for same-stratum pairs
+            (s = t) relative to cross-stratum pairs.
         seed : int, optional
             Random seed for reproducibility
 
@@ -1151,7 +1155,9 @@ class MatrixGenerator:
         mean_intensity : float, default=15.0
             Average marginal contact intensity.
         assortativity : float, default=0.0
-            Assortativity parameter for intra-group contacts.
+            Controls the strength of preferential within-stratum mixing.
+            Higher values increase contact intensity for same-stratum pairs
+            (s = t) relative to cross-stratum pairs.
         seed : int, optional
             Random seed for reproducibility.
         age_col : str, default "age"
@@ -1254,9 +1260,7 @@ class MatrixGenerator:
 
                 # Combine deviations across stratification variables
                 deviation_list = [
-                    deviation_matrices_by_strat[info.name][
-                        (s_indices[j], t_indices[j])
-                    ]
+                    deviation_matrices_by_strat[info.name][(s_indices[j], t_indices[j])]
                     for j, info in enumerate(strat_infos)
                 ]
                 d_all[(s, t)] = self._combine_deviations(deviation_list)

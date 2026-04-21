@@ -127,6 +127,15 @@ class StratificationData:
                 f"Available columns: {list(self.data.columns)}"
             )
 
+        # Convert strat_var_cols to categorical dtype if not already
+        for col in self.strat_var_cols:
+            if not isinstance(self.data[col].dtype, pd.CategoricalDtype):
+                warnings.warn(
+                    f"Converting '{col}' to categorical dtype.",
+                    UserWarning,
+                )
+                self.data[col] = self.data[col].astype("category")
+
         self.validate()
 
     def validate(self) -> None:

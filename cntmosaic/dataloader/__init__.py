@@ -1,7 +1,10 @@
-from ._dataloader import CoordToColumns, DataLoader, PopulationProportion
+from ._DataLoader import DataLoader
+from .containers import ContactData, ParticipantData, PopulationData, StratificationData
 
 __all__ = [
-  "CoordToColumns",
-  "DataLoader",
-  "PopulationProportion"
+    "ContactData",
+    "DataLoader",
+    "ParticipantData",
+    "PopulationData",
+    "StratificationData",
 ]

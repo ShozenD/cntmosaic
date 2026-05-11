@@ -1,38 +1,113 @@
+import numpy as np
 import pytest
 
-from ...datasets._base import load_age_distribution, load_template_patterns
-from .._ParticipantGenerator import ParticipantGenerator, Subgroup
-from .._MatrixGenerator import MatrixGenerator
+from ...datasets._base import load_template_patterns
 from .._ContactGenerator import ContactGenerator
+from .._MatrixGenerator import MatrixGenerator
+from .._ParticipantGenerator import ParticipantGenerator
+from .._PopulationConstructor import PopulationConstructor
+from .._Stratification import Stratification
+
+patterns = load_template_patterns("United_States", max_age=50)
+n_ages = patterns["household"].shape[0]
+
+# ============================
+# Fixtures for ContactGenerator tests
+# ============================
 
 
-def test_basic_functionality():
-    df_age_dist = load_age_distribution("United_States", max_age=80)
-    patterns = load_template_patterns("United_States", max_age=80)
-    age_dist = df_age_dist["P"].values
+@pytest.fixture
+def generate_single():
+    """Single population case with new API."""
+    ref_age_dist = np.random.rand(n_ages) * 1000
+    strat = Stratification("group", 1, ref_age_dist, labels=["All"], seed=42)
+    pop = PopulationConstructor(strat)
 
-    # ===== Single subgroup ======
-    subgroup = Subgroup(n=1000, age_dist=age_dist, mean_cint_margin=15.0)
-    df_part = ParticipantGenerator(subgroup).generate(seed=0)
-    cint_matrix = MatrixGenerator(patterns).generate_single(subgroup, seed=0)
+    df_part = ParticipantGenerator(pop, n_participants=1000).generate(seed=0)
+    cint_matrices = MatrixGenerator(patterns).generate_single(
+        pop, mean_intensity=15.0, seed=0
+    )
 
-    cg = ContactGenerator(df_part, cint_matrix)
-    df_cnt = cg.generate()
+    return df_part, cint_matrices
 
-    # Check the shape of the generated DataFrame (The first dimension is random)
-    assert df_cnt.shape[1] == 3
 
-    # ===== Multiple subgroups ======
-    subgroups = [
-        Subgroup(n=1000, age_dist=age_dist, mean_cint_margin=15.0, label=0),
-        Subgroup(n=2000, age_dist=age_dist, mean_cint_margin=20.0, label=1),
-    ]
-    df_part = ParticipantGenerator(subgroups).generate(seed=0)
-    cmg = MatrixGenerator(patterns)
-    cint_matrices = {i: cmg.generate_single(subgroups[i], seed=i) for i in range(2)}
-    cg = ContactGenerator(df_part, cint_matrices)
-    df_cnt = cg.generate(seed=0)
+@pytest.fixture
+def generate_partial():
+    """Partial case with two strata."""
+    ref_age_dist = np.random.rand(n_ages) * 1000
+    region_strat = Stratification(
+        "region", 2, ref_age_dist, labels=["Urban", "Rural"], seed=42
+    )
+    pop = PopulationConstructor(region_strat)
 
-    # Check the shape of the generated DataFrame (The first dimension is random)
-    # Multiple subgroups should still have 3 columns (id, age_group, contacts)
-    assert df_cnt.shape[1] == 3
+    df_part = ParticipantGenerator(pop, n_participants=1500).generate(seed=0)
+    cint_matrices = MatrixGenerator(patterns).generate_partial(
+        pop, mean_intensity=15.0, seed=0
+    )
+
+    return df_part, cint_matrices
+
+
+@pytest.fixture
+def generate_full():
+    """Full case with two strata."""
+    ref_age_dist = np.random.rand(n_ages) * 1000
+    region_strat = Stratification(
+        "region", 2, ref_age_dist, labels=["Urban", "Rural"], seed=42
+    )
+    pop = PopulationConstructor(region_strat)
+
+    df_part = ParticipantGenerator(pop, n_participants=1500).generate(seed=0)
+    cint_matrices = MatrixGenerator(patterns).generate_full(
+        pop, mean_intensity=15.0, seed=0
+    )
+
+    return df_part, cint_matrices
+
+
+# ============================
+# Tests for ContactGenerator
+# ============================
+def test_single(generate_single):
+    """Test single population case."""
+    df_part, cint_matrices = generate_single
+
+    cnt_gen = ContactGenerator(df_part, cint_matrices)
+    df_cnt = cnt_gen.generate(seed=0)
+
+    assert df_cnt.shape[0] > 0, "No contacts generated in single population case"
+    assert df_cnt.columns.tolist() == ["id", "age_cnt", "y"]
+    assert (
+        df_cnt["id"].nunique() <= df_part["id"].nunique()
+    ), "More unique IDs in contacts than participants"
+
+
+def test_partial(generate_partial):
+    """Test partial case with stratified participants."""
+    df_part, cint_matrices = generate_partial
+
+    cnt_gen = ContactGenerator(df_part, cint_matrices)
+    df_cnt = cnt_gen.generate(seed=0)
+
+    assert df_cnt.shape[0] > 0, "No contacts generated in partial case"
+    assert df_cnt.columns.tolist() == ["id", "age_cnt", "y"]
+    assert (
+        df_cnt["id"].nunique() <= df_part["id"].nunique()
+    ), "More unique IDs in contacts than participants"
+
+
+def test_full(generate_full):
+    """Test full case with all stratum pair interactions."""
+    df_part, cint_matrices = generate_full
+
+    cnt_gen = ContactGenerator(df_part, cint_matrices)
+    df_cnt = cnt_gen.generate(seed=0)
+
+    assert df_cnt.shape[0] > 0, "No contacts generated in full case"
+    assert df_cnt.columns.tolist() == ["id", "age_cnt", "region_cnt", "y"]
+    assert (
+        df_cnt["id"].nunique() <= df_part["id"].nunique()
+    ), "More unique IDs in contacts than participants"
+
+    # Check that contacts include both strata
+    assert set(df_cnt["region_cnt"].unique()) == {"Urban", "Rural"}

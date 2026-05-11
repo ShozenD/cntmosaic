@@ -1,0 +1,493 @@
+from typing import Dict, Optional
+
+import numpy as np
+from numpy.typing import ArrayLike
+
+from cntmosaic.analysis.summariser._ModelSummariserBRC import ModelSummariserBRC
+from cntmosaic.dataloader._DataLoader import DataLoader
+
+
+def spectral_radius(
+    matrices: Dict[str, ArrayLike],
+    dataloader: Optional[DataLoader] = None,
+    method: Optional[str] = "generalised",
+) -> float | ArrayLike:
+    """Compute the spectral radius of the generalised or age-stratified matrix.
+
+    If matrices contain 2D arrays (A, A), returns a scalar.
+    If matrices contain 3D arrays (S, A, A), returns an array of shape (S,).
+
+    Parameters
+    ----------
+    matrices : dict
+        A dictionary mapping "source->target" to a 2D or 3D array
+    dataloader : DataLoader, optional
+        An instantiated DataLoader. Required if method="age". Used to extract
+        stratified population sizes via StratificationData proportions and
+        PopulationData totals.
+    method : str, optional
+        The method to use: "generalised" or "age". Default is "generalised"
+
+    Returns
+    -------
+    float or np.ndarray
+        The spectral radius of the combined matrix, either a scalar or an array of shape (S,) depending on the input.
+    """
+    cats = list(dict.fromkeys(k.split("->")[0] for k in matrices))
+    first = next(iter(matrices.values()))
+    batched = first.ndim == 3
+
+    if method == "generalised":
+        block_grid = [[matrices[f"{s}->{t}"] for t in cats] for s in cats]
+        if batched:
+            # Each block is (S, A, A) — use np.block on each sample
+            S = first.shape[0]
+            M = np.block([[matrices[f"{s}->{t}"] for t in cats] for s in cats])
+            # np.block broadcasts correctly for 3D: result is (S, K*A, K*A)
+        else:
+            M = np.block(block_grid)
+    elif method == "age":
+        if dataloader is None:
+            raise ValueError("dataloader is required for method='age'")
+        P_sa = _compute_P_sa(dataloader)
+        P_a = dataloader.pop_data.groupby("age")["P"].sum().sort_index().values
+        M = np.zeros_like(matrices[f"{cats[0]}->{cats[0]}"])
+        for source in cats:
+            mat_partial = sum(matrices[f"{source}->{t}"] for t in cats)
+            P_ka = P_sa[source]
+            if batched:
+                M += mat_partial * (P_ka / P_a)[None, :, None]
+            else:
+                M += mat_partial * (P_ka / P_a)[:, None]
+    else:
+        raise ValueError(f"Unknown method: {method!r}. Use 'generalised' or 'age'.")
+
+    if batched:
+        eigenvalues = np.linalg.eigvals(M)  # (S, N) complex
+        return np.max(np.abs(eigenvalues), axis=1)  # (S,)
+    else:
+        eigenvalues = np.linalg.eigvals(M)
+        return np.max(np.abs(eigenvalues))
+
+
+def _compute_P_sa(dataloader: DataLoader) -> Dict[str, np.ndarray]:
+    """
+    Compute stratified population sizes P^{s}_{a} from a DataLoader.
+
+    Combines marginal population sizes P_a from PopulationData with stratum
+    proportions Q_{s,a} from StratificationData to produce P^{s}_{a} = Q_{s,a} * P_a.
+
+    Parameters
+    ----------
+    dataloader : DataLoader
+        An instantiated DataLoader with population and stratification data.
+
+    Returns
+    -------
+    Dict[str, np.ndarray]
+        Dictionary mapping stratum labels to population size arrays of shape (A,).
+    """
+    P_a = dataloader.pop_data.groupby("age")["P"].sum().sort_index().values
+    Q_sa, labels = dataloader.strat_data._build_Q_and_labels(
+        dataloader.strat_data.strat_var_cols
+    )
+    return {str(lab): Q_sa[i] * P_a for i, lab in enumerate(labels)}
+
+
+def z_marginals(
+    summariser: ModelSummariserBRC,
+    dataloader: DataLoader,
+) -> Dict[str, ArrayLike]:
+    """
+    Compute the expected partially stratified total contact counts z^s_ab.
+
+    Note: To be used for sampling associativity fractionals.
+
+    Parameters
+    ----------
+    summariser : ModelSummariserBRC
+        Model summariser
+    dataloader : DataLoader
+        An instantiated DataLoader. Used to extract stratified source population sizes
+        by combining PopulationData (total counts) with StratificationData (proportions).
+    """
+
+    # Extract posterior contact intensity samples
+    cint_samples = summariser.get_posterior_samples("cint")
+
+    # Extract source labels
+    source_labs = [str(key).replace("->All", "") for key in cint_samples.keys()]
+
+    # Extract stratified population sizes: Dict[str, NDArray] with shape (A,)
+    P_sa = _compute_P_sa(dataloader)
+
+    def z(lab: str) -> np.ndarray:
+        m_s_ab = cint_samples[f"{lab}->All"]
+        return m_s_ab * P_sa[lab][np.newaxis, :, np.newaxis]
+
+    zs = {lab: z(lab) for lab in source_labs}
+
+    return zs
+
+
+def frechet_bounds(
+    z_marginals: Dict[str, np.ndarray],
+    return_eta: bool = False,
+):
+    """
+    Calculate Frechet-Hoeffding bounds for the associativity coefficient.
+
+    Parameters
+    ----------
+    z_marginals : dict
+        Dictionary containing marginal contact matrices for each group (output of z_marginals function)
+    source_lab : str
+        Source group lab in format "Sex_Ethnicity" (e.g., "Male_NH White")
+    target_lab : str
+        Target group lab in format "Sex_Ethnicity" (e.g., "Female_NH White")
+    normalize : bool, optional
+        Whether to normalize the bounds to be between 0 and 1 (default is False)
+
+    Returns
+    -------
+    tuple
+        Tuple containing two dictionaries:
+        - 'min': Lower bound array (n_samples x n_ages x n_ages)
+        - 'max': Upper bound array (n_samples x n_ages x n_ages)
+    """
+    labs = list(z_marginals.keys())
+    min_dict = {}
+    max_dict = {}
+    for source_lab in labs:
+        for target_lab in labs:
+
+            # Calculate contact flows for source and target groups
+            Z_s_ab = z_marginals[source_lab]
+            Z_t_ba = z_marginals[target_lab].transpose((0, 2, 1))
+
+            # Sum contact flows from all groups except source group
+            Z = 0
+            for key, matrix in z_marginals.items():
+                if key == source_lab:
+                    continue
+
+                Z += matrix
+
+            # Calculate Frechet-Hoeffding bounds
+            if return_eta:
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    eta_min = np.maximum(0, (Z_t_ba - Z) / Z_s_ab)
+                    eta_max = np.minimum(1, Z_t_ba / Z_s_ab)
+
+                    # Handle NaNs from division by zero
+                    eta_min = np.nan_to_num(eta_min, nan=0.0)
+                    eta_max = np.nan_to_num(eta_max, nan=1.0)
+
+                    min_dict[f"{source_lab}->{target_lab}"] = eta_min
+                    max_dict[f"{source_lab}->{target_lab}"] = eta_max
+            else:
+                Z_min = np.maximum(0, Z_t_ba - Z)
+                Z_max = np.minimum(Z_t_ba, Z_s_ab)
+
+                min_dict[f"{source_lab}->{target_lab}"] = Z_min
+                max_dict[f"{source_lab}->{target_lab}"] = Z_max
+
+    return min_dict, max_dict
+
+
+from numpy.typing import ArrayLike
+from scipy.stats import beta
+
+
+def rtruncated_beta(
+    a: ArrayLike,
+    b: ArrayLike,
+    lb: ArrayLike = 0.0,
+    ub: ArrayLike = 1.0,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """
+    Generate random samples from a truncated Beta distribution.
+
+    Samples are drawn via inverse CDF transform: a uniform variate is
+    mapped through the Beta CDF restricted to ``[lb, ub]``.
+
+    Parameters
+    ----------
+    a : array_like
+        Alpha (shape) parameter of the Beta distribution.  Must be positive.
+    b : array_like
+        Beta (shape) parameter of the Beta distribution.  Must be positive.
+    lb : array_like, optional
+        Lower bound of the truncation interval (default 0.0).
+    ub : array_like, optional
+        Upper bound of the truncation interval (default 1.0).
+    rng : numpy.random.Generator or None, optional
+        Random number generator instance.  If ``None`` (default), a new
+        generator is created via ``np.random.default_rng()``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Random samples with shape determined by broadcasting
+        ``a``, ``b``, ``lb``, and ``ub`` together.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    a, b, lb, ub = np.broadcast_arrays(
+        np.asarray(a, dtype=float),
+        np.asarray(b, dtype=float),
+        np.asarray(lb, dtype=float),
+        np.asarray(ub, dtype=float),
+    )
+
+    Flb = beta.cdf(lb, a, b)
+    Fub = beta.cdf(ub, a, b)
+    u = Flb + (Fub - Flb) * rng.uniform(size=a.shape)
+
+    return beta.ppf(u, a, b)
+
+
+def rtruncated_dirichlet(
+    concentration: ArrayLike,
+    lb: ArrayLike = 0.0,
+    ub: ArrayLike = 1.0,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """
+    Generate random samples from a truncated Dirichlet distribution.
+
+    Samples are drawn via a sequential conditional stick-breaking procedure.
+    Each component is sampled from a truncated Beta distribution conditioned
+    on previous components, with bounds adjusted to satisfy the element-wise
+    constraints ``lb <= x <= ub`` and the simplex constraint ``sum(x) = 1``.
+
+    Parameters
+    ----------
+    concentration : array_like
+        Concentration (alpha) parameters of the Dirichlet distribution.
+        The last axis is the Dirichlet dimension K.  Must be positive.
+    lb : array_like, optional
+        Element-wise lower bounds for each component (default 0.0).
+        Must satisfy ``0 <= lb <= ub <= 1`` and ``sum(lb) <= 1``.
+    ub : array_like, optional
+        Element-wise upper bounds for each component (default 1.0).
+        Must satisfy ``sum(ub) >= 1``.
+    rng : numpy.random.Generator or None, optional
+        Random number generator instance.  If ``None`` (default), a new
+        generator is created via ``np.random.default_rng()``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Random samples on the simplex with shape determined by broadcasting
+        ``concentration``, ``lb``, and ``ub`` together.  The last axis has
+        size K and sums to 1.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    concentration, lb, ub = np.broadcast_arrays(
+        np.asarray(concentration, dtype=float),
+        np.asarray(lb, dtype=float),
+        np.asarray(ub, dtype=float),
+    )
+
+    x = np.zeros_like(concentration)
+    K = concentration.shape[-1]  # last axis is the Dirichlet dimension
+
+    # Sample component K-2 first (marginal truncated Beta)
+    lb_km1 = np.maximum(lb[..., K - 2], 1 - np.sum(ub, axis=-1) + ub[..., K - 2])
+    ub_km1 = np.minimum(ub[..., K - 2], 1 - np.sum(lb, axis=-1) + lb[..., K - 2])
+    x[..., K - 2] = rtruncated_beta(
+        concentration[..., K - 2],
+        np.sum(concentration, axis=-1) - concentration[..., K - 2],
+        lb=lb_km1,
+        ub=ub_km1,
+        rng=rng,
+    )
+
+    # Sample K-3, K-4, ..., 0 via conditional stick-breaking
+    for k in range(K - 3, -1, -1):
+        R = 1 - np.sum(x[..., k + 1 :], axis=-1)
+
+        ub_rest = np.sum(ub, axis=-1) - np.sum(ub[..., k : K - 1], axis=-1)
+        lb_rest = np.sum(lb, axis=-1) - np.sum(lb[..., k : K - 1], axis=-1)
+
+        z_lb = np.maximum(lb[..., k] / R, 1 - ub_rest / R)
+        z_ub = np.minimum(ub[..., k] / R, 1 - lb_rest / R)
+
+        beta_b = np.sum(concentration, axis=-1) - np.sum(
+            concentration[..., k : K - 1], axis=-1
+        )
+
+        x[..., k] = (
+            rtruncated_beta(concentration[..., k], beta_b, lb=z_lb, ub=z_ub, rng=rng)
+            * R
+        )
+
+    x[..., K - 1] = 1 - np.sum(x[..., : K - 1], axis=-1)
+    return x
+
+
+def sample_eta(
+    z_marginals: Dict[str, np.ndarray],
+    eta_lb: Dict[str, np.ndarray],
+    eta_ub: Dict[str, np.ndarray],
+    dataloader: DataLoader,
+    alpha: float = 1.0,
+    external_eta: Dict[str, np.ndarray] | None = None,
+    external_counts: Dict[str, np.ndarray] | None = None,
+    rng: np.random.Generator | None = None,
+) -> Dict[str, np.ndarray]:
+    """
+    Sample an array of associativity fractions.
+
+    For each source stratum, draws associativity fractions
+    ``eta[source->target]`` from a truncated Dirichlet distribution whose
+    concentration is proportional to the stratified population sizes.  The
+    lower triangle (participant age >= contact age) is sampled directly;
+    the strictly upper triangle is filled via the reciprocity identity,
+    and diagonals of off-diagonal stratum pairs are corrected accordingly.
+
+    Parameters
+    ----------
+    z_marginals : Dict[str, np.ndarray]
+        Dictionary mapping stratum labels to marginal contact count arrays
+        of shape ``(S, A, A)`` (output of :func:`z_marginals`).
+    eta_lb : Dict[str, np.ndarray]
+        Lower Frechet bounds for each ``"source->target"`` pair,
+        shape ``(S, A, A)``.
+    eta_ub : Dict[str, np.ndarray]
+        Upper Frechet bounds for each ``"source->target"`` pair,
+        shape ``(S, A, A)``.
+    dataloader : DataLoader
+        An instantiated DataLoader.  Used to extract stratified population
+        sizes via ``_compute_P_sa`` for the Dirichlet concentration.
+    alpha : float, optional
+        Scalar multiplier for the Dirichlet concentration (default 1.0).
+    external_eta : Dict[str, np.ndarray] or None, optional
+        External associativity fractions to add to the concentration,
+        shape ``(A, A, K)`` per key.  If ``None``, ignored.
+    external_counts : Dict[str, np.ndarray] or None, optional
+        External contact counts to add to the concentration,
+        shape ``(A, A, K)`` per key.  If ``None``, ignored.
+    rng : numpy.random.Generator or None, optional
+        Random number generator.  If ``None``, a new generator is created.
+
+    Returns
+    -------
+    Dict[str, np.ndarray]
+        Dictionary mapping ``"source->target"`` labels to associativity
+        fraction arrays of shape ``(S, A, A)``.
+    """
+    strata_names = list(z_marginals.keys())
+    K = len(strata_names)
+    S, A, _ = next(iter(eta_lb.values())).shape
+
+    P_sa = _compute_P_sa(dataloader)
+    concentration = alpha * np.stack(
+        [P_sa[t] for t in strata_names],
+        axis=-1,
+    )
+    concentration /= concentration.sum(axis=-1, keepdims=True)
+
+    tril_mask = np.tril(np.ones((A, A), dtype=bool))  # a >= b (sampled)
+    striu_mask = ~tril_mask  # a < b  (filled via reciprocity)
+    diag_idx = np.arange(A)
+
+    eta_out = {}
+    for source in strata_names:
+        _lb = np.stack([eta_lb[f"{source}->{t}"] for t in strata_names], axis=-1)
+        _ub = np.stack([eta_ub[f"{source}->{t}"] for t in strata_names], axis=-1)
+
+        conc = concentration[np.newaxis, np.newaxis, :, :]
+        if external_eta is not None:
+            _ext = np.stack(
+                [external_eta[f"{source}->{t}"] for t in strata_names], axis=-1
+            )  # shape (A, A, K)
+            conc = conc + _ext[np.newaxis, :, :, :]  # broadcast to (S, A, A, K)
+
+        if external_counts is not None:
+            _ext = np.stack(
+                [external_counts[f"{source}->{t}"] for t in strata_names], axis=-1
+            )  # shape (A, A, K)
+            conc = conc + _ext[np.newaxis, :, :, :]  # broadcast to (S, A, A, K)
+
+        eta_draw = rtruncated_dirichlet(conc, lb=_lb, ub=_ub, rng=rng)
+
+        # Keep only lower triangle (a >= b)
+        eta_draw *= tril_mask[np.newaxis, :, :, np.newaxis]
+
+        for j, target in enumerate(strata_names):
+            eta_out[f"{source}->{target}"] = eta_draw[..., j]
+
+    # Fill strictly upper triangle via reciprocity
+    for ell in strata_names:
+        for k in strata_names:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                fill = (
+                    z_marginals[k].transpose(0, 2, 1)
+                    / z_marginals[ell]
+                    * eta_out[f"{k}->{ell}"].transpose(0, 2, 1)
+                )
+                fill = np.nan_to_num(fill, nan=0.0, posinf=0.0, neginf=0.0)
+            eta_out[f"{ell}->{k}"] += fill * striu_mask[np.newaxis, :, :]
+
+    # Fix diagonal for off-diagonal category pairs
+    for i, ell in enumerate(strata_names):
+        for j, k in enumerate(strata_names):
+            if i <= j:
+                continue
+            with np.errstate(divide="ignore", invalid="ignore"):
+                diag_fix = (
+                    z_marginals[k][:, diag_idx, diag_idx]
+                    / z_marginals[ell][:, diag_idx, diag_idx]
+                    * eta_out[f"{k}->{ell}"][:, diag_idx, diag_idx]
+                )
+                diag_fix = np.nan_to_num(diag_fix, nan=0.0, posinf=0.0, neginf=0.0)
+            eta_out[f"{ell}->{k}"][:, diag_idx, diag_idx] = diag_fix
+
+    return eta_out
+
+
+def predict_full_matrices(
+    summariser: ModelSummariserBRC,
+    dataloader: DataLoader,
+    rng: np.random.Generator = None,
+) -> Dict[str, ArrayLike]:
+    """
+    Predict fully stratified contact intensity matrices from the inference results of a partially stratified model.
+
+    Parameters
+    ----------
+    summariser : ModelSummariserBRC
+        A fitted partially stratified model summariser containing posterior samples of the contact intensities.
+    dataloader : DataLoader
+        The DataLoader used to prepare the data for the model, required to extract population sizes for each stratum.
+    rng : np.random.Generator, optional
+        A random number generator for sampling associativity fractions. If None, a new generator will be created.
+
+    Returns
+    -------
+    Dict[str, ArrayLike]
+        A dictionary mapping "source->target" stratum pairs to predicted fully stratified contact intensity matrices of shape (S, A, A), where S is the number of posterior samples and A is the number of age groups.
+    """
+
+    sample_z_marginals = z_marginals(summariser, dataloader)
+    eta_lb, eta_ub = frechet_bounds(sample_z_marginals, return_eta=True)
+    sample_cint = summariser.get_posterior_samples("cint")
+    samples_eta = sample_eta(sample_z_marginals, eta_lb, eta_ub, dataloader, rng=rng)
+
+    strata = list(sample_z_marginals.keys())
+
+    cint_dict = {}
+    for source_stratum in strata:
+        for target_stratum in strata:
+            cint_dict[f"{source_stratum}->{target_stratum}"] = (
+                sample_cint[f"{source_stratum}->All"]
+                * samples_eta[f"{source_stratum}->{target_stratum}"]
+            )
+
+    return cint_dict

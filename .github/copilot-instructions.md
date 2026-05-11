@@ -124,7 +124,7 @@ col_map = CoordToColumns(
     id_var='pid',
     age_pop='age',
     size_pop='population',
-    grp_vars_part=['gender'],  # Optional stratification
+    strat_vars_part=['gender'],  # Optional stratification
     repeat_part='wave'  # Optional repeat interview tracking
 )
 dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)

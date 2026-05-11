@@ -1,14 +1,10 @@
-from typing import Optional, Union
+from typing import Union
 
-import jax.numpy as jnp
 import numpy as np
 import numpyro
-from jax import vmap
-from numpy.typing import NDArray
 from numpyro import distributions as dist
 
 from ...distributions._IGMRF2D import IGMRF2D
-from .._math import inverse_alr, inverse_clr, inverse_ilr
 from .._utils import age_age_grid, diff_age_age_grid, symm_from_tril_ix_row
 from ._Spline2D import Spline2D
 
@@ -88,8 +84,6 @@ class PSpline2D(Spline2D):
         Grid structure for contact matrix:
         - 'age-age': Standard age-by-age contact matrix
         - 'diff-age': Age difference representation
-    transform : {None, 'alr', 'clr', 'ilr'}, default=None
-        Compositional data transformation for converting to simplex
 
     Attributes
     ----------
@@ -148,8 +142,7 @@ class PSpline2D(Spline2D):
     ...     prior_type='partial',
     ...     M=30,
     ...     degree=3,
-    ...     order=2,
-    ...     transform='alr'
+    ...     order=2
     ... )
     >>> prior_partial.set_age_bounds(0, 75)
     >>> prior_partial.set_event_dim(4)
@@ -162,8 +155,7 @@ class PSpline2D(Spline2D):
     ...     degree=3,
     ...     order=2,
     ...     tau_shape=2.0,
-    ...     tau_rate=0.01,
-    ...     transform='alr'
+    ...     tau_rate=0.01
     ... )
 
     Notes
@@ -214,9 +206,9 @@ class PSpline2D(Spline2D):
         tau_rate: float = 0.01,
         tau_ratio: float = 1.0,
         grid_type: str = "age-age",
-        transform: Union[str, None] = None,
+        bound_ext: float = 0.05,
     ):
-        super().__init__(prior_type, M, degree, grid_type, transform)
+        super().__init__(prior_type, M, degree, grid_type, bound_ext)
         self.order = order
         self.tau_shape = tau_shape
         self.tau_rate = tau_rate
@@ -317,11 +309,10 @@ class PSpline2D(Spline2D):
         Notes
         -----
         Sampling process:
-        1. Sample precisions: τ ~ Gamma(tau_shape, tau_rate), shape (event_dim_latent,)
-        2. Sample coefficients: β ~ IGMRF2D with precision τ, shape (event_dim_latent, M²)
+        1. Sample precisions: τ ~ Gamma(tau_shape, tau_rate), shape (event_dim,)
+        2. Sample coefficients: β ~ IGMRF2D with precision τ, shape (event_dim, M²)
         3. Compute latent field: f = Φ β
-        4. Add location parameter: f += trans_loc
-        5. Apply inverse transformation (ALR/CLR/ILR) to map to simplex
+        4. Add location parameter: f += loc
 
         Each dimension gets its own precision τᵢ, enabling adaptive smoothness
         that can vary across contact settings or age groups.
@@ -357,7 +348,7 @@ class PSpline2D(Spline2D):
         tau = numpyro.sample(
             "spline_tau",
             dist.Gamma(self.tau_shape, self.tau_rate),
-            sample_shape=(self.event_dim_latent,),
+            sample_shape=(self.event_dim,),
         )
 
         # Sample beta coefficients
@@ -379,10 +370,9 @@ class PSpline2D(Spline2D):
         beta = beta.swapaxes(0, 1)  # (M*M, event_dim_eff)
         f = self.PHI @ beta  # (A*A, event_dim_eff)
         f = f.swapaxes(0, 1)
-        f = f.reshape((self.event_dim_latent, self.A, self.A))
-        f = self.trans_loc + f
+        f = f.reshape((self.event_dim, self.A, self.A))
 
-        return self.apply_inverse_transform(f)
+        return self.loc + f
 
     def sample_full(self):
         """
@@ -402,7 +392,7 @@ class PSpline2D(Spline2D):
         Notes
         -----
         Sampling process:
-        1. Sample diagonal precisions: τ_diag ~ Gamma(shape, rate), shape (event_dim_diag_eff,)
+        1. Sample diagonal precisions: τ_diag ~ Gamma(shape, rate), shape (event_dim_diag,)
         2. Sample off-diagonal precisions: τ_non_diag ~ Gamma(shape, rate), shape (event_dim_non_diag_eff,)
         3. Sample diagonal coefficients: β_diag ~ IGMRF2D with τ_diag
         4. Sample off-diagonal coefficients: β_non_diag ~ IGMRF2D with τ_non_diag
@@ -448,7 +438,7 @@ class PSpline2D(Spline2D):
         tau_diag = numpyro.sample(
             "spline_tau_diag",
             dist.Gamma(self.tau_shape, self.tau_rate),
-            sample_shape=(self.event_dim_diag_eff,),
+            sample_shape=(self.event_dim_diag,),
         )
         tau_non_diag = numpyro.sample(
             "spline_tau_non_diag",
@@ -490,7 +480,7 @@ class PSpline2D(Spline2D):
         beta_diag = beta_diag.swapaxes(0, 1)  # (M*M, event_dim_diag)
         f_diag = self.PHI_diag @ beta_diag
         f_diag = f_diag[self.symm_tril_idx, :].swapaxes(0, 1)  # Must be symmetric
-        f_diag = f_diag.reshape((self.event_dim_diag_eff, self.A, self.A))
+        f_diag = f_diag.reshape((self.event_dim_diag, self.A, self.A))
 
         beta_non_diag = beta_non_diag.swapaxes(0, 1)  # (M*M, event_dim_non_diag)
         f_non_diag = (self.PHI_non_diag @ beta_non_diag).swapaxes(0, 1)
@@ -499,8 +489,7 @@ class PSpline2D(Spline2D):
         # Assemble diagonal and off-diagonal blocks into full event grid
         f = self._assemble_full_prior_blocks(f_diag, f_non_diag)
 
-        f = self.trans_loc + f
-        return self.apply_inverse_transform(f)
+        return self.loc + f
 
     def sample(self):
         """

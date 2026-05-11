@@ -62,7 +62,7 @@ class BRCrefine(BRC):
         - cid: coarse contact age group codes (categorical)
         - log_N: log of survey sample sizes
         - log_P: log of population age distribution
-        - log_S: log of setting-specific offsets (optional)
+        - log_V: log of setting-specific offsets (optional)
         - rid: repeat interview indicators (optional)
     priors : dict, optional
         Dictionary of prior specifications. If None, uses default_priors.
@@ -90,7 +90,7 @@ class BRCrefine(BRC):
         Log of sample sizes, shape (n_obs,)
     log_P : jax.Array
         Log of population age distribution, shape (1, A)
-    log_S : jax.Array
+    log_V : jax.Array
         Log of offsets, shape (n_obs,)
     rid : jax.Array, optional
         Repeat interview indicators, shape (n_obs,)
@@ -129,7 +129,7 @@ class BRCrefine(BRC):
     ...     age_part="age_part",
     ...     age_grp_cnt="age_grp_cnt",  # Note: coarse age groups
     ...     age_pop="age",
-    ...     size_pop="P"
+    ...     P="P"
     ... )
     >>> dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
     >>>
@@ -168,7 +168,9 @@ class BRCrefine(BRC):
     """
 
     # Default priors
-    default_priors = {"rate": PSpline2D(grid_type="diff-age", prior_type="global")}
+    default_priors = {
+        "rate": PSpline2D(grid_type="diff-age", prior_type="global", M=15)
+    }
 
     def __init__(
         self,
@@ -206,87 +208,38 @@ class BRCrefine(BRC):
         # Initialize parent class with merged priors
         super().__init__(dataloader, effective_priors, likelihood)
 
-        # Validate BRCrefine-specific requirements
-        self._validate_inputs()
-
         # Convert data to JAX arrays for efficient computation
-        self.y = jnp.array(self.ds.y.values)
-        self.log_N = jnp.array(self.ds.log_N.values)
-        self.log_P = jnp.array(self.ds.log_P.values)[jnp.newaxis, :]
+        self.y = jnp.array(self.data.base_data["y"])
+        self.log_N = jnp.array(self.data.base_data["log_N"])
+        self.log_P = jnp.array(self.data.base_data["log_P"])
 
         # Optional offset for different settings (e.g., home, work, school)
-        self.log_S = (
-            jnp.array(self.ds.log_S.values)
-            if hasattr(self.ds, "log_S")
+        self.log_V = (
+            jnp.array(self.data.base_data["log_V"])
+            if "log_V" in self.data.base_data
             else jnp.zeros_like(self.y)
         )
 
         # Age aggregation indices for coarse-to-fine refinement
-        self.aid = jnp.array(self.ds.aid.values, dtype=jnp.int32)
-        self.aid_exp = jnp.array(self.ds.aid_exp.values, dtype=jnp.int32)
-        self.bid_pad = jnp.array(self.ds.bid_pad.values, dtype=jnp.int32)
+        self.aid = jnp.array(self.data.base_data["aid"], dtype=jnp.int32)
+        self.aid_exp = jnp.array(self.data.base_data["aid_exp"], dtype=jnp.int32)
+        self.bid_pad = jnp.array(self.data.base_data["bid_pad"], dtype=jnp.int32)
 
         # Optional repeat interview effect
-        if hasattr(self.ds, "rid"):
-            self.rid = jnp.array(self.ds.rid.values, dtype=jnp.int32)
-            self.hill = Hill(max_value=int(self.ds.rid.max()))
+        if "rid" in self.data.base_data:
+            self.rid = jnp.array(self.data.base_data["rid"], dtype=jnp.int32)
+            self.hill = Hill(max_value=int(self.data.base_data["rid"].max()))
 
-    def _validate_inputs(self) -> None:
-        """
-        Validate that required data fields are present in the dataset.
-
-        The BRCrefine model requires specific data fields for proper functioning:
-        - aid_exp: Expanded participant age indices for aggregation over coarse age groups
-        - bid_pad: Padded contact age indices representing all ages in each coarse group
-        - log_N: Log-transformed sample sizes
-        - log_P: Log-transformed population age distribution
-
-        These fields are created by the DataLoader when age_grp_cnt is specified
-        instead of age_cnt in the CoordToColumns mapping.
-
-        Raises
-        ------
-        ValueError
-            If any required field is missing from the dataset with descriptive
-            error messages explaining what the field represents and how to fix it.
-
-        Notes
-        -----
-        This validation is called automatically during initialization.
-        The aid_exp and bid_pad arrays are critical for the age aggregation
-        mechanism that enables refinement of coarse contact age data.
-
-        See Also
-        --------
-        DataLoader : Creates these fields via make_idarrs_for_intervals()
-        index_mask_logsumexp : Uses these arrays for age aggregation
-        """
-        required_fields = {
-            "aid_exp": (
-                "Expanded participant age indexes (aid_exp) are missing. "
-                "This field is auto-generated when using coarse contact age groups. "
-                "Ensure your DataLoader was initialized with age_grp_cnt specified."
-            ),
-            "bid_pad": (
-                "Padded contact age indexes (bid_pad) are missing. "
-                "This field is auto-generated when using coarse contact age groups. "
-                "Ensure your DataLoader was initialized with age_grp_cnt specified."
-            ),
-            "log_N": (
-                "Log of sample size (log_N) is missing. "
-                "This should be automatically created by the DataLoader."
-            ),
-            "log_P": (
-                "Log of population age distribution (log_P) is missing. "
-                "Ensure you provided age_pop and size_pop in CoordToColumns."
-            ),
-        }
-
-        for field, error_msg in required_fields.items():
-            if not hasattr(self.ds, field):
-                raise ValueError(error_msg)
-
-    def model(self, y: Optional[ArrayLike] = None) -> None:
+    def model(
+        self,
+        aid: Optional[ArrayLike] = None,
+        aid_exp: Optional[ArrayLike] = None,
+        bid_pad: Optional[ArrayLike] = None,
+        rid: Optional[ArrayLike] = None,
+        log_N: Optional[ArrayLike] = None,
+        log_V: Optional[ArrayLike] = None,
+        y: Optional[ArrayLike] = None,
+    ) -> None:
         """
         Define the generative model for contact matrix estimation with coarse contact ages.
 
@@ -315,9 +268,9 @@ class BRCrefine(BRC):
            - bid_pad: Padded contact age indices (all ages in group, padded with -1)
            - This step "refines" coarse age data by estimating underlying fine contacts
 
-        6. **Expected contacts**: μ = exp(aggregated_log_cint + log(N) + log(S) + η)
+        6. **Expected contacts**: μ = exp(aggregated_log_cint + log(N) + log(V) + η)
            - log(N): log sample size
-           - log(S): log offset (setting effects)
+           - log(V): log offset (ambiguous contact effects)
            - η: repeat interview effect (if applicable)
 
         7. **Observation likelihood**:
@@ -355,8 +308,16 @@ class BRCrefine(BRC):
         index_mask_logsumexp : Core function for age aggregation
         BRCfine.model : Fine-age model without aggregation step
         """
+        aid = self.aid if aid is None else aid
+        aid_exp = self.aid_exp if aid_exp is None else aid_exp
+        bid_pad = self.bid_pad if bid_pad is None else bid_pad
+        log_N = self.log_N if log_N is None else log_N
+        log_V = self.log_V if log_V is None else log_V
+        rid = getattr(self, "rid", None) if rid is None else rid
+        len_y = len(self.y) if y is None else len(y)
+
         # Baseline contact rate (global intercept)
-        beta0 = numpyro.sample("baseline", dist.Normal(0.0, 10.0))
+        beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
 
         # Smooth age-age contact rate function from prior
         with scope(prefix="rate"):
@@ -369,32 +330,32 @@ class BRCrefine(BRC):
         log_cint = numpyro.deterministic("log_cint", log_rate + self.log_P)
 
         # Repeat interview effect (if repeat interviews in data)
-        repeat_effect = self.hill.sample()[self.rid] if hasattr(self, "rid") else 0.0
+        repeat_effect = self.hill.sample()[rid] if hasattr(self, "rid") else 0.0
 
         # Age aggregation: Sum fine-age contact intensities over coarse age groups
         # This is the key step that "refines" coarse contact age data
         # - aid_exp contains repeated participant ages (one per fine age in contact group)
         # - bid_pad contains all fine ages within each coarse contact group (padded with -1)
         # - index_mask_logsumexp sums over valid ages in log space (masking -1 with -inf)
-        aggregated_log_cint = index_mask_logsumexp(log_cint, self.aid_exp, self.bid_pad)
+        aggregated_log_cint = index_mask_logsumexp(log_cint, aid_exp, bid_pad)
 
         # Expected number of contacts (combining all effects)
         mu = jnp.exp(
             aggregated_log_cint  # Aggregated contact intensity
             + repeat_effect  # Repeat interview correction
-            + self.log_N  # Sample size adjustment
-            + self.log_S  # Setting-specific offset
+            + log_N  # Sample size adjustment
+            + log_V  # Setting-specific offset
         )
 
         # Observation likelihood
         if self.likelihood == "poisson":
-            with plate("data", len(self.y)):
+            with plate("data", len_y):
                 numpyro.sample("obs", dist.Poisson(rate=mu), obs=y)
 
         if self.likelihood == "negbin":
             # Overdispersion parameter: smaller values = more overdispersion
             inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
-            with plate("data", len(self.y)):
+            with plate("data", len_y):
                 numpyro.sample(
                     "obs",
                     dist.NegativeBinomial2(mean=mu, concentration=1.0 / inv_disp),

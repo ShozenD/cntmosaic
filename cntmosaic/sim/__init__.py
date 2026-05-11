@@ -1,13 +1,16 @@
 from ._ContactGenerator import ContactGenerator
 from ._MatrixGenerator import MatrixGenerator
-from ._ParticipantGenerator import ParticipantGenerator, Subgroup
+from ._ParticipantGenerator import ParticipantGenerator
+from ._PopulationConstructor import PopulationConstructor
+from ._Stratification import Stratification
 from ._utils import print_available_countries
 
 __all__ = [
     "print_available_countries",
     "ModelEvaluatorSVI",
     "ModelEvaluatorMCMC",
-    "Subgroup",
+    "Stratification",
+    "PopulationConstructor",
     "ParticipantGenerator",
     "MatrixGenerator",
     "ContactGenerator",

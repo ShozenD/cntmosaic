@@ -1,18 +1,14 @@
-from typing import Optional
-
 import jax.numpy as jnp
-import numpy as np
 import numpyro
 from jax.typing import ArrayLike
 from numpyro import distributions as dist
 
 from ...distributions import IGMRF2D, SymIGMRF2D
 from ...utils import symm_from_tril_ix_col
-from .._utils import symm_from_tril_ix_col
 from ._Prior2D import Prior2D
 
 
-class vdKassteele(Prior2D):
+class vdKassteele2D(Prior2D):
     """
     2D Intrinsic Gaussian Markov Random Field (IGMRF) prior for contact matrix estimation.
 
@@ -133,13 +129,6 @@ class vdKassteele(Prior2D):
     ...     f = prior_full.sample()
     >>> print(f.shape)  # (9, 13, 13)
 
-    Notes
-    -----
-    - Unlike other BRC priors, this class does NOT apply simplex transformations
-    - The first dimension of returned arrays is event_dim (not event_dim_eff)
-    - For symmetric matrices (prior_type='global'), returns shape (A, A)
-    - For other types, returns shape (event_dim, A, A)
-
     See Also
     --------
     Prior2D : Base class for 2D priors
@@ -155,8 +144,6 @@ class vdKassteele(Prior2D):
       Annals of Applied Statistics, 11(1), 320-339.
     - Rue, H., & Held, L. (2005). Gaussian Markov Random Fields: Theory and
       Applications. Chapman & Hall/CRC.
-    - Besag, J., & Kooperberg, C. (1995). On conditional and intrinsic
-      autoregressions. Biometrika, 82(4), 733-746.
     """
 
     pytree_aux_fields = ("order", "tau_shape", "tau_rate")
@@ -179,7 +166,7 @@ class vdKassteele(Prior2D):
             Order of difference penalty (1 or 2)
         tau_shape : float, default=2.0
             Shape parameter for Gamma prior on precision
-        tau_rate : float, default=0.01
+        tau_rate : float, default=0.1
             Rate parameter for Gamma prior on precision
 
         Raises
@@ -190,7 +177,7 @@ class vdKassteele(Prior2D):
         if order not in [1, 2]:
             raise ValueError(f"order must be 1 or 2, got {order}")
 
-        super().__init__("age-age", None, prior_type)
+        super().__init__("age-age", prior_type)
         self.order = order
         self.tau_shape = tau_shape
         self.tau_rate = tau_rate
@@ -419,44 +406,11 @@ class vdKassteele(Prior2D):
         f_non_diag = numpyro.sample(
             "f_non_diag",
             IGMRF2D((self.A, self.A), order=(self.order, self.order), cond_prec1=tau),
-            sample_shape=(self.event_dim_non_diag,),
-        ).reshape((self.event_dim_non_diag, self.A, self.A))
+            sample_shape=(self.event_dim_non_diag_eff,),
+        ).reshape((self.event_dim_non_diag_eff, self.A, self.A))
 
-        # Allocate diagonal and off-diagonal elements into full K×K contact matrix grid
-        sqrt_event_dim = jnp.sqrt(self.event_dim).astype(int)
-        diag_idx = jnp.array(
-            [(i * sqrt_event_dim + i) for i in range(sqrt_event_dim)]
-        )  # Flat index of (i,i) in row-major order
-
-        # Preallocate flat output: (event_dim, A*A)
-        f = jnp.zeros((self.event_dim, self.A, self.A))
-
-        # Allocate diagonal elements (within-group contacts)
-        f = f.at[diag_idx, :, :].set(f_diag)
-
-        # Allocate off-diagonal elements (between-group contacts with reciprocity)
-        # We need to map f_non_diag[i] to pairs of positions in the K×K grid
-        # Get all non-diagonal flat indices in the K×K grid
-        all_indices = jnp.arange(self.event_dim)
-        non_diag_mask = jnp.isin(all_indices, diag_idx, invert=True)
-        non_diag_all = all_indices[non_diag_mask]
-
-        # Compute transpose indices for all non-diagonal positions
-        rows = non_diag_all // sqrt_event_dim
-        cols = non_diag_all % sqrt_event_dim
-        transpose_indices = cols * sqrt_event_dim + rows
-
-        # Keep only indices where idx < transpose_idx (lower half of reciprocal pairs)
-        lower_mask = non_diag_all < transpose_indices
-        flat_idx = non_diag_all[lower_mask]
-        transpose_flat_idx = transpose_indices[lower_mask]
-
-        # Allocate each sampled off-diagonal matrix to its position and transpose position
-        for i in range(self.event_dim_non_diag_eff):
-            idx = flat_idx[i]
-            idx_t = transpose_flat_idx[i]
-            f = f.at[idx, :, :].set(f_non_diag[i, :, :])
-            f = f.at[idx_t, :, :].set(f_non_diag[i, :, :].T)
+        # Assemble diagonal and off-diagonal blocks using parent class method
+        f = self._assemble_full_prior_blocks(f_diag, f_non_diag)
 
         return f
 

@@ -13,20 +13,18 @@ def test_basis_shape_global():
 
     # Check that the event dimension is set correctly
     assert prior.event_dim == 1
-    assert prior.event_dim_eff == 1
 
     # Check if basis matrices are set correctly
     assert prior.PHI.shape == (85 * (85 + 1) / 2, 30 * 30)
 
 
 def test_basis_shape_partial():
-    prior = PSpline2D(prior_type="partial", transform="ilr")
+    prior = PSpline2D(prior_type="partial")
     prior.set_age_bounds(0, 84)
     prior.set_event_dim(4)
 
     # Check that the event dimension is set correctly
     assert prior.event_dim == 4
-    assert prior.event_dim_eff == 3
 
     # Check existence and dimension of indices
     assert prior.PHI.shape == (85 * 85, 30 * 30)
@@ -48,7 +46,7 @@ def test_sample_global():
 
 def test_sample_partial():
     """Test sampling from partial prior."""
-    prior = PSpline2D(prior_type="partial", transform="ilr")
+    prior = PSpline2D(prior_type="partial")
     prior.set_age_bounds(0, 9)
     prior.set_event_dim(3)
     prior.set_loc(0.0)
@@ -63,7 +61,7 @@ def test_sample_partial():
 
 def test_sample_full():
     """Test sampling from full prior."""
-    prior = PSpline2D(prior_type="full", transform="ilr")
+    prior = PSpline2D(prior_type="full")
     prior.set_age_bounds(0, 9)
     prior.set_event_dim(4)
     prior.set_loc(0.0)

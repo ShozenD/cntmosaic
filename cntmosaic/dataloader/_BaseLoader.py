@@ -47,6 +47,13 @@ class BaseLoader(ABC):
     col_map : CoordToColumns
         Column mapping object specifying how to interpret dataframe columns.
     strat_data : Optional[StratificationData], default=None
+        Optional stratification data for stratified models.
+    smooth_amb_cnt_offsets : bool, default=True
+        Whether to apply Gaussian smoothing to the ambiguous contact offsets (V)
+        before they are used as log-offsets in the model. Smoothing is performed
+        separately within each stratum across participant ages; the bandwidth is
+        selected automatically by leave-one-out cross-validation. Set to ``False``
+        to use the raw, unsmoothed offsets.
 
     Attributes
     ----------
@@ -113,6 +120,12 @@ class BaseLoader(ABC):
         self.data = data
         self.col_map = col_map
         self.pop_data = pop_data
+
+        # Auto-create the ambiguous contact count column if missing
+        # (documented behaviour: if not present, created with value 0)
+        if col_map.z not in self.data.columns:
+            self.data = self.data.copy()
+            self.data[col_map.z] = 0
         self.strat_data = strat_data
         self.smooth_amb_cnt_offsets = smooth_amb_cnt_offsets
         self._align_age_range()

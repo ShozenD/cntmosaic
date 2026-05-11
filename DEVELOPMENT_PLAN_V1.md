@@ -99,7 +99,7 @@ model_data = loader.load()   # returns xarray Dataset with y, log_N, pop_prop_* 
 - **Effort**: S
 - **Rationale**: Type hints for `part_data`, `cnt_data`, `pop_data` are removed with a comment about circular imports. Use `from __future__ import annotations` or a `TYPE_CHECKING` guard to restore the annotations without the import cycle. This is a quick prerequisite for 2.1 Stage 4.
 
-### 2.3 Create `BaseModelEvaluator` abstract class
+### ~~2.3 Create `BaseModelEvaluator` abstract class~~ ✅ DONE
 - **Files**: `cntmosaic/analysis/evaluator/_ModelEvaluatorBRC.py`, `_ModelEvaluatorPrem.py`, `_ModelEvaluatorSocialMix.py`
 - **Effort**: M
 - **Rationale**: All three evaluators duplicate `validate_alpha()`, `interval_score()`, and `compute_metrics()`. A `BaseModelEvaluator` ABC housing shared logic allows evaluators for new models to be added by only implementing model-specific overrides. Evaluators should also accept a `ModelSummariser` protocol rather than concrete summariser classes (current tight coupling via direct import).

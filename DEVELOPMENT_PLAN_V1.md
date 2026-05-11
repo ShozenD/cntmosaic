@@ -16,11 +16,6 @@ These issues directly prevent external researchers from adding new models. They 
 - **Rationale**: `BRC`, `Prem`, `vdKassteele`, and `SocialMix` are completely independent classes with no common interface. A researcher cannot add a new model without reading all four implementations and guessing the expected API. A `ContactModel` ABC should define at minimum `model()`, `run_inference_mcmc()`, `run_inference_svi()`, and `posterior_predictive()`.
 - **Notes**: `SocialMix` is deterministic (no MCMC) and must be moved to a new `cntmosaic.models.classical` subpackage. Bayesian models remain in `cntmosaic.models`. A `DeterministicContactModel` ABC should govern the `classical` subpackage. The public `__init__.py` must clearly separate both namespaces so researchers know immediately which interface to implement.
 
-### 1.2 Extract shared inference logic into a `NumPyroInferenceMixin`
-- **Files**: `cntmosaic/models/_BRC.py:388–502`, `_Prem.py:799–846`, `_vdKassteele.py:251–366`
-- **Effort**: M
-- **Rationale**: All three models duplicate ~300 lines of MCMC/SVI setup, diagnostic logging, and error handling. A mixin (or standalone `run_inference_mcmc()` utility in `_numpyro.py`) eliminates the duplication and means new models inherit correct inference behaviour for free.
-
 ### 1.3 Define a `DataContainer` protocol to decouple models from the concrete `DataLoader`
 - **Files**: `cntmosaic/models/_BRC.py:115`, `_Prem.py:211–215`, `cntmosaic/dataloader/_BaseLoader.py`
 - **Effort**: M
@@ -41,11 +36,11 @@ These issues directly prevent external researchers from adding new models. They 
 - **Effort**: S
 - **Rationale**: `__all__` exports `ModelEvaluatorSVI` and `ModelEvaluatorMCMC`, which do not exist in the `sim` module. This causes an `ImportError` for any user who does `from cntmosaic.sim import *`.
 
-### 1.7 Decouple the inference engine behind a pluggable `InferenceBackend` protocol
+### 1.7 Decouple the inference engine behind a pluggable `InferenceBackend` protocol *(consolidates former item 1.2)*
 - **Files**: `cntmosaic/models/_numpyro.py`, `_BRC.py`, `_Prem.py`, `_vdKassteele.py`
 - **Effort**: L
-- **Rationale**: Every model hard-codes NumPyro for both MCMC and SVI. The package should support alternative backends (PyMC, PyINLA) as the field evolves. Define an `InferenceBackend` protocol with `run_mcmc(model, data, **kwargs) -> InferenceResult` and `run_svi(model, data, guide, **kwargs) -> InferenceResult`. The NumPyro implementation becomes `NumPyroBackend(InferenceBackend)`. Models accept a backend at construction time and delegate all inference calls through it. This also consolidates item 1.2 (the shared mixin) — once models delegate to a backend, the duplicated boilerplate disappears naturally.
-- **Notes**: This is the highest-effort item. It can be split into two PRs: (a) introduce the protocol and `NumPyroBackend` wrapping the current code with no behaviour change, then (b) thread the backend through model constructors.
+- **Rationale**: Every model hard-codes NumPyro and duplicates ~300 lines of MCMC/SVI setup, diagnostic logging, and error handling across `_BRC.py:388–502`, `_Prem.py:799–846`, and `_vdKassteele.py:251–366`. Both problems are solved together: define an `InferenceBackend` protocol with `run_mcmc(model, data, **kwargs) -> InferenceResult` and `run_svi(model, data, guide, **kwargs) -> InferenceResult`. The NumPyro implementation becomes `NumPyroBackend(InferenceBackend)`, wrapping the current `_numpyro.py` utilities. Models accept a backend at construction time and delegate all inference calls through it — the duplicated boilerplate disappears and alternative backends (PyMC, PyINLA) become first-class citizens.
+- **Notes**: Highest-effort item. Split into two PRs: (a) introduce the protocol and `NumPyroBackend` wrapping the current code with no behaviour change, then (b) thread the backend through model constructors and delete duplicated inference code.
 
 ---
 
@@ -99,7 +94,7 @@ model_data = loader.load()   # returns xarray Dataset with y, log_N, pop_prop_* 
 4. **Introduce `ColumnSpec.from_containers()`** and `DataFrameSurveySource`. `DataLoader._create_col_map` constructs `ColumnSpec` internally. No public API change.
 5. **Introduce `ContactSurveyLoader` with `.from_dataframes()` factory**. Deprecate `BaseLoader` and `DataLoader` as thin shims for one release cycle. Audit for direct `BaseLoader` subclasses before removal (it is documented as a subclassing surface).
 
-### 2.2 Fix circular imports blocking type hints in `_DataLoader.py`
+### ~~2.2 Fix circular imports blocking type hints in `_DataLoader.py`~~ ✅ DONE
 - **Files**: `cntmosaic/dataloader/_DataLoader.py:172–176`
 - **Effort**: S
 - **Rationale**: Type hints for `part_data`, `cnt_data`, `pop_data` are removed with a comment about circular imports. Use `from __future__ import annotations` or a `TYPE_CHECKING` guard to restore the annotations without the import cycle. This is a quick prerequisite for 2.1 Stage 4.
@@ -109,7 +104,7 @@ model_data = loader.load()   # returns xarray Dataset with y, log_N, pop_prop_* 
 - **Effort**: M
 - **Rationale**: All three evaluators duplicate `validate_alpha()`, `interval_score()`, and `compute_metrics()`. A `BaseModelEvaluator` ABC housing shared logic allows evaluators for new models to be added by only implementing model-specific overrides. Evaluators should also accept a `ModelSummariser` protocol rather than concrete summariser classes (current tight coupling via direct import).
 
-### 2.4 Delete `QuasiPoisson` and `QuasiNegBin`
+### ~~2.4 Delete `QuasiPoisson` and `QuasiNegBin`~~ ✅ DONE
 - **Files**: `cntmosaic/distributions/_QuasiPoisson.py`, `_QuasiNegBin.py`, `cntmosaic/distributions/__init__.py`
 - **Effort**: S
 - **Rationale**: These distributions are no longer used anywhere in the codebase. Shipping dead code with silent TODO stubs in `sample()` as part of a v1.0 PyPI release creates a misleading API surface and maintenance burden. Delete both files, remove them from `distributions/__init__.py`, and confirm no remaining imports exist (`grep -r "QuasiPoisson\|QuasiNegBin" cntmosaic/`).

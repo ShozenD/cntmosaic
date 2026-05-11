@@ -426,7 +426,7 @@ class SymIGMRF2D(Distribution):
         L1 = D1_red.T @ D1_red
         L2 = D2_red.T @ D2_red
 
-        self.L = L1 + L2
+        self.L = jnp.asarray(L1 + L2)
         lam, U = np.linalg.eigh(self.L)
 
         # Boolean filtering in Numpy (not traced by JAX)

@@ -58,20 +58,6 @@ class PopulationData:
 
         Population sizes will be aggregated (summed) by the composite stratification variable along with age.
 
-    Attributes
-    ----------
-    df_pop : pd.DataFrame
-        The validated and preprocessed population DataFrame with standardized
-        column names ("age", "P", and optional grouping variables).
-    n_ages : int
-        Returns the number of unique ages in the population data.
-    total : float
-        Returns the total population size (sum of all P values).
-    age_range : Tuple[int, int]
-        Returns (min_age, max_age) tuple.
-    strat_vars : List[str]
-        Returns list of stratification variable names (empty list if none).
-
     Methods
     -------
     validate()
@@ -93,7 +79,7 @@ class PopulationData:
         If required columns (age_col, size_col, age_grp_col, strat_var_cols) are missing
         from the input DataFrame.
     TypeError
-        If df_pop is not a pandas DataFrame.
+        If data is not a pandas DataFrame.
 
     Examples
     --------
@@ -103,7 +89,7 @@ class PopulationData:
     ...     'population': [1000, 1050, 1100, 1080, 1120]
     ... })
     >>> pop_data = PopulationData(
-    ...     df_pop=df,
+    ...     data=df,
     ...     age_col='age',
     ...     size_col='population'
     ... )
@@ -122,7 +108,7 @@ class PopulationData:
     ...     'count': [510, 490, 530, 520, 550, 550]
     ... })
     >>> pop_data = PopulationData(
-    ...     df_pop=df,
+    ...     data=df,
     ...     age_col='age',
     ...     size_col='count',
     ...     strat_var_cols='gender'
@@ -149,7 +135,7 @@ class PopulationData:
     ...     'population': [5000, 4800, 4600]
     ... })
     >>> pop_data = PopulationData(
-    ...     df_pop=df,
+    ...     data=df,
     ...     age_col='age',
     ...     size_col='population',
     ...     age_grp_col='age_group'
@@ -196,7 +182,7 @@ class PopulationData:
     StratificationData : Validated container for stratification proportions
     """
 
-    df_pop: pd.DataFrame
+    data: pd.DataFrame
     age_col: str
     size_col: str
     age_grp_col: Optional[str] = None
@@ -216,15 +202,15 @@ class PopulationData:
         Raises
         ------
         TypeError
-            If df_pop is not a pandas DataFrame.
+            If data is not a pandas DataFrame.
         ValueError
             If age_col is not specified (required).
             If DataFrame becomes empty after preprocessing.
         """
         # Type validation
-        if not isinstance(self.df_pop, pd.DataFrame):
+        if not isinstance(self.data, pd.DataFrame):
             raise TypeError(
-                f"df_pop must be a pandas DataFrame, got {type(self.df_pop).__name__}"
+                f"data must be a pandas DataFrame, got {type(self.data).__name__}"
             )
 
         # age_col is required
@@ -243,9 +229,9 @@ class PopulationData:
         # Delegate column validation, NaN removal, dtype coercion, aggregation, and renaming
         object.__setattr__(
             self,
-            "df_pop",
+            "data",
             preprocess_population_data(
-                self.df_pop,
+                self.data,
                 self.age_col,
                 self.size_col,
                 self.age_grp_col,
@@ -284,30 +270,11 @@ class PopulationData:
         >>> pop_data.validate()
         """
         validate_population_data(
-            self.df_pop,
+            self.data,
             self.age_col,
             self.size_col,
             self.strat_var_cols,  # type: ignore
         )
-
-    @property
-    def data(self) -> pd.DataFrame:
-        """
-        Return the validated and preprocessed population DataFrame.
-
-        Returns
-        -------
-        pd.DataFrame
-            The validated population data with standardized column names.
-
-        Examples
-        --------
-        >>> pop_data = PopulationData(df, age_col='age', size_col='population')
-        >>> validated_df = pop_data.data
-        >>> list(validated_df.columns)
-        ['age', 'P']
-        """
-        return self.df_pop
 
     @property
     def n_ages(self) -> int:

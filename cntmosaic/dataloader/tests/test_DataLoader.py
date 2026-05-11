@@ -183,8 +183,8 @@ class TestSingle:
 
         # Create dataclass objects with standardized column names
         part_data = ParticipantData(data=df_part, id_col="id", age_col="age")
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(data=df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         dataloader = DataLoader(part_data, cnt_data, pop_data)
 
         model_data = dataloader.load()
@@ -215,8 +215,8 @@ class TestSingle:
 
         # Create dataclass objects with repeat column
         part_data = ParticipantData(df_part, "id", "age", repeat_col="repeat")
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         dataloader = DataLoader(part_data, cnt_data, pop_data)
 
         model_data = dataloader.load()
@@ -237,8 +237,8 @@ class TestSingle:
 
         # Create dataclass objects with age groups
         part_data = ParticipantData(df_part, "id", "age")
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_grp_col="age_grp_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         dataloader = DataLoader(part_data, cnt_data, pop_data)
 
         model_data = dataloader.load()
@@ -277,8 +277,8 @@ class TestPartial:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
             age_col="age",
@@ -318,9 +318,9 @@ class TestPartial:
             repeat_col="repeat",
         )
 
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
 
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
 
         pop_prop = StratificationData(
             data=df_strat,
@@ -370,8 +370,8 @@ class TestPartial:
             strat_var_cols=["sex", "hhsize"],
         )
 
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_grp_col="age_grp_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         pop_prop = StratificationData(
             data=df_strat,
             age_col="age",
@@ -407,8 +407,8 @@ class TestPartial:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
             age_col="age",
@@ -451,13 +451,13 @@ class TestFull:
             strat_var_cols=["sex", "hhsize"],
         )
         cnt_data = ContactData(
-            df_cnt=df_cnt,
+            df_cnt,
             id_col="id",
             age_col="age_cnt",
             strat_var_cols=["sex_cnt", "hhsize_cnt"],
         )
         pop_data = PopulationData(
-            df_pop=df_pop, age_col="age", size_col="P", strat_var_cols=["sex", "hhsize"]
+            data=df_pop, age_col="age", size_col="P", strat_var_cols=["sex", "hhsize"]
         )
         strat_prop_data = StratificationData(
             data=df_strat,  # Empty since full info is in contacts
@@ -510,8 +510,8 @@ class TestMethods:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
             age_col="age",
@@ -639,10 +639,10 @@ class TestStratificationOrdering:
             data=df_part, id_col="id", age_col="age", strat_var_cols=["sex"]
         )
         cnt_data = ContactData(
-            df_cnt=df_cnt, id_col="id", age_col="age_cnt", strat_var_cols=["sex_cnt"]
+            df_cnt, id_col="id", age_col="age_cnt", strat_var_cols=["sex_cnt"]
         )
         pop_data = PopulationData(
-            df_pop=df_pop, age_col="age", size_col="P", strat_var_cols=["sex"]
+            data=df_pop, age_col="age", size_col="P", strat_var_cols=["sex"]
         )
         strat_prop_data = StratificationData(
             data=df_strat, age_col="age", strat_var_cols=["sex"], prop_col="Q"
@@ -669,13 +669,13 @@ class TestStratificationOrdering:
             strat_var_cols=["sex", "setting"],
         )
         cnt_data = ContactData(
-            df_cnt=df_cnt,
+            df_cnt,
             id_col="id",
             age_col="age_cnt",
             strat_var_cols=["sex_cnt", "setting_cnt"],
         )
         pop_data = PopulationData(
-            df_pop=df_pop,
+            data=df_pop,
             age_col="age",
             size_col="P",
             strat_var_cols=["sex", "setting"],
@@ -762,8 +762,8 @@ class TestStratificationOrdering:
         part_data = ParticipantData(
             data=df_part, id_col="id", age_col="age", strat_var_cols=["sex"]
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat, age_col="age", strat_var_cols=["sex"], prop_col="Q"
         )
@@ -803,8 +803,8 @@ class TestStratificationOrdering:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
             age_col="age",

@@ -298,8 +298,8 @@ class DataValidator:
                 )
 
             # Reorder categories to match reference
-            self.cnt_data.df_cnt[f"{var}_cnt"] = pd.Categorical(
-                self.cnt_data.df_cnt[f"{var}_cnt"],
+            self.cnt_data.data[f"{var}_cnt"] = pd.Categorical(
+                self.cnt_data.data[f"{var}_cnt"],
                 categories=reference_cats,
                 ordered=True,
             )
@@ -319,8 +319,8 @@ class DataValidator:
                 )
 
             # Reorder categories to match reference
-            self.pop_data.df_pop[var] = pd.Categorical(
-                self.pop_data.df_pop[var],
+            self.pop_data.data[var] = pd.Categorical(
+                self.pop_data.data[var],
                 categories=reference_cats,
                 ordered=True,
             )

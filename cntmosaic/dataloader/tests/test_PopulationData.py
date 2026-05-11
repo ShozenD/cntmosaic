@@ -19,7 +19,7 @@ class TestInit:
     def test_basic(self, df_pop_basic):
         """Test basic initialization with required parameters."""
         df = df_pop_basic
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="P")
+        pop_data = PopulationData(data=df, age_col="age", size_col="P")
 
         assert pop_data.n_ages == 4
         assert "age" in pop_data.data.columns
@@ -29,7 +29,7 @@ class TestInit:
         """Test initialization with a single stratification variable."""
 
         pop_data = PopulationData(
-            df_pop=df_pop_single_var,
+            data=df_pop_single_var,
             age_col="age",
             size_col="P",
             strat_var_cols="sex",
@@ -42,7 +42,7 @@ class TestInit:
     def test_multiple_vars(self, df_pop_multi_var):
         """Test initialization with multiple stratification variables."""
         pop_data = PopulationData(
-            df_pop=df_pop_multi_var,
+            data=df_pop_multi_var,
             age_col="age",
             size_col="P",
             strat_var_cols=["sex", "hhsize"],
@@ -57,7 +57,7 @@ class TestInit:
         """Test initialization with age groups."""
 
         pop_data = PopulationData(
-            df_pop=df_pop_age_grps,
+            data=df_pop_age_grps,
             age_col="age",
             size_col="P",
             age_grp_col="age_grp",
@@ -75,14 +75,14 @@ class TestPopulationDataValidation:
         df = pd.DataFrame({"not_age": [0, 1, 2], "population": [1000, 1100, 1200]})
 
         with pytest.raises(KeyError, match="Missing population age column"):
-            PopulationData(df_pop=df, age_col="age", size_col="population")
+            PopulationData(data=df, age_col="age", size_col="population")
 
     def test_missing_size_column(self):
         """Test that missing size column raises KeyError."""
         df = pd.DataFrame({"age": [0, 1, 2], "not_population": [1000, 1100, 1200]})
 
         with pytest.raises(KeyError, match="Missing population size column"):
-            PopulationData(df_pop=df, age_col="age", size_col="population")
+            PopulationData(data=df, age_col="age", size_col="population")
 
     def test_missing_stratification_column(self):
         """Test that missing stratification variable raises KeyError."""
@@ -92,7 +92,7 @@ class TestPopulationDataValidation:
             KeyError, match="Missing population stratification variable"
         ):
             PopulationData(
-                df_pop=df,
+                data=df,
                 age_col="age",
                 size_col="population",
                 strat_var_cols=["gender"],  # 'gender' doesn't exist
@@ -104,7 +104,7 @@ class TestPopulationDataValidation:
 
         with pytest.raises(KeyError, match="Missing population age group column"):
             PopulationData(
-                df_pop=df,
+                data=df,
                 age_col="age",
                 size_col="population",
                 age_grp_col="age_group",  # doesn't exist
@@ -115,14 +115,14 @@ class TestPopulationDataValidation:
         df = pd.DataFrame({"age": [-1, 0, 1], "population": [1000, 1100, 1200]})
 
         with pytest.raises(ValueError, match="contains negative values"):
-            PopulationData(df_pop=df, age_col="age", size_col="population")
+            PopulationData(data=df, age_col="age", size_col="population")
 
     def test_negative_population_sizes(self):
         """Test that negative population sizes raise ValueError."""
         df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, -100, 1200]})
 
         with pytest.raises(ValueError, match="contains negative values"):
-            PopulationData(df_pop=df, age_col="age", size_col="population")
+            PopulationData(data=df, age_col="age", size_col="population")
 
     def test_non_numeric_ages(self):
         """Test that non-numeric ages raise ValueError."""
@@ -131,14 +131,14 @@ class TestPopulationDataValidation:
         )
 
         with pytest.raises(ValueError, match="must contain numeric values"):
-            PopulationData(df_pop=df, age_col="age", size_col="population")
+            PopulationData(data=df, age_col="age", size_col="population")
 
     def test_non_numeric_population_sizes(self):
         """Test that non-numeric population sizes raise ValueError."""
         df = pd.DataFrame({"age": [0, 1, 2], "population": ["1000", "1100", "1200"]})
 
         with pytest.raises(ValueError, match="must contain numeric values"):
-            PopulationData(df_pop=df, age_col="age", size_col="population")
+            PopulationData(data=df, age_col="age", size_col="population")
 
     def test_missing_values_dropped_with_warning(self):
         """Test that missing values trigger warning and are dropped."""
@@ -150,7 +150,7 @@ class TestPopulationDataValidation:
         )
 
         with pytest.warns(UserWarning, match="Dropped 1 row"):
-            pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+            pop_data = PopulationData(data=df, age_col="age", size_col="population")
 
         assert pop_data.n_ages == 3
         assert pop_data.total == 3350
@@ -160,14 +160,14 @@ class TestPopulationDataValidation:
         df = pd.DataFrame({"age": [np.nan, np.nan], "population": [1000, 1100]})
 
         with pytest.raises(ValueError, match="DataFrame is empty after removing"):
-            PopulationData(df_pop=df, age_col="age", size_col="population")
+            PopulationData(data=df, age_col="age", size_col="population")
 
     def test_zero_population_sizes_warning(self):
         """Test that zero population sizes trigger warning."""
         df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 0, 1200]})
 
         with pytest.warns(UserWarning, match="zero population size"):
-            pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+            pop_data = PopulationData(data=df, age_col="age", size_col="population")
 
         assert pop_data.n_ages == 3
 
@@ -179,7 +179,7 @@ class TestProperties:
         """Test data property returns processed DataFrame."""
         df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 1100, 1200]})
 
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+        pop_data = PopulationData(data=df, age_col="age", size_col="population")
 
         assert isinstance(pop_data.data, pd.DataFrame)
         assert "age" in pop_data.data.columns
@@ -191,7 +191,7 @@ class TestProperties:
             {"age": [0, 1, 2, 3, 4], "population": [1000, 1100, 1200, 1150, 1180]}
         )
 
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+        pop_data = PopulationData(data=df, age_col="age", size_col="population")
 
         assert pop_data.n_ages == 5
 
@@ -199,7 +199,7 @@ class TestProperties:
         """Test total property."""
         df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 1100, 1200]})
 
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+        pop_data = PopulationData(data=df, age_col="age", size_col="population")
 
         assert pop_data.total == 3300
 
@@ -209,14 +209,14 @@ class TestProperties:
             {"age": [5, 10, 15, 20], "population": [1000, 1100, 1200, 1150]}
         )
 
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+        pop_data = PopulationData(data=df, age_col="age", size_col="population")
 
         assert pop_data.age_range == (5, 20)
 
     def test_strat_vars(self, df_pop_multi_var):
         """Test strat_vars with multiple variables."""
         pop_data = PopulationData(
-            df_pop=df_pop_multi_var,
+            data=df_pop_multi_var,
             age_col="age",
             size_col="P",
             strat_var_cols=["sex", "hhsize"],
@@ -232,7 +232,7 @@ class TestMethods:
         """Test get_strat_var_schema method."""
 
         pop_data = PopulationData(
-            df_pop=df_pop_multi_var,
+            data=df_pop_multi_var,
             age_col="age",
             size_col="P",
             strat_var_cols=["sex", "hhsize"],
@@ -255,7 +255,7 @@ class TestMethods:
         )
 
         pop_data = PopulationData(
-            df_pop=df, age_col="age", size_col="population", strat_var_cols="gender"
+            data=df, age_col="age", size_col="population", strat_var_cols="gender"
         )
         summary = pop_data.summary()
 
@@ -280,7 +280,7 @@ class TestAggregation:
         )
 
         with pytest.warns(UserWarning, match="Aggregating population data"):
-            pop_data = PopulationData(df_pop=df, age_col="age", size_col="population")
+            pop_data = PopulationData(data=df, age_col="age", size_col="population")
 
         assert pop_data.n_ages == 3
         assert pop_data.data.loc[pop_data.data["age"] == 0, "P"].iloc[0] == 1000
@@ -298,7 +298,7 @@ class TestAggregation:
 
         with pytest.warns(UserWarning, match="Aggregating population data"):
             pop_data = PopulationData(
-                df_pop=df, age_col="age", size_col="P", strat_var_cols="sex"
+                data=df, age_col="age", size_col="P", strat_var_cols="sex"
             )
 
         assert len(pop_data.data) == 2  # M and F
@@ -316,7 +316,7 @@ class TestAggregation:
 
         with warnings_module.catch_warnings(record=True) as warning_list:
             warnings_module.simplefilter("always")
-            pop_data = PopulationData(df_pop=df, age_col="age", size_col="P")
+            pop_data = PopulationData(data=df, age_col="age", size_col="P")
 
         # Filter for aggregation warnings only
         agg_warnings = [
@@ -332,7 +332,7 @@ class TestPopulationDataEdgeCases:
         """Test with a single age."""
         df = pd.DataFrame({"age": [0], "P": [1000]})
 
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="P")
+        pop_data = PopulationData(data=df, age_col="age", size_col="P")
 
         assert pop_data.n_ages == 1
         assert pop_data.age_range == (0, 0)
@@ -342,6 +342,6 @@ class TestPopulationDataEdgeCases:
         """Test with float population sizes (proportions)."""
         df = pd.DataFrame({"age": [0, 1, 2], "P": [0.3, 0.4, 0.3]})
 
-        pop_data = PopulationData(df_pop=df, age_col="age", size_col="P")
+        pop_data = PopulationData(data=df, age_col="age", size_col="P")
 
         assert np.isclose(pop_data.total, 1.0)

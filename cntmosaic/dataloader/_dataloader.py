@@ -109,14 +109,14 @@ class DataLoader(BaseLoader):
     >>>
     >>> # Create validated data objects
     >>> part_data = ParticipantData(
-    ...     df_part=part_df,
+    ...     data=part_df,
     ...     id_col='participant_id',
     ...     age_col='age',
     ...     strat_var_cols='gender'
     ... )
     >>>
     >>> cnt_data = ContactData(
-    ...     df_cnt=cnt_df,
+    ...     data=cnt_df,
     ...     id_col='participant_id',
     ...     age_col='contact_age',
     ...     strat_vars='setting'

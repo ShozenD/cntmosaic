@@ -39,6 +39,12 @@ class DataLoader(BaseLoader):
         - A single StratificationData object
         - A list of StratificationData objects for multiple stratifications
         If None, no stratified population proportions are used.
+    smooth_amb_cnt_offsets : bool, default=True
+        Whether to apply Gaussian smoothing to the ambiguous contact offsets (V)
+        before they are used as log-offsets in the model. Smoothing is performed
+        separately within each stratum across participant ages; the bandwidth is
+        selected automatically by leave-one-out cross-validation. Set to ``False``
+        to use the raw, unsmoothed offsets.
 
         Example with single stratification:
             strat_prop_data = StratificationData.from_counts(
@@ -167,6 +173,7 @@ class DataLoader(BaseLoader):
         cnt_data,  # ContactData type hint removed to avoid circular import
         pop_data,  # PopulationData type hint removed to avoid circular import
         strat_prop_data: Union[StratificationData, None] = None,
+        smooth_amb_cnt_offsets: bool = True,
     ) -> None:
 
         self.part_data, self.cnt_data, self.pop_data, self.strat_prop_data = (
@@ -205,7 +212,13 @@ class DataLoader(BaseLoader):
                     )
 
         # Initialize parent class with merged data
-        super().__init__(data, self.pop_data.data, col_map, self.strat_prop_data)
+        super().__init__(
+            data,
+            self.pop_data.data,
+            col_map,
+            self.strat_prop_data,
+            smooth_amb_cnt_offsets,
+        )
 
     def _create_col_map(self, part_data, cnt_data, pop_data) -> CoordToColumns:
         """
@@ -255,7 +268,7 @@ class DataLoader(BaseLoader):
             age_grp_cnt="age_grp_cnt" if cnt_data.age_grp_col else None,
             id_col="id",
             y="y",
-            z="z",
+            z=part_data.amb_cnt_col,
             strat_vars_part=strat_vars_part,
             strat_vars_cnt=strat_vars_cnt,
             repeat_part="repeat_part" if part_data.repeat_col else None,

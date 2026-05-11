@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 
 from ._participant_preprocessing import preprocess_participant_data
+from ._participant_validation import validate_participant_data
 
 
 @dataclass
@@ -265,99 +266,13 @@ class ParticipantData:
         >>> # Validation happens automatically, but can be called explicitly:
         >>> part_data.validate()
         """
-        # Check 1: Validate unique participant IDs (using standardized 'id' column)
-        duplicate_ids = self.data["id"].duplicated()
-        if duplicate_ids.any():
-            duplicate_examples = self.data[duplicate_ids]["id"].head(5).tolist()
-            n_duplicates = duplicate_ids.sum()
-            raise ValueError(
-                f"Found {n_duplicates} duplicate participant ID(s) in 'id' column.\n"
-                f"  Examples of duplicates: {duplicate_examples}\n"
-                f"  Hint: each row should represent a unique participant."
-            )
-
-        # Check 2: Validate age values if using exact ages
-        if self.age_col:
-            ages = self.data["age_part"]
-
-            # Check for non-numeric values
-            if not pd.api.types.is_numeric_dtype(ages):
-                raise ValueError(
-                    f"Age column 'age_part' must contain numeric values.\n"
-                    f"  Current dtype: {ages.dtype}\n"
-                    f"  Hint: convert age to integer or float type."
-                )
-
-            # Check for negative ages
-            if (ages < 0).any():
-                negative_indices = self.data[ages < 0].index[:5].tolist()
-                raise ValueError(
-                    f"Age column 'age_part' contains negative values.\n"
-                    f"  Rows with negative ages: {negative_indices}\n"
-                    f"  Values: {ages[ages < 0].head().tolist()}"
-                )
-
-        # Check 3: Validate age group values if using age groups
-        if self.age_grp_col:
-            is_categorical = isinstance(
-                self.data["age_grp_part"].dtype, pd.CategoricalDtype
-            )
-            if is_categorical:
-                are_intervals = isinstance(
-                    self.data["age_grp_part"].cat.categories, pd.IntervalIndex
-                )
-                if not are_intervals:
-                    raise TypeError(
-                        f"Column '{self.age_grp_col}' must have pd.IntervalIndex categories.\n"
-                        f"  Got: {type(self.data['age_grp_part'].cat.categories)}"
-                    )
-            else:
-                raise TypeError(
-                    f"Column '{self.age_grp_col}' must be categorical with interval categories.\n"
-                    f"  Current type: {self.data['age_grp_part'].dtype}"
-                )
-
-        # Check 4: Validate repeat interview values if specified
-        if self.repeat_col:
-            repeats = self.data["repeat_part"]
-
-            # Check for non-numeric values
-            if not pd.api.types.is_numeric_dtype(repeats):
-                raise ValueError(
-                    f"Repeat interview column 'repeat_part' must contain numeric values.\n"
-                    f"  Current dtype: {repeats.dtype}\n"
-                    f"  Hint: convert repeat interview to integer type."
-                )
-
-            # Check for negative repeat values
-            if (repeats < 0).any():
-                negative_indices = self.data[repeats < 0].index[:5].tolist()
-                raise ValueError(
-                    f"Repeat interview column 'repeat_part' contains negative values.\n"
-                    f"  Rows with negative values: {negative_indices}\n"
-                    f"  Values: {repeats[repeats < 0].head().tolist()}"
-                )
-
-        # Check 5: Validate group contact count values if specified
-        if self.amb_cnt_col:
-            grp_counts = self.data[self.amb_cnt_col]
-
-            # Check for non-numeric values
-            if not pd.api.types.is_numeric_dtype(grp_counts):
-                raise ValueError(
-                    f"Group contact count column '{self.amb_cnt_col}' must contain numeric values.\n"
-                    f"  Current dtype: {grp_counts.dtype}\n"
-                    f"  Hint: convert group contact count to integer type."
-                )
-
-            # Check for negative group contact counts
-            if (grp_counts < 0).any():
-                negative_indices = self.data[grp_counts < 0].index[:5].tolist()
-                raise ValueError(
-                    f"Group contact count column '{self.amb_cnt_col}' contains negative values.\n"
-                    f"  Rows with negative values: {negative_indices}\n"
-                    f"  Values: {grp_counts[grp_counts < 0].head().tolist()}"
-                )
+        validate_participant_data(
+            self.data,
+            self.age_col,
+            self.age_grp_col,
+            self.repeat_col,
+            self.amb_cnt_col,
+        )
 
     @property
     def n(self) -> int:

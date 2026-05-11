@@ -123,7 +123,7 @@ class BaseLoader(ABC):
 
         # Auto-create the ambiguous contact count column if missing
         # (documented behaviour: if not present, created with value 0)
-        if col_map.z not in self.data.columns:
+        if col_map.z is not None and col_map.z not in self.data.columns:
             self.data = self.data.copy()
             self.data[col_map.z] = 0
         self.strat_data = strat_data
@@ -220,6 +220,12 @@ class BaseLoader(ABC):
         """
         Construct dataframe of ambiguous contact offsets (V) stratified by age and grouping variables.
         """
+        # No ambiguous contacts: V = 1 - 0/(0+y) = 1.0 everywhere
+        if self.col_map.z is None:
+            df_V = self.df_n.drop(columns=["N"])
+            df_V["V"] = 1.0
+            return df_V
+
         df_z = (
             self.data[
                 [self.col_map.id_col] + self.col_map.strat_vars_n + [self.col_map.z]

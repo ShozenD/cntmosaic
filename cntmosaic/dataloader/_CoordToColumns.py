@@ -127,7 +127,7 @@ class CoordToColumns:
     age_grp_cnt: Optional[str] = None
     id_col: str = "id"
     y: str = "y"
-    z: str = "z"
+    z: Optional[str] = None
     strat_vars_part: Optional[str] = None
     strat_vars_cnt: Optional[str] = None
     repeat_part: Optional[str] = None

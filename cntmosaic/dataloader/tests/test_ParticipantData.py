@@ -25,22 +25,22 @@ class TestInit:
         assert part_data.n == 5
         assert part_data.age_col == "age"
         assert part_data.age_grp_col is None
-        assert part_data.data.columns.tolist() == ["id", "age_part", "z"]
+        assert part_data.data.columns.tolist() == ["id", "age_part"]
 
     def test_init_age_groups(self, df_part_age_grps):
         """Test initialization with age groups (IntervalIndex)."""
         df_part = df_part_age_grps
-        part_data = ParticipantData(df_part=df_part, id_col="id", age_grp_col="age_grp")
+        part_data = ParticipantData(data=df_part, id_col="id", age_grp_col="age_grp")
 
         assert part_data.n == 5
         assert part_data.age_grp_col == "age_grp"
         assert part_data.age_col is None
-        assert part_data.data.columns.tolist() == ["id", "age_grp_part", "z"]
+        assert part_data.data.columns.tolist() == ["id", "age_grp_part"]
 
     def test_init_single_strat(self, df_part_one_year):
         """Test initialization with a single stratification variable as string."""
         part_data = ParticipantData(
-            df_part=df_part_one_year,
+            data=df_part_one_year,
             id_col="id",
             age_col="age",
             strat_var_cols="sex",
@@ -48,14 +48,14 @@ class TestInit:
 
         # Should be converted to list internally
         assert part_data.strat_vars == ["sex"]
-        assert part_data.data.columns.tolist() == ["id", "age_part", "sex_part", "z"]
+        assert part_data.data.columns.tolist() == ["id", "age_part", "sex_part"]
 
     def test_init_multiple_strat(self, df_part_one_year):
         """Test initialization with multiple stratification variables."""
         df_part = df_part_one_year
 
         part_data = ParticipantData(
-            df_part=df_part,
+            data=df_part,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
@@ -67,17 +67,16 @@ class TestInit:
             "age_part",
             "sex_part",
             "hhsize_part",
-            "z",
         ]
 
     def test_init_with_repeat(self, df_part_one_year):
         """Test initialization with repeat interview variable."""
         df_part = df_part_one_year
         part_data = ParticipantData(
-            df_part=df_part, id_col="id", age_col="age", repeat_col="repeat"
+            data=df_part, id_col="id", age_col="age", repeat_col="repeat"
         )
 
-        assert part_data.data.columns.tolist() == ["id", "age_part", "repeat_part", "z"]
+        assert part_data.data.columns.tolist() == ["id", "age_part", "repeat_part"]
 
 
 class TestValidation:
@@ -85,9 +84,9 @@ class TestValidation:
 
     def test_invalid_dataframe_type(self):
         """Test that non-DataFrame input raises TypeError."""
-        with pytest.raises(TypeError, match="df_part must be a pandas DataFrame"):
+        with pytest.raises(TypeError, match="data must be a pandas DataFrame"):
             ParticipantData(
-                df_part=[1, 2, 3], id_col="id", age_col="age"  # Not a DataFrame
+                data=[1, 2, 3], id_col="id", age_col="age"  # Not a DataFrame
             )
 
     def test_missing_age_specification(self):
@@ -96,7 +95,7 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="Must specify exactly one"):
             ParticipantData(
-                df_part=df,
+                data=df,
                 id_col="id",
                 # Neither age_col nor age_grp_col specified
             )
@@ -115,7 +114,7 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="Cannot specify both"):
             ParticipantData(
-                df_part=df,
+                data=df,
                 id_col="id",
                 age_col="age",
                 age_grp_col="age_group",  # Both specified - invalid
@@ -126,18 +125,14 @@ class TestValidation:
         df = pd.DataFrame({"participant_id": [1, 2, 3], "age": [25, 34, 45]})
 
         with pytest.raises(KeyError, match="Missing participant ID column 'id'"):
-            ParticipantData(
-                df_part=df, id_col="id", age_col="age"  # Column doesn't exist
-            )
+            ParticipantData(data=df, id_col="id", age_col="age")  # Column doesn't exist
 
     def test_missing_age_column(self):
         """Test that missing age column raises KeyError."""
         df = pd.DataFrame({"id": [1, 2, 3], "participant_age": [25, 34, 45]})
 
         with pytest.raises(KeyError, match="Missing participant age column 'age'"):
-            ParticipantData(
-                df_part=df, id_col="id", age_col="age"  # Column doesn't exist
-            )
+            ParticipantData(data=df, id_col="id", age_col="age")  # Column doesn't exist
 
     def test_missing_strat_col(self):
         """Test that missing stratification variable raises KeyError."""
@@ -149,7 +144,7 @@ class TestValidation:
             KeyError, match="strat_var_cols '\\['sex', 'hhsize'\\]' is specified"
         ):
             ParticipantData(
-                df_part=df,
+                data=df,
                 id_col="id",
                 age_col="age",
                 strat_var_cols=["sex", "hhsize"],  # 'hhsize' doesn't exist
@@ -162,14 +157,14 @@ class TestValidation:
         )
 
         with pytest.raises(ValueError, match="duplicate participant ID"):
-            ParticipantData(df_part=df, id_col="id", age_col="age")
+            ParticipantData(data=df, id_col="id", age_col="age")
 
     def test_missing_values_in_id_column(self):
         """Test that missing values in ID column trigger warning and are dropped."""
         df = pd.DataFrame({"id": [1, 2, np.nan, 4], "age": [25, 34, 45, 52]})
 
         with pytest.warns(UserWarning, match="Dropped 1 row"):
-            part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+            part_data = ParticipantData(data=df, id_col="id", age_col="age")
         # Check that row was dropped
         assert part_data.n == 3
 
@@ -178,7 +173,7 @@ class TestValidation:
         df = pd.DataFrame({"id": [1, 2, 3, 4], "age": [25, np.nan, 45, 52]})
 
         with pytest.warns(UserWarning, match="Dropped 1 row"):
-            part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+            part_data = ParticipantData(data=df, id_col="id", age_col="age")
         # Check that row was dropped
         assert part_data.n == 3
 
@@ -194,7 +189,7 @@ class TestValidation:
 
         with pytest.warns(UserWarning, match="Dropped 1 row"):
             part_data = ParticipantData(
-                df_part=df, id_col="id", age_col="age", strat_var_cols="sex"
+                data=df, id_col="id", age_col="age", strat_var_cols="sex"
             )
         # Check that row was dropped
         assert part_data.n == 3
@@ -204,7 +199,7 @@ class TestValidation:
         df = pd.DataFrame({"id": [1, 2, 3, 4], "age": [25, -5, 45, 52]})  # Negative age
 
         with pytest.raises(ValueError, match="negative values"):
-            ParticipantData(df_part=df, id_col="id", age_col="age")
+            ParticipantData(data=df, id_col="id", age_col="age")
 
     def test_non_numeric_ages(self):
         """Test that non-numeric ages raise ValueError."""
@@ -213,31 +208,42 @@ class TestValidation:
         )
 
         with pytest.raises(ValueError, match="must contain numeric values"):
-            ParticipantData(df_part=df, id_col="id", age_col="age")
+            ParticipantData(data=df, id_col="id", age_col="age")
 
 
 class TestProperties:
     """Test properties and accessor methods."""
 
     def test_data_property(self):
-        """Test that data property returns the preprocessed DataFrame with 'z' column."""
+        """Test that data property returns the preprocessed DataFrame without a default 'z' column."""
         df = pd.DataFrame({"id": [1, 2, 3], "age": [25, 34, 45]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         returned_df = part_data.data
         assert isinstance(returned_df, pd.DataFrame)
-        # Check that 'z' column was added during preprocessing
-        assert "z" in returned_df.columns
         assert len(returned_df) == 3
-        # Check that all 'z' values are 0
-        assert (returned_df["z"] == 0).all()
+        # amb_cnt_col stays None when not provided; no 'z' column is created
+        assert part_data.amb_cnt_col is None
+        assert "z" not in returned_df.columns
+
+    def test_data_property_with_explicit_amb_cnt_col(self):
+        """Test that an explicitly provided amb_cnt_col is retained in the output."""
+        df = pd.DataFrame({"id": [1, 2, 3], "age": [25, 34, 45], "grp_cnt": [0, 1, 0]})
+
+        part_data = ParticipantData(
+            data=df, id_col="id", age_col="age", amb_cnt_col="grp_cnt"
+        )
+
+        assert part_data.amb_cnt_col == "grp_cnt"
+        assert "grp_cnt" in part_data.data.columns
+        assert part_data.data["grp_cnt"].tolist() == [0, 1, 0]
 
     def test_n_property(self):
         """Test that n returns correct count."""
         df = pd.DataFrame({"id": [1, 2, 3, 4, 5], "age": [25, 34, 45, 52, 61]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         assert part_data.n == 5
 
@@ -245,7 +251,7 @@ class TestProperties:
         """Test that age_range returns correct min and max."""
         df = pd.DataFrame({"id": [1, 2, 3, 4], "age": [18, 25, 65, 42]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         assert part_data.age_range == (18, 65)
 
@@ -259,7 +265,7 @@ class TestProperties:
         )
         df["age_group"] = df["age_group"].astype("category")
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_grp_col="age_group")
+        part_data = ParticipantData(data=df, id_col="id", age_grp_col="age_group")
 
         with pytest.raises(ValueError, match="only available when using 'age_col'"):
             _ = part_data.age_range
@@ -267,7 +273,7 @@ class TestProperties:
     def test_strat_vars_property_empty(self):
         """Test strat_vars when no variables specified."""
         df = pd.DataFrame({"id": [1, 2, 3], "age": [25, 34, 45]})
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         assert part_data.strat_vars == []
 
@@ -283,7 +289,7 @@ class TestProperties:
         )
 
         part_data = ParticipantData(
-            df_part=df, id_col="id", age_col="age", strat_var_cols=["gender", "region"]
+            data=df, id_col="id", age_col="age", strat_var_cols=["gender", "region"]
         )
 
         assert part_data.strat_vars == ["gender", "region"]
@@ -296,7 +302,7 @@ class TestMethods:
         """Test age distribution computation."""
         df = pd.DataFrame({"id": [1, 2, 3, 4, 5, 6], "age": [25, 25, 34, 34, 34, 45]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         sample_sizes = part_data.get_sample_sizes()
 
@@ -310,7 +316,7 @@ class TestMethods:
         df = pd.DataFrame({"id": [1, 2, 3, 4], "age_group": intervals})
         df["age_group"] = df["age_group"].astype("category")
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_grp_col="age_group")
+        part_data = ParticipantData(data=df, id_col="id", age_grp_col="age_group")
 
         sample_sizes = part_data.get_sample_sizes()
 
@@ -328,7 +334,7 @@ class TestMethods:
         )
 
         part_data = ParticipantData(
-            df_part=df, id_col="id", age_col="age", strat_var_cols="gender"
+            data=df, id_col="id", age_col="age", strat_var_cols="gender"
         )
 
         summary = part_data.summary()
@@ -351,7 +357,7 @@ class TestMethods:
         )
         df["age_group"] = df["age_group"].astype("category")
 
-        part_data = ParticipantData(df_part=df, id_col="pid", age_grp_col="age_group")
+        part_data = ParticipantData(data=df, id_col="pid", age_grp_col="age_group")
 
         summary = part_data.summary()
 
@@ -366,7 +372,7 @@ class TestMethods:
         """Test summary with no stratification variables."""
         df = pd.DataFrame({"id": [1, 2, 3], "age": [25, 34, 45]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         summary = part_data.summary()
 
@@ -395,7 +401,7 @@ class TestEdgeCases:
         """Test with a single participant."""
         df = pd.DataFrame({"id": [1], "age": [25]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         assert part_data.n == 1
         assert part_data.age_range == (25, 25)
@@ -404,7 +410,7 @@ class TestEdgeCases:
         """Test that age 0 is valid."""
         df = pd.DataFrame({"id": [1, 2, 3], "age": [0, 5, 10]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         assert part_data.age_range == (0, 10)
 
@@ -412,7 +418,7 @@ class TestEdgeCases:
         """Test that float ages are valid."""
         df = pd.DataFrame({"id": [1, 2, 3], "age": [25.5, 34.2, 45.8]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         assert part_data.n == 3
         assert part_data.age_range == (25.5, 45.8)
@@ -421,7 +427,7 @@ class TestEdgeCases:
         """Test that non-sequential IDs work correctly."""
         df = pd.DataFrame({"id": [100, 205, 37, 999], "age": [25, 34, 45, 52]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         assert part_data.n == 4
 
@@ -429,6 +435,6 @@ class TestEdgeCases:
         """Test that string IDs work correctly."""
         df = pd.DataFrame({"id": ["A001", "B002", "C003"], "age": [25, 34, 45]})
 
-        part_data = ParticipantData(df_part=df, id_col="id", age_col="age")
+        part_data = ParticipantData(data=df, id_col="id", age_col="age")
 
         assert part_data.n == 3

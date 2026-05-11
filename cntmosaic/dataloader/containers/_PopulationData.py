@@ -1,10 +1,12 @@
-import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+
+from ._population_preprocessing import preprocess_population_data
+from ._population_validation import validate_population_data
 
 
 @dataclass
@@ -19,7 +21,7 @@ class PopulationData:
 
     Attributes
     ----------
-    df_pop : pd.DataFrame
+    data : pd.DataFrame
         DataFrame containing population age distribution data. Each row represents
         a population count for a specific age (or age group) and optional stratification.
         Must contain columns specified by age_col, size_col, and optionally age_grp_col
@@ -56,10 +58,10 @@ class PopulationData:
 
         Population sizes will be aggregated (summed) by the composite stratification variable along with age.
 
-    Properties
+    Attributes
     ----------
-    data : pd.DataFrame
-        Returns the validated and preprocessed population DataFrame with standardized
+    df_pop : pd.DataFrame
+        The validated and preprocessed population DataFrame with standardized
         column names ("age", "P", and optional grouping variables).
     n_ages : int
         Returns the number of unique ages in the population data.
@@ -232,207 +234,27 @@ class PopulationData:
                 "This is required for matching population data with survey age ranges."
             )
 
-        object_cols = self.df_pop.select_dtypes(include="object").columns.tolist()
-        for col in object_cols:
-            if not isinstance(self.df_pop[col].dtype, pd.CategoricalDtype):
-                warnings.warn(
-                    f"Converting '{col}' to categorical dtype.",
-                    UserWarning,
-                    stacklevel=3,
-                )
-                self.df_pop[col] = self.df_pop[col].astype("category")
-
         # Normalize strat_var_cols to list format for consistent handling
         if isinstance(self.strat_var_cols, str):
             object.__setattr__(self, "strat_var_cols", [self.strat_var_cols])
         elif self.strat_var_cols is None:
             object.__setattr__(self, "strat_var_cols", [])
 
-        # Preprocess the DataFrame
-        object.__setattr__(self, "df_pop", self._preprocess())
+        # Delegate column validation, NaN removal, dtype coercion, aggregation, and renaming
+        object.__setattr__(
+            self,
+            "df_pop",
+            preprocess_population_data(
+                self.df_pop,
+                self.age_col,
+                self.size_col,
+                self.age_grp_col,
+                self.strat_var_cols,  # type: ignore
+            ),
+        )
 
-        # Perform comprehensive validation
+        # Perform domain validation on the cleaned data
         self.validate()
-
-    def _preprocess(self) -> pd.DataFrame:
-        """
-        Preprocess population DataFrame for modeling.
-
-        Performs the following preprocessing steps:
-        1. Creates a copy to avoid modifying the original DataFrame
-        2. Validates that required columns exist
-        3. Drops rows with missing values in required columns
-        4. Validates age and size values are non-negative
-        5. Aggregates population sizes by age (and stratification variables if present)
-        6. Renames columns to standard names: age_col → "age", size_col → "P"
-        7. Preserves age_grp_col as "age_grp_pop" if specified
-        8. Sorts by age (and stratification variables)
-
-        Returns
-        -------
-        pd.DataFrame
-            Preprocessed population DataFrame with standardized column names.
-
-        Raises
-        ------
-        KeyError
-            If required columns are missing from the DataFrame.
-        ValueError
-            If DataFrame becomes empty after removing missing values.
-            If age or size values are negative.
-
-        Warnings
-        --------
-        UserWarning
-            If rows are dropped due to missing values.
-            If population data is aggregated (multiple rows per age group).
-
-        Notes
-        -----
-        This method follows preprocessing patterns from DataLoader to ensure
-        consistency with the package's data handling conventions.
-        """
-        # Step 1: Create a copy to avoid side effects
-        df = self.df_pop.copy()
-
-        # Step 2: Check that required columns exist BEFORE trying to access them
-        if self.age_col not in df.columns:
-            raise KeyError(
-                f"Missing population age column '{self.age_col}' in DataFrame.\n"
-                f"Available columns: {list(df.columns)}"
-            )
-
-        if self.size_col not in df.columns:
-            raise KeyError(
-                f"Missing population size column '{self.size_col}' in DataFrame.\n"
-                f"Available columns: {list(df.columns)}"
-            )
-
-        # Check age_grp_col if specified
-        if self.age_grp_col and self.age_grp_col not in df.columns:
-            raise KeyError(
-                f"Missing population age group column '{self.age_grp_col}' in DataFrame.\n"
-                f"Available columns: {list(df.columns)}"
-            )
-
-        # Check stratification variables exist
-        if self.strat_var_cols:
-            missing_vars = [var for var in self.strat_var_cols if var not in df.columns]
-            if missing_vars:
-                raise KeyError(
-                    f"Missing population stratification variable(s) {missing_vars} in DataFrame.\n"
-                    f"Available columns: {list(df.columns)}"
-                )
-
-        # Step 3: Identify required columns and check for missing values
-        required_cols = [self.age_col, self.size_col]
-        if self.age_grp_col:
-            required_cols.append(self.age_grp_col)
-        if self.strat_var_cols:
-            required_cols.extend(self.strat_var_cols)
-
-        # Check for missing values before dropping
-        n_rows_before = len(df)
-        missing_counts = df[required_cols].isnull().sum()
-        has_missing = missing_counts.sum() > 0
-
-        # Drop rows with missing values in required columns
-        df = df[required_cols].dropna().copy()
-
-        # Warn if rows were dropped
-        if has_missing:
-            n_rows_after = len(df)
-            n_dropped = n_rows_before - n_rows_after
-            cols_with_missing = missing_counts[missing_counts > 0]
-            warnings.warn(
-                f"Dropped {n_dropped} row(s) with missing values in required columns.\n"
-                f"Missing value counts by column: {cols_with_missing.to_dict()}\n"
-                f"Remaining population records: {n_rows_after}",
-                UserWarning,
-                stacklevel=3,
-            )
-
-        # Check if DataFrame is empty after dropping missing values
-        if df.empty:
-            raise ValueError(
-                "DataFrame is empty after removing rows with missing values.\n"
-                "Check for excessive NaN values in required columns:\n"
-                f"Required columns: {required_cols}\n"
-                f"Missing value counts: {missing_counts.to_dict()}"
-            )
-
-        # Step 4: Validate age and size values are non-negative
-        ages = df[self.age_col]
-        if not pd.api.types.is_numeric_dtype(ages):
-            raise ValueError(
-                f"Population age column '{self.age_col}' must contain numeric values.\n"
-                f"Current dtype: {ages.dtype}\n"
-                f"Hint: Convert age to integer or float type."
-            )
-
-        if (ages < 0).any():
-            negative_indices = df[ages < 0].index[:5].tolist()
-            raise ValueError(
-                f"Population age column '{self.age_col}' contains negative values.\n"
-                f"Ages must be non-negative. Rows with negative ages: {negative_indices}\n"
-                f"Values: {ages[ages < 0].head().tolist()}"
-            )
-
-        sizes = df[self.size_col]
-        if not pd.api.types.is_numeric_dtype(sizes):
-            raise ValueError(
-                f"Population size column '{self.size_col}' must contain numeric values.\n"
-                f"Current dtype: {sizes.dtype}\n"
-                f"Hint: Convert size to numeric type."
-            )
-
-        if (sizes < 0).any():
-            negative_indices = df[sizes < 0].index[:5].tolist()
-            raise ValueError(
-                f"Population size column '{self.size_col}' contains negative values.\n"
-                f"Population sizes must be non-negative. Rows with negative sizes: {negative_indices}\n"
-                f"Values: {sizes[sizes < 0].head().tolist()}"
-            )
-
-        # Step 5: Aggregate population sizes by age and stratification variables
-        groupby_cols = [self.age_col]
-        if self.age_grp_col:
-            groupby_cols.append(self.age_grp_col)
-        if self.strat_var_cols:
-            groupby_cols.extend(self.strat_var_cols)
-
-        # Check if aggregation will occur
-        n_unique_groups = df.groupby(groupby_cols, observed=False).ngroups
-        if n_unique_groups < len(df):
-            n_aggregated = len(df) - n_unique_groups
-            warnings.warn(
-                f"Aggregating population data: {len(df)} rows → {n_unique_groups} unique age groups.\n"
-                f"Population sizes are summed within each age{' and stratification' if self.strat_var_cols else ''} group.\n"
-                f"Number of rows aggregated: {n_aggregated}",
-                UserWarning,
-                stacklevel=3,
-            )
-
-        # Aggregate by summing population sizes within each group
-        df = df.groupby(groupby_cols, as_index=False, observed=False)[
-            self.size_col
-        ].sum()
-
-        # Step 6: Rename columns to standard names
-        rename_map = {self.age_col: "age", self.size_col: "P"}
-        if self.age_grp_col:
-            rename_map[self.age_grp_col] = "age_grp_pop"
-
-        df = df.rename(columns=rename_map)
-
-        # Step 7: Sort by age (and stratification variables if present)
-        sort_cols = ["age"]
-        if self.strat_var_cols:
-            sort_cols.extend(self.strat_var_cols)
-
-        df = df.sort_values(sort_cols).reset_index(drop=True)
-
-        return df
 
     def validate(self) -> None:
         """
@@ -461,78 +283,12 @@ class PopulationData:
         >>> # Validation happens automatically, but can be called explicitly:
         >>> pop_data.validate()
         """
-        # Check 1: Validate required columns exist (standardized names after preprocessing)
-        if "age" not in self.df_pop.columns:
-            raise KeyError(
-                f"Missing 'age' column in processed population DataFrame.\n"
-                f"Available columns: {list(self.df_pop.columns)}\n"
-                f"This should not happen - please report this bug."
-            )
-
-        if "P" not in self.df_pop.columns:
-            raise KeyError(
-                f"Missing 'P' (population size) column in processed population DataFrame.\n"
-                f"Available columns: {list(self.df_pop.columns)}\n"
-                f"This should not happen - please report this bug."
-            )
-
-        # Check 2: Validate stratification variables exist if specified
-        if self.strat_var_cols:
-            missing_vars = [
-                var for var in self.strat_var_cols if var not in self.df_pop.columns
-            ]
-            if missing_vars:
-                raise KeyError(
-                    f"Missing population stratification variable(s) {missing_vars} in processed DataFrame.\n"
-                    f"Available columns: {list(self.df_pop.columns)}"
-                )
-
-        # Check 3: Validate at least one age exists
-        if len(self.df_pop) == 0:
-            raise ValueError(
-                "Population DataFrame is empty after preprocessing.\n"
-                "At least one age group with population data is required."
-            )
-
-        # Check 4: Validate age values (should already be validated in _preprocess, but double-check)
-        ages = self.df_pop["age"]
-        if not pd.api.types.is_numeric_dtype(ages):
-            raise ValueError(
-                f"Population age column must contain numeric values.\n"
-                f"Current dtype: {ages.dtype}"
-            )
-
-        if (ages < 0).any():
-            raise ValueError(
-                "Population age column contains negative values after preprocessing.\n"
-                "This should not happen - please report this bug."
-            )
-
-        # Check 5: Validate population size values
-        sizes = self.df_pop["P"]
-        if not pd.api.types.is_numeric_dtype(sizes):
-            raise ValueError(
-                f"Population size column must contain numeric values.\n"
-                f"Current dtype: {sizes.dtype}"
-            )
-
-        if (sizes < 0).any():
-            raise ValueError(
-                "Population size column contains negative values after preprocessing.\n"
-                "This should not happen - please report this bug."
-            )
-
-        # Check 6: Warn if any population sizes are zero
-        if (sizes == 0).any():
-            n_zero = (sizes == 0).sum()
-            zero_ages = self.df_pop[sizes == 0]["age"].head(5).tolist()
-            warnings.warn(
-                f"Found {n_zero} age group(s) with zero population size.\n"
-                f"Ages with zero population: {zero_ages}\n"
-                f"This may cause issues in contact matrix estimation.",
-                UserWarning,
-                stacklevel=2,
-            )
+        validate_population_data(
+            self.df_pop,
+            self.age_col,
+            self.size_col,
+            self.strat_var_cols,  # type: ignore
+        )
 
     @property
     def data(self) -> pd.DataFrame:
@@ -572,7 +328,7 @@ class PopulationData:
         >>> pop_data.n_ages
         86  # Ages 0-85
         """
-        return self.df_pop["age"].nunique()
+        return self.data["age"].nunique()
 
     @property
     def total(self) -> float:
@@ -593,7 +349,7 @@ class PopulationData:
         >>> pop_data.total
         328200000.0
         """
-        return float(self.df_pop["P"].sum())
+        return float(self.data["P"].sum())
 
     @property
     def age_range(self) -> Tuple[int, int]:
@@ -611,7 +367,7 @@ class PopulationData:
         >>> pop_data.age_range
         (0, 85)
         """
-        ages = self.df_pop["age"]
+        ages = self.data["age"]
         return (int(ages.min()), int(ages.max()))
 
     @property
@@ -630,7 +386,7 @@ class PopulationData:
         >>> pop_data.strat_vars
         ['gender', 'region']
         """
-        return self.strat_var_cols if self.strat_var_cols else []
+        return self.strat_var_cols if self.strat_var_cols else []  # type: ignore
 
     def get_strat_vars(self, suffix: bool = False) -> List[str]:
         """
@@ -673,13 +429,17 @@ class PopulationData:
             values and their corresponding codes.
         """
         schema = {}
-        for var in self.strat_var_cols:
-            if var in self.df_pop.columns:
-                categories = self.df_pop[var].cat.categories.tolist()
-                codes = sorted(self.df_pop[var].cat.codes.unique().tolist())
-                schema[var] = {"categories": categories, "codes": codes}
+        if self.strat_var_cols is None:
+            return schema
 
-        return schema
+        else:
+            for var in self.strat_var_cols:
+                if var in self.data.columns:
+                    categories = self.data[var].cat.categories.tolist()
+                    codes = sorted(self.data[var].cat.codes.unique().tolist())
+                    schema[var] = {"categories": categories, "codes": codes}
+
+            return schema
 
     def _build_pop_matrix(
         self,
@@ -703,7 +463,7 @@ class PopulationData:
         labels : List
             Ordered list of stratum labels corresponding to rows of P_matrix.
         """
-        df = self.df_pop[["age"] + vars_list + ["P"]]
+        df = self.data[["age"] + vars_list + ["P"]]
         sort_vars = ["age"] + vars_list
         df = df.sort_values(by=sort_vars)
 
@@ -802,11 +562,11 @@ class PopulationData:
             )
 
         # Validate columns exist
-        missing = [v for v in strat_var_cols if v not in self.df_pop.columns]
+        missing = [v for v in strat_var_cols if v not in self.data.columns]
         if missing:
             raise KeyError(
                 f"Stratification columns not found in population data: {missing}\n"
-                f"Available columns: {list(self.df_pop.columns)}"
+                f"Available columns: {list(self.data.columns)}"
             )
 
         P_matrix, labels = self._build_pop_matrix(strat_var_cols)

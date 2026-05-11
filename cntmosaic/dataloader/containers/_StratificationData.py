@@ -7,6 +7,8 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from ..._types import StratMode
+from ._stratification_preprocessing import preprocess_stratification_data
+from ._stratification_validation import validate_stratification_data
 
 
 @dataclass
@@ -119,22 +121,10 @@ class StratificationData:
         if isinstance(self.strat_var_cols, str):
             self.strat_var_cols = [self.strat_var_cols]
 
-        # Validate columns exist
-        missing = [col for col in self.strat_var_cols if col not in self.data.columns]
-        if missing:
-            raise ValueError(
-                f"Stratification columns not found in data: {missing}\n"
-                f"Available columns: {list(self.data.columns)}"
-            )
-
-        # Convert strat_var_cols to categorical dtype if not already
-        for col in self.strat_var_cols:
-            if not isinstance(self.data[col].dtype, pd.CategoricalDtype):
-                warnings.warn(
-                    f"Converting '{col}' to categorical dtype.",
-                    UserWarning,
-                )
-                self.data[col] = self.data[col].astype("category")
+        # Delegate column validation and categorical conversion
+        self.data = preprocess_stratification_data(
+            self.data, self.age_col, self.strat_var_cols, self.prop_col
+        )
 
         self.validate()
 
@@ -158,39 +148,9 @@ class StratificationData:
         >>> # Validation happens automatically, but can be called explicitly:
         >>> pop_prop.validate()
         """
-        # Check required columns exist
-        required_cols = [self.age_col] + self.strat_var_cols + [self.prop_col]
-        missing = [col for col in required_cols if col not in self.data.columns]
-        if missing:
-            raise ValueError(
-                f"Missing required columns in population proportion data: {missing}\n"
-                f"Required: {required_cols}\n"
-                f"Available: {list(self.data.columns)}"
-            )
-
-        # Check proportion values are in valid range
-        props = self.data[self.prop_col]
-        if (props < 0).any() or (props > 1).any():
-            invalid_indices = self.data[(props < 0) | (props > 1)].index
-            raise ValueError(
-                f"Population proportions must be in range [0, 1]. "
-                f"Found invalid values at indices: {list(invalid_indices)}\n"
-                f"Invalid values: {props[invalid_indices].to_dict()}"
-            )
-
-        # Check proportions sum to 1 within each age group
-        group_sums = self.data.groupby(self.age_col, observed=False)[
-            self.prop_col
-        ].sum()
-        bad_groups = group_sums[np.abs(group_sums - 1.0) > 1e-6]
-
-        if not bad_groups.empty:
-            raise ValueError(
-                f"Population proportions must sum to 1.0 within each age group (tolerance: 1e-6).\n"
-                f"Ages with invalid sums: {list(bad_groups.index)}\n"
-                f"Actual sums: {bad_groups.to_dict()}\n"
-                f"Hint: Use StratificationData.from_counts() to automatically compute proportions from counts."
-            )
+        validate_stratification_data(
+            self.data, self.age_col, self.strat_var_cols, self.prop_col
+        )
 
     @classmethod
     def from_counts(

@@ -17,6 +17,7 @@ from numpyro.infer.autoguide import AutoNormal
 from ..dataloader.containers import ContactData, ParticipantData
 from ..distributions import IGMRF2D
 from ..utils import AgeBins
+from ._base import ContactModel
 from ._numpyro import (
     get_samples_svi,
     posterior_predictive_mcmc,
@@ -26,7 +27,7 @@ from ._numpyro import (
 )
 
 
-class Prem:
+class Prem(ContactModel):
     """
     Estimate age-structured social contact matrices using the Prem et al. (2017) methodology.
 

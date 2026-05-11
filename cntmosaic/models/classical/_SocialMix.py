@@ -19,8 +19,9 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from ..dataloader import ContactData, ParticipantData, PopulationData
-from ..utils import AgeBins
+from ...dataloader import ContactData, ParticipantData, PopulationData
+from ...utils import AgeBins
+from ._base import DeterministicContactModel
 from ._socialmix_age_processing import AgeBinProcessor
 from ._socialmix_bootstrap import BootstrapResults, SocialMixBootstrap
 from ._socialmix_utils import SocialMixDataLoader
@@ -31,7 +32,7 @@ from ._socialmix_validation import SocialMixValidator
 # ============================================================================
 
 
-class SocialMix:
+class SocialMix(DeterministicContactModel):
     """
     Estimate age-structured social contact matrices from survey data.
 
@@ -166,8 +167,40 @@ class SocialMix:
         self.K_cnt: int = 1  # Number of contact strata
 
         # Run processing pipeline
+        self.fit()
+
+    # ------------------------------------------------------------------
+    # DeterministicContactModel interface
+    # ------------------------------------------------------------------
+
+    def fit(self) -> None:
+        """
+        Prepare and load data for matrix estimation.
+
+        Runs the full preprocessing and loading pipeline:
+        1. Assigns age groups to participants / contacts
+        2. Validates stratification, reciprocity requirements, and age bins
+        3. Aggregates contact counts into Y, N, P arrays
+        """
         self._preprocess()
         self._load()
+
+    def predict(self) -> Dict[str, NDArray]:
+        """
+        Compute and return the contact intensity matrix.
+
+        This is a convenience wrapper around :meth:`cint`.
+
+        Returns
+        -------
+        Dict[str, NDArray]
+            Dictionary mapping stratum labels to contact intensity matrices.
+        """
+        return self.cint()
+
+    # ------------------------------------------------------------------
+    # Internal preprocessing / loading
+    # ------------------------------------------------------------------
 
     def _preprocess(self) -> None:
         """

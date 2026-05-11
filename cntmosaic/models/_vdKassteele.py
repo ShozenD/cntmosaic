@@ -13,6 +13,7 @@ from numpyro.infer.initialization import init_to_value
 
 from .._types import StratMode
 from ..dataloader import DataLoader
+from ._base import ContactModel
 from ._numpyro import (
     posterior_predictive_mcmc,
     posterior_predictive_svi,
@@ -22,7 +23,7 @@ from ._numpyro import (
 from .priors import Hill, vdKassteele2D
 
 
-class vdKassteele:
+class vdKassteele(ContactModel):
     """
     van de Kassteele model for estimating social contact matrices.
 
@@ -37,7 +38,31 @@ class vdKassteele:
         order: int = 2,
         tau_shape: float = 2.0,
         tau_rate: float = 0.1,
+        prior: Optional[vdKassteele2D] = None,
     ) -> None:
+        """
+        Initialise the van de Kassteele model.
+
+        Parameters
+        ----------
+        dataloader : DataLoader
+            DataLoader object containing the processed contact data.
+        likelihood : str
+            Observation likelihood.  Either ``'poisson'`` or ``'negbin'``.
+        order : int, default=2
+            P-spline order used by the vdKassteele2D prior.
+        tau_shape : float, default=2.0
+            Shape parameter of the Gamma prior on the smoothing precision ``tau``.
+        tau_rate : float, default=0.1
+            Rate parameter of the Gamma prior on the smoothing precision ``tau``.
+        prior : vdKassteele2D, optional
+            Pre-constructed ``vdKassteele2D`` prior object.  When supplied the
+            model uses it directly and skips automatic prior construction from
+            ``order``, ``tau_shape``, and ``tau_rate``.  This mirrors the
+            ``priors`` argument of ``BRC`` and allows external prior sharing or
+            customisation without sub-classing.  Backward compatibility is
+            fully preserved: omitting this argument keeps the original behaviour.
+        """
         self.data = dataloader.load()
         self.likelihood = likelihood
 
@@ -79,7 +104,7 @@ class vdKassteele:
         self._svi_result: Optional[numpyro.infer.SVI] = None
         self._guide: Optional[Callable] = None
 
-        self._set_prior()
+        self._set_prior(prior)
 
     def _infer_prior_type(self) -> None:
         """
@@ -103,7 +128,28 @@ class vdKassteele:
 
         self.prior_type = prior_type
 
-    def _set_prior(self) -> None:
+    def _set_prior(self, prior: Optional[vdKassteele2D] = None) -> None:
+        """
+        Configure the vdKassteele2D prior for this model instance.
+
+        If a pre-constructed *prior* object is supplied it is used directly
+        (bypassing automatic construction).  Otherwise the prior is built
+        from the ``order``, ``tau_shape``, and ``tau_rate`` parameters that
+        were passed to ``__init__``, using the stratification mode inferred
+        from the loaded dataset.
+
+        Parameters
+        ----------
+        prior : vdKassteele2D, optional
+            A fully-configured ``vdKassteele2D`` prior.  When provided, all
+            automatic construction logic is skipped.
+        """
+        if prior is not None:
+            self.prior = prior
+            # Infer prior_type for use in model() (needed even when prior is external)
+            self._infer_prior_type()
+            return
+
         self._infer_prior_type()
 
         if self.prior_type == "global":

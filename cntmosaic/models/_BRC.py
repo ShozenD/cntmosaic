@@ -14,6 +14,7 @@ from numpyro.handlers import seed, trace
 
 from ..dataloader import DataLoader
 from ..dataloader.containers._ModelData import ModelData
+from ._base import ContactModel
 from ._numpyro import (
     posterior_predictive_mcmc,
     posterior_predictive_svi,
@@ -23,7 +24,7 @@ from ._numpyro import (
 from .priors import Prior2D
 
 
-class BRC(ABC):
+class BRC(ContactModel, ABC):
     """
     Base class for the Bayesian Rate Consistency model.
 
@@ -295,13 +296,19 @@ class BRC(ABC):
         self.age_dist = age_dist
 
     @abstractmethod
-    def model(self) -> None:
+    def model(self, y: Optional[ArrayLike] = None) -> None:
         """
         Define the probabilistic model for contact matrix estimation.
 
         This abstract method must be implemented by all subclasses to specify the
         generative model structure, including priors, likelihood, and any deterministic
         transformations. The model should be compatible with NumPyro's primitives.
+
+        Parameters
+        ----------
+        y : ArrayLike, optional
+            Observed contact counts.  When ``None`` the model samples from
+            the prior (prior predictive mode).
 
         Raises
         ------

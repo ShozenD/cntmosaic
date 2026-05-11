@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from ..utils import AgeBins
+from ...utils import AgeBins
 
 
 class AgeBinProcessor:

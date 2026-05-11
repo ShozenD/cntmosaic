@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import List, Tuple, Union
 
 import pandas as pd
@@ -169,9 +171,9 @@ class DataLoader(BaseLoader):
 
     def __init__(
         self,
-        part_data,  # ParticipantData type hint removed to avoid circular import
-        cnt_data,  # ContactData type hint removed to avoid circular import
-        pop_data,  # PopulationData type hint removed to avoid circular import
+        part_data: ParticipantData,
+        cnt_data: ContactData,
+        pop_data: PopulationData,
         strat_prop_data: Union[StratificationData, None] = None,
         smooth_amb_cnt_offsets: bool = True,
     ) -> None:

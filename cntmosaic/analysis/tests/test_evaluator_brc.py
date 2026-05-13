@@ -18,11 +18,17 @@ from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
 
 from cntmosaic.analysis import ModelEvaluatorBRC, ModelSummariserBRC
-from cntmosaic.dataloader import DataLoader
+from cntmosaic.dataloader import ContactData, DataLoader, ParticipantData, PopulationData
 from cntmosaic.datasets import load_age_distribution, load_template_patterns
 from cntmosaic.models import BRCfine
 from cntmosaic.models.priors import Spline2D
-from cntmosaic.sim import ContactGenerator, MatrixGenerator, ParticipantGenerator
+from cntmosaic.sim import (
+    ContactGenerator,
+    MatrixGenerator,
+    ParticipantGenerator,
+    PopulationConstructor,
+    Stratification,
+)
 from cntmosaic.utils import AgeBins
 
 # ============================================================================
@@ -36,28 +42,24 @@ templates = load_template_patterns("United_States")
 @pytest.fixture
 def sample_dataloader():
     """Create sample dataloader for testing."""
-    population = Subgroup(
-        n=500,
-        age_dist=df_age_dist.P.values,
-        mean_cint_margin=15.0,
-        label="general",
+    strat = Stratification(
+        name="general", n_strata=1, ref_age_dist=df_age_dist.P.values, labels=["All"], seed=42
     )
+    popcon = PopulationConstructor(strats=strat)
 
     matrix_gen = MatrixGenerator(templates)
-    contact_matrix = matrix_gen.generate_single(population, seed=42)
+    contact_matrix = matrix_gen.generate_single(popcon, mean_intensity=15.0, seed=42)
 
-    part_gen = ParticipantGenerator(population)
+    part_gen = ParticipantGenerator(popcon, n_part=500)
     df_part = part_gen.generate(seed=42)
-    df_part["age_part"] = df_part["age_group"]
 
     cnt_gen = ContactGenerator(df_part, cint_matrices=contact_matrix, model="poisson")
     df_cnt = cnt_gen.generate(seed=42)
 
-    col_map = CoordToColumns(
-        age_part="age_part", age_cnt="age_cnt", age_pop="age", size_pop="P"
-    )
-
-    dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
+    part_data = ParticipantData(df_part, id_col="id", age_col="age")
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    pop_data = PopulationData(df_age_dist, age_col="age", size_col="P")
+    dataloader = DataLoader(part_data, cnt_data, pop_data)
     return dataloader, contact_matrix
 
 
@@ -107,8 +109,8 @@ class TestModelEvaluatorBRCInitialization:
         assert evaluator.summariser is summariser
         assert evaluator.alpha == 0.05
         assert evaluator.model_type == "brc"
-        assert isinstance(evaluator.cint_true, np.ndarray)
-        assert isinstance(evaluator.mcint_true, np.ndarray)
+        assert isinstance(evaluator.cint_true, dict)
+        assert isinstance(evaluator.mcint_true, dict)
 
     def test_init_with_svi(self, brc_svi_fitted):
         """Test initialization with SVI model."""
@@ -126,9 +128,9 @@ class TestModelEvaluatorBRCInitialization:
         summariser = ModelSummariserBRC(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
-        # Marginals should equal row sums
-        expected_mcint = cint_true.sum(axis=1)
-        np.testing.assert_array_equal(evaluator.mcint_true, expected_mcint)
+        # Marginals should equal row sums (cint_true is dict with "All->All" key)
+        expected_mcint = cint_true["All->All"].sum(axis=1)
+        np.testing.assert_array_equal(evaluator.mcint_true["All->All"], expected_mcint)
 
     def test_init_without_inference_raises_error(self, sample_dataloader):
         """Test that initialization without inference raises ValueError."""
@@ -165,8 +167,8 @@ class TestModelEvaluatorBRCInitialization:
         model, cint_true = brc_mcmc_fitted
         summariser = ModelSummariserBRC(model)
 
-        cint_negative = cint_true.copy()
-        cint_negative[0, 0] = -1.0
+        cint_negative = {"All->All": cint_true["All->All"].copy()}
+        cint_negative["All->All"][0, 0] = -1.0
 
         with pytest.raises(ValueError, match="negative values"):
             ModelEvaluatorBRC(summariser, cint_negative)
@@ -176,8 +178,8 @@ class TestModelEvaluatorBRCInitialization:
         model, cint_true = brc_mcmc_fitted
         summariser = ModelSummariserBRC(model)
 
-        cint_nan = cint_true.copy()
-        cint_nan[0, 0] = np.nan
+        cint_nan = {"All->All": cint_true["All->All"].copy()}
+        cint_nan["All->All"][0, 0] = np.nan
 
         with pytest.raises(ValueError, match="NaN or Inf"):
             ModelEvaluatorBRC(summariser, cint_nan)
@@ -463,8 +465,8 @@ class TestEdgeCases:
         model, cint_true = brc_mcmc_fitted
         summariser = ModelSummariserBRC(model)
 
-        # Create zero matrix (edge case, but shouldn't crash)
-        zero_matrix = np.zeros_like(cint_true)
+        # Create zero matrix dict (edge case, but shouldn't crash)
+        zero_matrix = {"All->All": np.zeros_like(cint_true["All->All"])}
         evaluator = ModelEvaluatorBRC(summariser, zero_matrix)
 
         # Should compute metrics without error (though MAPE may be inf)

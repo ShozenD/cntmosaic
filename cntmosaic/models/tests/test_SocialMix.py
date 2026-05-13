@@ -3,7 +3,7 @@ import pytest
 
 from ...analysis.summariser import ModelSummariserSocialMix
 from ...utils import AgeBins
-from .._SocialMix import SocialMix
+from ..classical._SocialMix import SocialMix
 from .fixtures import (
     full_large_sample,
     full_multi_strat_large_sample,

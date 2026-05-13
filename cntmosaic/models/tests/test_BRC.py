@@ -32,7 +32,13 @@ from ...dataloader import (
     StratificationData,
 )
 from ...datasets import load_age_distribution, load_template_patterns
-from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator, Subgroup
+from ...sim import (
+    ContactGenerator,
+    MatrixGenerator,
+    ParticipantGenerator,
+    PopulationConstructor,
+    Stratification,
+)
 from .._BRC import BRC
 from ..priors import HSGP2D, PSpline2D, Spline2D
 
@@ -87,22 +93,23 @@ def sample_dataloader():
     df_age_dist = load_age_distribution("United_States")
     templates = load_template_patterns("United_States")
 
-    population = Subgroup(
-        n=500, age_dist=df_age_dist.P.values, mean_cint_margin=15.0, label="general"
+    strat = Stratification(
+        name="general", n_strata=1, ref_age_dist=df_age_dist.P.values, labels=["All"], seed=42
     )
+    popcon = PopulationConstructor(strats=strat)
 
     matrix_gen = MatrixGenerator(templates)
-    contact_matrix = matrix_gen.generate_single(population, seed=42)
+    contact_matrix = matrix_gen.generate_single(popcon, mean_intensity=15.0, seed=42)
 
-    part_gen = ParticipantGenerator(population)
+    part_gen = ParticipantGenerator(popcon, n_part=500)
     df_part = part_gen.generate(seed=42)
 
     cnt_gen = ContactGenerator(df_part, cint_matrices=contact_matrix, model="poisson")
     df_cnt = cnt_gen.generate(seed=42)
 
-    part_data = ParticipantData(df_part, id_col="id", age_col="age_group")
-    cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-    pop_data = PopulationData(df_pop=df_age_dist, age_col="age", size_col="P")
+    part_data = ParticipantData(df_part, id_col="id", age_col="age")
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    pop_data = PopulationData(df_age_dist, age_col="age", size_col="P")
     dataloader = DataLoader(part_data, cnt_data, pop_data)
 
     return dataloader

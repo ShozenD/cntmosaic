@@ -17,7 +17,7 @@ class TestInit:
 
     def test_partial(self, partial_coarse_large_sample):
         part_data, cnt_data, pop_data = partial_coarse_large_sample
-        df_pop = pop_data.df_pop
+        df_pop = pop_data.data
         strat_vars = pop_data.get_strat_vars()
         strat_data = StratificationData.from_counts(
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
@@ -27,7 +27,7 @@ class TestInit:
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_data=strat_data,
+            strat_prop_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
@@ -39,7 +39,7 @@ class TestInit:
 
     def test_full(self, full_coarse_large_sample):
         part_data, cnt_data, pop_data = full_coarse_large_sample
-        df_pop = pop_data.df_pop
+        df_pop = pop_data.data
         strat_vars = pop_data.get_strat_vars()
         strat_data = StratificationData.from_counts(
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
@@ -49,7 +49,7 @@ class TestInit:
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_data=strat_data,
+            strat_prop_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
@@ -61,7 +61,7 @@ class TestInit:
 
     def test_multi_strat_partial(self, partial_coarse_multi_strat_large_sample):
         part_data, cnt_data, pop_data = partial_coarse_multi_strat_large_sample
-        df_pop = pop_data.df_pop
+        df_pop = pop_data.data
         strat_vars = pop_data.get_strat_vars()
         strat_data = StratificationData.from_counts(
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
@@ -71,7 +71,7 @@ class TestInit:
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_data=strat_data,
+            strat_prop_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
@@ -83,7 +83,7 @@ class TestInit:
 
     def test_multi_strat_full(self, full_coarse_multi_strat_large_sample):
         part_data, cnt_data, pop_data = full_coarse_multi_strat_large_sample
-        df_pop = pop_data.df_pop
+        df_pop = pop_data.data
         strat_vars = pop_data.get_strat_vars()
         strat_data = StratificationData.from_counts(
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
@@ -93,7 +93,7 @@ class TestInit:
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_data=strat_data,
+            strat_prop_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
@@ -111,7 +111,7 @@ class TestModel:
         from numpyro.handlers import seed
 
         part_data, cnt_data, pop_data = partial_coarse_large_sample
-        df_pop = pop_data.df_pop
+        df_pop = pop_data.data
         strat_vars = pop_data.get_strat_vars()
         strat_data = StratificationData.from_counts(
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
@@ -131,7 +131,7 @@ class TestModel:
 
     def test_print_model_shape(self, partial_coarse_large_sample):
         part_data, cnt_data, pop_data = partial_coarse_large_sample
-        df_pop = pop_data.df_pop
+        df_pop = pop_data.data
         strat_vars = pop_data.get_strat_vars()
         strat_data = StratificationData.from_counts(
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
@@ -154,7 +154,7 @@ class TestInference:
 
     def test_svi_inference(self, partial_coarse_large_sample):
         part_data, cnt_data, pop_data = partial_coarse_large_sample
-        df_pop = pop_data.df_pop
+        df_pop = pop_data.data
         strat_vars = pop_data.get_strat_vars()
         strat_data = StratificationData.from_counts(
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
@@ -175,7 +175,7 @@ class TestInference:
     # Test MCMC inference
     def test_mcmc_inference(self, partial_coarse_large_sample):
         part_data, cnt_data, pop_data = partial_coarse_large_sample
-        df_pop = pop_data.df_pop
+        df_pop = pop_data.data
         strat_vars = pop_data.get_strat_vars()
         strat_data = StratificationData.from_counts(
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"

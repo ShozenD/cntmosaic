@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import pandas as pd
 from ...utils import AgeBins
-from .._SocialMix import AgeBinProcessor
+from ..classical._socialmix_age_processing import AgeBinProcessor
 
 # Language: python
 

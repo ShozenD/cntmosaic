@@ -339,7 +339,7 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
             point_est = self.summariser.get_point_estimates(quantity)
             y_hat = point_est["mean"]
 
-            # Get true values
+            # Get true values (dicts for BRC with "All->All" key)
             if quantity == "cint":
                 y_true = self.cint_true
             else:
@@ -347,24 +347,25 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
 
             # Compute errors
             if self.model_type == "brc":
-                diff = y_hat - y_true
+                y_true_arr = y_true["All->All"] if isinstance(y_true, dict) else y_true
+                diff = y_hat - y_true_arr
                 rmse = float(np.sqrt(np.mean(diff**2)))
                 mae = float(np.mean(np.abs(diff)))
 
                 # Avoid division by zero in MAPE
-                mask = y_true != 0
+                mask = y_true_arr != 0
                 if np.any(mask):
-                    mape = float(np.mean(np.abs(diff[mask] / y_true[mask])) * 100)
+                    mape = float(np.mean(np.abs(diff[mask] / y_true_arr[mask])) * 100)
                 else:
                     mape = np.inf
 
                 # Relative error - use Frobenius norm for matrices, L2 norm for vectors
                 if diff.ndim == 2:
                     norm_diff = np.linalg.norm(diff, "fro")
-                    norm_true = np.linalg.norm(y_true, "fro")
+                    norm_true = np.linalg.norm(y_true_arr, "fro")
                 else:
                     norm_diff = np.linalg.norm(diff)
-                    norm_true = np.linalg.norm(y_true)
+                    norm_true = np.linalg.norm(y_true_arr)
                 relative_error = float(
                     norm_diff / norm_true if norm_true > 0 else np.inf
                 )

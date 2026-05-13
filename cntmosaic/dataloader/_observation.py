@@ -16,7 +16,9 @@ from ._CoordToColumns import CoordToColumns
 from ._utils import gaussian_smooth_by_group
 
 
-def build_participant_counts(data: pd.DataFrame, col_spec: CoordToColumns) -> pd.DataFrame:
+def build_participant_counts(
+    data: pd.DataFrame, col_spec: CoordToColumns
+) -> pd.DataFrame:
     """Aggregate participant counts (N) by age and stratification variables."""
     df_n = (
         data.groupby(col_spec.strat_vars_n, observed=False)
@@ -57,9 +59,7 @@ def build_contact_offsets(
     )
     df_V = df_yz.merge(df_z, on=col_spec.strat_vars_n, how="left")
     df_V["V"] = 1 - df_V[col_spec.z] / (df_V[col_spec.z] + df_V[col_spec.y])
-    df_V["V"] = np.where(
-        df_V["V"] == 0, 1.0 / (df_V[col_spec.z] + 1.0), df_V["V"]
-    )
+    df_V["V"] = np.where(df_V["V"] == 0, 1.0 / (df_V[col_spec.z] + 1.0), df_V["V"])
     df_V.fillna({"V": 1.0}, inplace=True)
     df_V = df_V.drop(columns=[col_spec.z, col_spec.y])
 
@@ -69,7 +69,11 @@ def build_contact_offsets(
         ]
         if len(smooth_group_vars) > 0:
             df_V = gaussian_smooth_by_group(
-                df_V, group_by=smooth_group_vars, target="V", cv=True, sort_by=col_spec.age_part
+                df_V,
+                group_by=smooth_group_vars,
+                target="V",
+                cv=True,
+                sort_by=col_spec.age_part,
             )
         else:
             df_V = gaussian_smooth_by_group(
@@ -114,9 +118,7 @@ def build_observation_grid(
     df_n, df_y, df_V : pd.DataFrame
         Pre-computed participant counts, contact counts, and offsets.
     """
-    unique_coords = {
-        var: data[var].unique() for var in col_spec.strat_vars_y
-    }
+    unique_coords = {var: data[var].unique() for var in col_spec.strat_vars_y}
     unique_coords[col_spec.age_part] = np.arange(age_min, age_max + 1, dtype=int)
 
     if col_spec.age_cnt:
@@ -126,7 +128,7 @@ def build_observation_grid(
 
     index = pd.MultiIndex.from_product(
         unique_coords.values(), names=unique_coords.keys()
-    )
+    )  # type: ignore
     df_full = pd.DataFrame(list(index), columns=unique_coords.keys())
     df_full = pd.merge(df_full, df_y, on=col_spec.strat_vars_y, how="left")
     df_full = pd.merge(df_full, df_n, on=col_spec.strat_vars_n, how="left")
@@ -142,11 +144,15 @@ def build_observation_grid(
     if col_spec.strat_vars_part:
         for var in col_spec.strat_vars_part:
             categories = data[var].cat.categories
-            df_full[var] = pd.Categorical(df_full[var], categories=categories, ordered=True)
+            df_full[var] = pd.Categorical(
+                df_full[var], categories=categories, ordered=True
+            )
     if col_spec.strat_vars_cnt:
         for var in col_spec.strat_vars_cnt:
             categories = data[var].cat.categories
-            df_full[var] = pd.Categorical(df_full[var], categories=categories, ordered=True)
+            df_full[var] = pd.Categorical(
+                df_full[var], categories=categories, ordered=True
+            )
 
     df_full = df_full.dropna(subset=["N"])
     df_full = df_full[df_full["N"] > 0]

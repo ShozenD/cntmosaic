@@ -263,19 +263,11 @@ class Prem(ContactModel):
         - Mixed: Some overlap → K=complex product
         """
         # Extract stratification variables from both containers
-        self.strat_vars_part = self.part_data.strat_vars
+        self.strat_vars_part = self.part_data.get_strat_vars()
 
-        # For contact variables, strip _cnt suffix if present (columns may already have it)
-        if self.cnt_data.strat_vars:
-            if isinstance(self.cnt_data.strat_vars, str):
-                # Single variable
-                var = self.cnt_data.strat_vars
-                self.strat_vars_cnt = [var.removesuffix("_cnt")]
-            else:
-                # List of variables
-                self.strat_vars_cnt = [
-                    var.removesuffix("_cnt") for var in self.cnt_data.strat_vars
-                ]
+        cnt_vars = self.cnt_data.get_strat_vars()
+        if cnt_vars:
+            self.strat_vars_cnt = [var.removesuffix("_cnt") for var in cnt_vars]
         else:
             self.strat_vars_cnt = []
 

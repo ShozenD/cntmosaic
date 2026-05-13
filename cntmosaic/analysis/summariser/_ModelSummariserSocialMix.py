@@ -124,27 +124,26 @@ class ModelSummariserSocialMix:
 
         # Extract population age distribution if available
         if self.pop_data is not None:
-            # Store stratified population structure for per-stratum extraction
-            pop_by_group = self.pop_data.get_age_distribution(by_group=True)
-            
-            if self.pop_data.strat_var_cols:
+            strat_vars = self.pop_data.get_strat_vars()
+            pop_df = self.pop_data.data
+
+            if strat_vars:
                 # Stratified: create MultiIndex structure [strat_var(s), age] -> P
-                if self.pop_data.n_strat_vars > 1:
-                    # Build composite strata string for multi-variable stratification
-                    pop_by_group["strata"] = pop_by_group[self.pop_data.strat_var_cols[0]].astype(str)
-                    for col in self.pop_data.strat_var_cols[1:]:
-                        pop_by_group["strata"] = pop_by_group["strata"] + "_" + pop_by_group[col].astype(str)
-                    self.pop_by_strata = pop_by_group[["strata", "age", "P"]].set_index(["strata", "age"])["P"]
+                if len(strat_vars) > 1:
+                    pop_df = pop_df.copy()
+                    pop_df["strata"] = pop_df[strat_vars[0]].astype(str)
+                    for col in strat_vars[1:]:
+                        pop_df["strata"] = pop_df["strata"] + "_" + pop_df[col].astype(str)
+                    self.pop_by_strata = pop_df[["strata", "age", "P"]].set_index(["strata", "age"])["P"]
                 else:
-                    # Single stratification variable
-                    strat_var = self.pop_data.strat_var_cols[0]
-                    self.pop_by_strata = pop_by_group[[strat_var, "age", "P"]].set_index([strat_var, "age"])["P"]
-                
-                # For backward compatibility, also store unstratified total
-                self.age_dist = self.pop_data.get_age_distribution(by_group=False)["P"].values
+                    strat_var = strat_vars[0]
+                    self.pop_by_strata = pop_df[[strat_var, "age", "P"]].set_index([strat_var, "age"])["P"]
+
+                # Unstratified total: sum P over strata for each age
+                self.age_dist = pop_df.groupby("age")["P"].sum().values
             else:
                 # Unstratified: just extract the population values
-                self.age_dist = pop_by_group["P"].values
+                self.age_dist = pop_df["P"].values
                 self.pop_by_strata = None
         else:
             self.age_dist = None

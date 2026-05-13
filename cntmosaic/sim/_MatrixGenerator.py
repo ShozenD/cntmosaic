@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from .._types import StratumLabel  # noqa: F401
 from ._PopulationConstructor import PopulationConstructor
 from ._Stratification import Stratification
 
@@ -707,7 +708,7 @@ class MatrixGenerator:
         popcon: PopulationConstructor,
         mean_intensity: float = 15.0,
         seed: Optional[int] = None,
-    ) -> Dict[int, NDArray]:
+    ) -> Dict[str, NDArray]:
         """
         Generate partial contact matrices: one per stratum to general population.
 
@@ -981,7 +982,7 @@ class MatrixGenerator:
         mean_intensity: float = 15.0,
         assortativity: float = 0.0,
         seed: Optional[int] = None,
-    ) -> Dict[Tuple[int, int], NDArray]:
+    ) -> Dict[str, NDArray]:
         """
         Generate full stratified contact matrices for all stratum pairs.
 

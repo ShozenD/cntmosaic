@@ -123,12 +123,12 @@ model_data = loader.load()   # returns xarray Dataset with y, log_N, pop_prop_* 
 
 ## Phase 3 — API Polish: Production-Quality Public Surface
 
-### 3.1 Audit and fix all `__init__.py` public exports
+### ~~3.1 Audit and fix all `__init__.py` public exports~~ ✅ DONE
 - **Files**: `cntmosaic/__init__.py`, all submodule `__init__.py` files
 - **Effort**: S
 - **Rationale**: Root `__all__` omits `dataloader` and `datasets` — the primary entry points for new users. Audit every `__all__` list against actual definitions to eliminate phantom exports and expose the intended public API. `DataLoader` should be importable as `from cntmosaic import DataLoader`.
 
-### 3.2 Rename cryptic `BaseLoader` property names
+### ~~3.2 Rename cryptic `BaseLoader` property names~~ ✅ DONE
 - **Files**: `cntmosaic/dataloader/_BaseLoader.py:218–285`
 - **Effort**: S
 - **Rationale**: `df_V` (contact offsets), `df_y` (contact counts), and `df_n` (participant counts) are mathematically motivated names that are opaque to users unfamiliar with the underlying model notation. Rename to `df_contact_offsets`, `df_contact_counts`, `df_participant_counts`.
@@ -138,27 +138,27 @@ model_data = loader.load()   # returns xarray Dataset with y, log_N, pop_prop_* 
 - **Effort**: M
 - **Rationale**: Many public methods lack return type hints. Several files use Python 3.9+ syntax (`list[str]`, `X | Y`) inconsistent with the declared `python_requires = ">=3.8"`. Standardise to `from typing import List, Union, Optional, Dict` throughout, or bump minimum Python to 3.10.
 
-### 3.4 Define typed return structures for `datasets` loaders
+### ~~3.4 Define typed return structures for `datasets` loaders~~ ✅ DONE
 - **Files**: `cntmosaic/datasets/_base.py`
 - **Effort**: S
 - **Rationale**: `load_template_patterns()` returns an untyped `dict`. Define a `TypedDict` (e.g. `ContactPatterns`) with keys `household`, `school`, `work`, `other` so IDEs and type checkers can validate downstream usage.
 
-### 3.5 Consolidate `plot_mosaic` parameter list
+### ~~3.5 Consolidate `plot_mosaic` parameter list~~ ✅ DONE
 - **Files**: `cntmosaic/vis/_visuals.py`
 - **Effort**: S
 - **Rationale**: `plot_mosaic()` takes 20+ parameters, making it unusable without consulting docs. Group related parameters into a `MosaicPlotConfig` dataclass with sensible defaults.
 
-### 3.6 Remove Altair global state mutation on import
+### ~~3.6 Remove Altair global state mutation on import~~ ✅ DONE
 - **Files**: `cntmosaic/vis/_visuals.py:9`
 - **Effort**: S
 - **Rationale**: `alt.data_transformers.disable_max_rows()` is called at module import time, silently mutating global Altair state for any user who imports `cntmosaic.vis`. Either remove it, call it lazily inside plot functions, or expose it as `cntmosaic.vis.configure(disable_max_rows=True)`.
 
-### 3.7 Define `StratumLabel` type and use consistently across `sim`
+### ~~3.7 Define `StratumLabel` type and use consistently across `sim`~~ ✅ DONE
 - **Files**: `cntmosaic/sim/_ContactGenerator.py`, `_MatrixGenerator.py`
 - **Effort**: S
 - **Rationale**: `ContactGenerator` uses string keys (`"Urban->All"`); `MatrixGenerator` uses tuple indices `(s, t)`. There is no unified abstraction. Define `StratumLabel = Union[str, Tuple[str, str]]` in `cntmosaic/_types.py` and adopt it consistently.
 
-### 3.8 Clarify internal vs. public class boundaries
+### ~~3.8 Clarify internal vs. public class boundaries~~ ✅ DONE
 - **Files**: `cntmosaic/dataloader/_BaseLoader.py`, `_CoordToColumns.py`
 - **Effort**: S
 - **Rationale**: Classes prefixed with `_` imply internal-only, yet `BaseLoader` and `CoordToColumns` are referenced in docstrings as extension points. Rename them (drop `_` prefix) and commit to their stability, or explicitly mark them as private in the module docstring.

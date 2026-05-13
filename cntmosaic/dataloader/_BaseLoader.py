@@ -1,9 +1,10 @@
 """
 Base class for loading and preprocessing contact survey data.
 
-This module provides the BaseLoader abstract base class with core functionality
-for validating, merging, and transforming contact survey data into formats suitable
-for statistical modeling.
+Internal API — not exported from ``cntmosaic.dataloader``. Provides the
+``BaseLoader`` abstract base class with core functionality for validating,
+merging, and transforming contact survey data into formats suitable for
+statistical modeling. Concrete users should subclass ``DataLoader`` instead.
 """
 
 import warnings
@@ -206,7 +207,7 @@ class BaseLoader(ABC):
         self.max_age: int = max_age
 
     @property
-    def df_n(self) -> pd.DataFrame:
+    def df_participant_counts(self) -> pd.DataFrame:
         """Construct dataframe of participant counts (N) stratified by age and grouping variables."""
         df_n = (
             self.data.groupby(self.col_map.strat_vars_n, observed=False)
@@ -216,13 +217,13 @@ class BaseLoader(ABC):
         return df_n
 
     @property
-    def df_V(self) -> pd.DataFrame:
+    def df_contact_offsets(self) -> pd.DataFrame:
         """
         Construct dataframe of ambiguous contact offsets (V) stratified by age and grouping variables.
         """
         # No ambiguous contacts: V = 1 - 0/(0+y) = 1.0 everywhere
         if self.col_map.z is None:
-            df_V = self.df_n.drop(columns=["N"])
+            df_V = self.df_participant_counts.drop(columns=["N"])
             df_V["V"] = 1.0
             return df_V
 
@@ -285,7 +286,7 @@ class BaseLoader(ABC):
         return df_V
 
     @property
-    def df_y(self) -> pd.DataFrame:
+    def df_contact_counts(self) -> pd.DataFrame:
         """Construct dataframe of contact counts (y) stratified by age and grouping variables."""
         df_y = (
             self.data.groupby(self.col_map.strat_vars_y, observed=False)
@@ -307,9 +308,9 @@ class BaseLoader(ABC):
 
     def _build_df_full(self) -> pd.DataFrame:
         """Build the full dataframe from scratch."""
-        df_n = self.df_n
-        df_V = self.df_V
-        df_y = self.df_y
+        df_n = self.df_participant_counts
+        df_V = self.df_contact_offsets
+        df_y = self.df_contact_counts
 
         # Create a full Cartesian product of all stratification variable levels
         unique_coords = {

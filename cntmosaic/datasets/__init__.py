@@ -1,13 +1,17 @@
 from ._base import (
-  load_covimod,
-  load_polymod_germany,
-  load_template_patterns,
-  load_age_distribution
+    ContactPatterns,
+    SurveyData,
+    load_age_distribution,
+    load_covimod,
+    load_polymod_germany,
+    load_template_patterns,
 )
 
 __all__ = [
-  'load_covimod',
-  'load_polymod_germany',
-  'load_template_patterns',
-  'load_age_distribution'
+    'ContactPatterns',
+    'SurveyData',
+    'load_covimod',
+    'load_polymod_germany',
+    'load_template_patterns',
+    'load_age_distribution',
 ]

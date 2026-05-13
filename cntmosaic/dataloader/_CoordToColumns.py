@@ -1,9 +1,9 @@
 """
 Column name mapping for contact survey data.
 
-This module provides the CoordToColumns dataclass which specifies the mapping
-between input dataframe columns and the variables required by contact matrix
-estimation models.
+Internal API — not exported from ``cntmosaic.dataloader``. Used exclusively by
+``BaseLoader`` and ``DataLoader`` to specify the mapping between input dataframe
+columns and the variables required by contact matrix estimation models.
 """
 
 import warnings

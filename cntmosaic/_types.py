@@ -6,6 +6,7 @@ packages to avoid circular imports.
 """
 
 from enum import Enum
+from typing import Tuple, Union
 
 
 class StratMode(Enum):
@@ -24,3 +25,8 @@ class StratMode(Enum):
 
     PARTIAL = "partial"
     FULL = "full"
+
+
+# A stratum identifier: either a plain string label (e.g. "Urban") or a
+# (source, target) string pair used as a matrix key (e.g. ("Urban", "Rural")).
+StratumLabel = Union[str, Tuple[str, str]]

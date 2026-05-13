@@ -1,14 +1,38 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
+
 import altair as alt
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-alt.data_transformers.disable_max_rows()
-import matplotlib.pyplot as plt
-
 from ..preprocess._utils import check_required_columns, expand_age_interval
 from ..utils import AgeBins, depixilate
 from ._utils import generate_vega_expression, ravel_matrix
+
+
+@dataclass
+class MosaicPlotConfig:
+    """Typed style configuration for mosaic plot functions.
+
+    Each field maps to the corresponding section of the internal ``default_config``
+    dict accepted by ``plot_mosaic``.  Pass this to ``plot_mosaic`` via
+    ``plot_config`` instead of the raw ``config`` dict.
+
+    Fields
+    ------
+    x_axis, y_axis, title, legend, color_scale : dict, optional
+        Altair / Vega-Lite property overrides for each chart section.
+    """
+
+    x_axis: Optional[Dict[str, Any]] = None
+    y_axis: Optional[Dict[str, Any]] = None
+    title: Optional[Dict[str, Any]] = None
+    legend: Optional[Dict[str, Any]] = None
+    color_scale: Optional[Dict[str, Any]] = None
 
 
 def plot_mosaic(
@@ -31,6 +55,7 @@ def plot_mosaic(
     z_tick_values: list = None,
     legend_position: str = "right",
     config: dict = None,
+    plot_config: Optional[MosaicPlotConfig] = None,
 ) -> alt.Chart:
     """
     Plot a mosaic visualization of a contact matrix.
@@ -91,6 +116,8 @@ def plot_mosaic(
     It then constructs a DataFrame and configures the chart properties using default style settings,
     which can be further customized via the `style_config` parameter.
     """
+    alt.data_transformers.disable_max_rows()
+
     # Default configurations for axis, title, and legend
     default_config = {
         "x_axis": {
@@ -124,6 +151,13 @@ def plot_mosaic(
                 default_config[key].update(config[key])
             else:
                 default_config[key] = config[key]
+    if plot_config is not None:
+        raw = {k: v for k, v in vars(plot_config).items() if v is not None}
+        for key, val in raw.items():
+            if key in default_config:
+                default_config[key].update(val)
+            else:
+                default_config[key] = val
     if color_mid is not None:
         default_config["color_scale"]["domainMid"] = color_mid
     if color_min is not None and color_max is not None:
@@ -211,6 +245,8 @@ def plot_mosaic_pixilated(
     height: int | float = 250,
     style_config: dict = None,
 ) -> alt.Chart:
+    alt.data_transformers.disable_max_rows()
+
     # Default configurations for axis, title, and legend
     default_config = {
         "x_axis": {
@@ -308,8 +344,7 @@ def plot_mosaic_marginal(
     title: str = "Contact intensity",
     style_config: dict = None,
 ) -> alt.Chart:
-    """
-           Plot the marginal contact intensity with optional uncertainty bands.
+    """Plot the marginal contact intensity with optional uncertainty bands.
 
     Parameters
            ----------
@@ -338,6 +373,7 @@ def plot_mosaic_marginal(
                    An Altair Chart object that visualizes the marginal contact intensity. When error bounds are provided, the chart includes
                    an error band alongside the main line plot.
     """
+    alt.data_transformers.disable_max_rows()
 
     config = {
         "x_axis": {

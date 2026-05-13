@@ -37,10 +37,270 @@ These issues directly prevent external researchers from adding new models. They 
 - **Rationale**: `__all__` exports `ModelEvaluatorSVI` and `ModelEvaluatorMCMC`, which do not exist in the `sim` module. This causes an `ImportError` for any user who does `from cntmosaic.sim import *`.
 
 ### 1.7 Decouple the inference engine behind a pluggable `InferenceBackend` protocol *(consolidates former item 1.2)*
-- **Files**: `cntmosaic/models/_numpyro.py`, `_BRC.py`, `_Prem.py`, `_vdKassteele.py`
-- **Effort**: L
-- **Rationale**: Every model hard-codes NumPyro and duplicates ~300 lines of MCMC/SVI setup, diagnostic logging, and error handling across `_BRC.py:388–502`, `_Prem.py:799–846`, and `_vdKassteele.py:251–366`. Both problems are solved together: define an `InferenceBackend` protocol with `run_mcmc(model, data, **kwargs) -> InferenceResult` and `run_svi(model, data, guide, **kwargs) -> InferenceResult`. The NumPyro implementation becomes `NumPyroBackend(InferenceBackend)`, wrapping the current `_numpyro.py` utilities. Models accept a backend at construction time and delegate all inference calls through it — the duplicated boilerplate disappears and alternative backends (PyMC, PyINLA) become first-class citizens.
-- **Notes**: Highest-effort item. Split into two PRs: (a) introduce the protocol and `NumPyroBackend` wrapping the current code with no behaviour change, then (b) thread the backend through model constructors and delete duplicated inference code.
+
+**Goal**: Remove all top-level `import numpyro` from model files so that importing `cntmosaic.models` does not require NumPyro to be installed. Eliminate ~300 lines of duplicated inference boilerplate across `_BRC.py`, `_Prem.py`, and `_vdKassteele.py` by introducing a single `NumPyroBackend` that all concrete models delegate to.
+
+**Affected files**:
+- New: `cntmosaic/models/_backend.py` — `InferenceBackend` Protocol
+- New: `cntmosaic/models/numpyro/__init__.py`, `cntmosaic/models/numpyro/_backend.py` — `NumPyroBackend` class
+- New: `cntmosaic/models/numpyro/_BRCfine.py`, `_BRCrefine.py`, `_HiBRCfine.py`, `_HiBRCrefine.py`, `_Prem.py`, `_vdKassteele.py` — NumPyro model mixins
+- Modified: `cntmosaic/models/_base.py`, `_BRC.py`, `_BRCfine.py`, `_BRCrefine.py`, `_HiBRCfine.py`, `_HiBRCrefine.py`, `_Prem.py`, `_vdKassteele.py`, `_numpyro.py`, `__init__.py`
+
+**Effort**: L (3–5 days; split into two sequential PRs as described below)
+
+**Rationale**: Every model hard-codes NumPyro at module level and duplicates `run_inference_mcmc`, `run_inference_svi`, `posterior_predictive_mcmc`, `posterior_predictive_svi`, `_log_mcmc_diagnostics`, and `print_model_shape` across `_BRC.py:393–778`, `_Prem.py:795–1024`, and `_vdKassteele.py:244–690`. Both problems — tight coupling and code duplication — are resolved together in two sequential PRs.
+
+---
+
+#### Stage 1 — Introduce `InferenceBackend` Protocol (no behaviour change)
+*PR-a: strictly additive, zero behaviour change, all existing tests must pass unchanged.*
+
+**New file `cntmosaic/models/_backend.py`**:
+
+```python
+from __future__ import annotations
+from typing import Any, Callable, Dict, Optional, Protocol, runtime_checkable
+
+@runtime_checkable
+class InferenceBackend(Protocol):
+    def run_mcmc(
+        self,
+        model: Callable,
+        prng_key: Any,
+        *,
+        num_samples: int,
+        num_warmup: int,
+        num_chains: int,
+        target_accept_prob: float,
+        max_tree_depth: int,
+        **model_kwargs: Any,
+    ) -> Any: ...
+
+    def run_svi(
+        self,
+        model: Callable,
+        guide: Callable,
+        prng_key: Any,
+        *,
+        num_steps: int,
+        peak_lr: float,
+        **model_kwargs: Any,
+    ) -> Any: ...
+
+    def get_mcmc_samples(self, mcmc_result: Any) -> Dict[str, Any]: ...
+
+    def get_mcmc_extra_fields(self, mcmc_result: Any) -> Dict[str, Any]: ...
+
+    def get_svi_params(self, svi_result: Any) -> Dict[str, Any]: ...
+
+    def get_svi_samples(
+        self,
+        prng_key: Any,
+        guide: Callable,
+        svi_result: Any,
+        num_samples: int,
+        **guide_kwargs: Any,
+    ) -> Dict[str, Any]: ...
+
+    def posterior_predictive_mcmc(
+        self,
+        prng_key: Any,
+        model: Callable,
+        mcmc_result: Any,
+        **model_kwargs: Any,
+    ) -> Dict[str, Any]: ...
+
+    def posterior_predictive_svi(
+        self,
+        prng_key: Any,
+        model: Callable,
+        guide: Callable,
+        svi_result: Any,
+        num_samples: int,
+        **model_kwargs: Any,
+    ) -> Dict[str, Any]: ...
+```
+
+**Design notes for Stage 1**:
+- Use `@runtime_checkable Protocol`, not an ABC. This keeps the contract structural (duck-typed) so a future PyMC backend does not need to import this file at all — it just needs to satisfy the interface.
+- `format_model_shapes` / `print_model_shape` is intentionally **excluded** from the Protocol. It is a NumPyro diagnostic utility (`numpyro.util.format_shapes`), not an inference operation. It belongs on `NumPyroBackend` as a concrete method, not on the protocol surface. The `print_model_shape()` method on model classes will call it directly on `NumPyroBackend` (accessed via `self._backend`) rather than through the protocol.
+- `get_mcmc_samples`, `get_mcmc_extra_fields`, `get_svi_params`, `get_svi_samples` are explicit methods rather than having the caller reach into the opaque result object. This is the key encapsulation boundary — the `analysis/` layer and summarisers currently call `model._mcmc_result.get_samples()` directly; after Stage 4 they will call `model._backend.get_mcmc_samples(model._mcmc_result)`. The raw `_mcmc_result` attribute remains on the model (as `Optional[Any]`) so `analysis/_arviz.py` and `_ModelSummariserBRC/Prem.py` do not break during transition.
+
+---
+
+#### Stage 2 — Create `NumPyroBackend` in `models/numpyro/`
+*Still part of PR-a. All existing code paths continue to work; `_numpyro.py` free functions are not deleted.*
+
+**New `cntmosaic/models/numpyro/_backend.py`**:
+- `NumPyroBackend` class, implementing `InferenceBackend`.
+- All methods delegate to the existing free functions in `cntmosaic/models/_numpyro.py` — no logic is duplicated or moved yet.
+- `print_model_shape(model_fn: Callable) -> None` as an extra concrete method (not on the Protocol).
+- `_build_default_guide(model_fn: Callable) -> Callable` as an extra concrete method returning `AutoNormal(model_fn)` — this is where `Prem` and `vdKassteele`'s default-guide construction will delegate (Stage 4).
+
+**`cntmosaic/models/numpyro/__init__.py`** — exports `NumPyroBackend` only. Add a docstring explaining how to add a non-NumPyro backend (the doc stub requested in Stage 6 of the original plan is merged here).
+
+**`cntmosaic/models/_numpyro.py`** is **not touched** in PR-a. It remains the implementation; `NumPyroBackend` wraps it.
+
+---
+
+#### Stage 3 — Extract NumPyro model mixins
+*Still part of PR-a. Adds new mixin files; does not modify any existing model files.*
+
+**New files** in `cntmosaic/models/numpyro/`:
+- `_BRCfine.py`, `_BRCrefine.py`, `_HiBRCfine.py`, `_HiBRCrefine.py`, `_Prem.py`, `_vdKassteele.py`
+
+Each contains one `*NumPyroMixin` class with a single `model(self, y=None)` method whose body is copied verbatim from the current concrete model class. No other methods. No imports of `_base.py` or `ContactModel` — the mixin is a pure behaviour carrier.
+
+**HiBRC special case**: `sample_log_delta()` uses `numpyro.deterministic` and `scope`. Move it into `HiBRCfineNumPyroMixin` / `HiBRCrefineNumPyroMixin` alongside `model()`. The abstract `sample_log_delta()` declaration in `_BRC.py` stays; the mixin satisfies it.
+
+**Why mixins rather than composition or strategy objects?**  
+A strategy/composition approach (e.g., `self._model_fn = NumPyroModelStrategy()`) would require the `ContactModel` interface to expose a `model_fn` callable rather than a `model()` method, which breaks the existing API used by NumPyro's `NUTS(model.model)`, `AutoNormal(model.model)`, and `svi_to_inference_data`. The mixin pattern adds no indirection to the public API — `model.model` still resolves directly to a bound method — and requires no changes to `analysis/` code.
+
+---
+
+#### Stage 4 — Thread `NumPyroBackend` into model constructors and delete boilerplate
+*PR-b: the deletion pass. Stages 1–3 (PR-a) must be merged first.*
+
+**`ContactModel._base.py`** gains:
+- `__init__(self, backend: Optional[InferenceBackend] = None)` with lazy default: `self._backend: Optional[InferenceBackend] = backend`
+- `_get_backend() -> InferenceBackend`: returns `self._backend` if set, otherwise does `from .numpyro._backend import NumPyroBackend; self._backend = NumPyroBackend(); return self._backend` (lazy import — this is the key guard that prevents NumPyro from loading at model-class import time).
+- Concrete implementations of `run_inference_mcmc`, `run_inference_svi`, `posterior_predictive_mcmc`, `posterior_predictive_svi` — all delegating through `self._get_backend()`. These replace all three duplicated copies in `_BRC.py`, `_Prem.py`, `_vdKassteele.py`.
+- `print_model_shape()` — calls `self._get_backend().print_model_shape(self.model)` (concrete `NumPyroBackend` method, not on the Protocol).
+- `_log_mcmc_diagnostics()` — calls `self._get_backend().get_mcmc_extra_fields(self._mcmc_result)` to extract divergence info.
+
+**Each concrete model class** (`BRC`, `Prem`, `vdKassteele`):
+- Constructor gains `backend: Optional[InferenceBackend] = None` parameter and calls `super().__init__(backend=backend)`.
+- Inherits the new mixin: `class BRCfine(BRCfineNumPyroMixin, BRC)` — MRO places the mixin's `model()` first; the abstract `model()` in `ContactModel` is satisfied.
+- `run_inference_mcmc`, `run_inference_svi`, `posterior_predictive_mcmc`, `posterior_predictive_svi`, `print_model_shape`, `_log_mcmc_diagnostics` are **deleted** from `_BRC.py`, `_Prem.py`, `_vdKassteele.py`.
+
+**`_mcmc_result` / `_svi_result` / `_guide` attributes**: move to `ContactModel.__init__` as `Optional[Any]`. Type annotations change from `Optional[numpyro.infer.MCMC]` / `Optional[numpyro.infer.SVI]` to `Optional[Any]`. This is safe: `analysis/summariser/_ModelSummariserBRC.py:216` calls `model._mcmc_result.get_samples()` and `analysis/_arviz.py:34` accesses `model._svi_result.params` and `model._guide` — all of these attribute names are preserved and the duck-typed `Optional[Any]` annotation does not break runtime behaviour. The only change is that mypy loses the specific type; a `# type: ignore` comment is acceptable here during transition.
+
+**`Prem.get_samples_svi`**: This method exists on `Prem` but not on `vdKassteele` or `BRC`, and it was omitted from the original Protocol definition. It stays as a **concrete method on `Prem`** (not on the Protocol or `ContactModel`), delegating to `self._get_backend().get_svi_samples(...)`. The `InferenceBackend` Protocol does include `get_svi_samples` (see Stage 1 above), so `NumPyroBackend` already implements the underlying operation. Prem-specific callers use `model.get_samples_svi(...)` directly — this is intentional as not all models need this method.
+
+**`Prem` and `vdKassteele` default-guide construction**: Both currently auto-construct `AutoNormal(self.model)` when `guide=None` in `run_inference_svi`. In the unified `ContactModel.run_inference_svi`, the default is `None` and the backend provides `_build_default_guide(model_fn)` which returns `AutoNormal(model_fn)`. This is called lazily inside `run_inference_svi` when guide is `None`. BRC subclasses do not use a default guide (they require the caller to provide one), but since `BRC.run_inference_svi` inherits from `ContactModel` and the default-guide code path simply short-circuits if guide is provided, this introduces no behavioural change for BRC. The `guide=None` default previously absent from BRC's `run_inference_svi` signature is preserved at the `ContactModel` level — the check `if guide is None: raise ValueError(...)` can be added in `BRC.__init__` if BRC-family models must require an explicit guide; alternatively, a `_requires_explicit_guide: bool = False` class variable governs this.
+
+---
+
+#### Stage 5 — Clean up `models/__init__.py` and verify zero top-level numpyro imports
+*Merged into PR-b (not a separate stage).*
+
+**`models/__init__.py`** currently imports `to_inference_data` from `_numpyro.py`, which pulls in NumPyro at `cntmosaic.models` import time. Fix: make `to_inference_data` a lazy import using `__getattr__`:
+
+```python
+# In models/__init__.py — replace the direct import:
+# from ._numpyro import to_inference_data   ← REMOVE
+
+def __getattr__(name: str):
+    if name == "to_inference_data":
+        from ._numpyro import to_inference_data
+        return to_inference_data
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+```
+
+This preserves the public export in `__all__` while deferring the import until first use. Alternatively — and more explicitly — `to_inference_data` can be moved to `cntmosaic.models.numpyro` and the entry in `models/__init__.__all__` can be removed; this is a minor API break and should be noted in the changelog.
+
+**Verification test** (add to `cntmosaic/models/tests/test_lazy_imports.py`):
+```python
+def test_models_import_does_not_load_numpyro():
+    import importlib, sys
+    for mod in list(sys.modules):
+        if "numpyro" in mod:
+            del sys.modules[mod]
+    importlib.import_module("cntmosaic.models")
+    assert "numpyro" not in sys.modules, "numpyro was imported at cntmosaic.models import time"
+```
+
+---
+
+#### PR split and sequencing
+
+| PR | Stages | Description | Risk |
+|---|---|---|---|
+| PR-a | 1, 2, 3 | Add `InferenceBackend` Protocol, `NumPyroBackend`, and six NumPyro mixins — purely additive | Low |
+| PR-b | 4, 5 | Thread backend into constructors, delete ~300 lines of boilerplate, clean up lazy imports | Medium |
+
+Stages 3 and 4 are **not** parallelisable: Stage 4 deletes the `model()` body from each concrete class and relies on the mixin from Stage 3 to satisfy the abstract method. PR-a must be merged and CI green before PR-b begins.
+
+---
+
+#### What is explicitly out of scope for this item
+
+- `analysis/_arviz.py` and `analysis/summariser/` are **not** changed. They access `model._mcmc_result`, `model._svi_result`, `model._guide`, and call `model._mcmc_result.get_samples()` — all of which remain structurally identical after this refactor.
+- `_numpyro.py` free functions are preserved; `NumPyroBackend` wraps them without inlining or moving logic.
+- No changes to the `ContactModel.model()` abstract method signature — it must remain `def model(self, y=None)` for NumPyro's handler machinery and for the existing `analysis/` code that calls `model.model`.
+- PyMC or INLA backend implementations are out of scope; this item only makes them *possible*.
+
+### 1.8 Decouple the post-processing pipeline (`analysis/`) from NumPyro
+
+**Goal**: Remove all top-level `import numpyro` from `analysis/_arviz.py` so that `import cntmosaic.analysis` does not require NumPyro to be installed. Eliminate the `BRC`-specific type annotation and the private `numpyro.infer.util._predictive` call in the same file. Unify the scattered `has_mcmc` / `has_svi` branching in both summarisers by introducing a `ContactModel.get_posterior_samples()` convenience method that hides all inference-method detection and guide handling.
+
+**Affected files**:
+- `cntmosaic/analysis/_arviz.py` — remove top-level numpyro imports; replace private `_predictive` with public `Predictive`; broaden type annotation; defer numpyro calls to lazy import inside function body
+- `cntmosaic/models/_base.py` — add `inference_method()` and `get_posterior_samples()` to `ContactModel`
+- `cntmosaic/models/_BRC.py` — drop `guide` parameter from `posterior_predictive_svi` abstract override (store `self._guide` implicitly, already done at storage site); update `posterior_predictive_svi` to use `self._guide` internally
+- `cntmosaic/models/_vdKassteele.py` — same as `_BRC.py`
+- `cntmosaic/models/_Prem.py` — already omits `guide` parameter; no change needed beyond inheriting `get_posterior_samples`
+- `cntmosaic/analysis/summariser/_ModelSummariserBRC.py` — replace `hasattr`/`_mcmc_result`/`_guide` access with `model.inference_method()` and `model.get_posterior_samples()`
+- `cntmosaic/analysis/summariser/_ModelSummariserPrem.py` — same
+
+**Effort**: S–M (2 stages, separable into two PRs)
+
+**Rationale**: `analysis/__init__.py` imports `_arviz.py` at the top level, which unconditionally loads NumPyro (`import numpyro`, `from numpyro.handlers import substitute`, `from numpyro.infer import log_likelihood`, `from numpyro.infer.util import _predictive`). This means any user who runs `import cntmosaic.analysis` installs a hard NumPyro dependency even if they only want summariser utilities. After item 1.7 establishes the `InferenceBackend` protocol on the model side, this item applies the equivalent separation to the analysis side. It also removes a private-API call (`_predictive`) that will break without warning on any NumPyro version bump.
+
+---
+
+#### Stage A — Replace private NumPyro internals in `analysis/_arviz.py` and align `posterior_predictive_svi` signatures
+
+*Strictly additive/corrective; no behaviour change. Can ship as its own PR.*
+
+**`analysis/_arviz.py`**:
+- Replace `from numpyro.infer.util import _predictive` (private) with the public `Predictive` class: `from numpyro.infer import Predictive`. Rewrite the two `_predictive(...)` calls using `Predictive(model_or_guide, posterior_samples, ...).call(prng_key, ...)`. The existing xarray assembly logic (manual `dict_to_dataset` for posterior, log_likelihood, posterior_predictive, and observed_data groups) must be **preserved** — `arviz.from_numpyro` is **not** a valid replacement here because it expects a fitted `MCMC` or `SVI` object, not raw sample dicts, and does not produce the posterior-predictive and observed-data groups that the current implementation assembles.
+- Broaden the type annotation: `model: BRC` → `model: ContactModel` (import from `..models._base`).
+- Do **not** remove the top-level numpyro imports yet (that is Stage B); the goal of Stage A is correctness only.
+
+**`cntmosaic/models/_base.py`**:
+- Add `inference_method(self) -> Optional[Literal["mcmc", "svi"]]` as a concrete method: returns `"mcmc"` if `getattr(self, "_mcmc_result", None) is not None`, `"svi"` if `getattr(self, "_svi_result", None) is not None`, else `None`.
+
+**`posterior_predictive_svi` signature alignment** (prerequisite for Stage B):
+- Remove the explicit `guide: Callable` parameter from `ContactModel.posterior_predictive_svi`, `BRC.posterior_predictive_svi`, and `vdKassteele.posterior_predictive_svi`. All three already store `self._guide` at `run_inference_svi` call time (lines 598 in `_BRC.py`, 514 in `_vdKassteele.py`). `Prem.posterior_predictive_svi` already omits `guide` — this change brings BRC and vdKassteele into alignment with Prem's existing pattern. No overrides are needed after this: the default `get_posterior_samples` on `ContactModel` can call `self.posterior_predictive_svi(prng_key, num_samples)` uniformly.
+- Add `ContactModel.get_posterior_samples(self, prng_key, num_samples) -> Dict[str, Any]` as a concrete method: calls `self._mcmc_result.get_samples()` for MCMC or `self.posterior_predictive_svi(prng_key, num_samples)` for SVI, guarded by `self.inference_method()`.
+
+---
+
+#### Stage B — Lazy-import all numpyro references in `analysis/_arviz.py`; update summarisers
+
+*Behaviour change: `import cntmosaic.analysis` no longer loads NumPyro. PR-b.*
+
+**`analysis/_arviz.py`**:
+- Move all top-level numpyro imports (`import numpyro`, `from numpyro.handlers import substitute`, `from numpyro.infer import log_likelihood, Predictive`, `from arviz import dict_to_dataset`) inside the `svi_to_inference_data` function body. The module-level imports reduce to `from typing import Dict, Optional` and `import numpy as np`.
+- The `from ..models._base import ContactModel` annotation import can remain at module level (it carries no NumPyro dependency).
+
+**`analysis/summariser/_ModelSummariserBRC.py`** — `__init__` and `_load_posterior`:
+- Replace the `hasattr(model, "_mcmc_result") and model._mcmc_result is not None` / `hasattr(model, "_svi_result") ...` pair with a single `model.inference_method()` call.
+- Replace `_load_posterior`'s branching (`model._mcmc_result.get_samples()` / `model.posterior_predictive_svi(PRNGKey(0), model._guide, ...)`) with `model.get_posterior_samples(PRNGKey(0), self.num_samples)`.
+- Store `self.inference_method: Literal["mcmc", "svi"] = model.inference_method()`.
+
+**`analysis/summariser/_ModelSummariserPrem.py`** — same structural change as BRC summariser.
+
+**Verification test** (add to `cntmosaic/analysis/tests/test_lazy_imports.py`):
+```python
+def test_analysis_import_does_not_load_numpyro():
+    import importlib, sys
+    for mod in list(sys.modules):
+        if "numpyro" in mod:
+            del sys.modules[mod]
+    importlib.import_module("cntmosaic.analysis")
+    assert "numpyro" not in sys.modules, \
+        "numpyro was imported at cntmosaic.analysis import time"
+```
+
+---
+
+#### What is explicitly out of scope for this item
+
+- `NumPyroSVIConverter` class and `to_inference_data` free function in `models/_numpyro.py` are not touched (they are already in the right module and carry no `analysis/` coupling).
+- Moving `svi_to_inference_data` logic to the `InferenceBackend` or `NumPyroBackend` is deferred. The function stays in `analysis/_arviz.py` as a NumPyro-specific utility; the lazy import is sufficient to break the unconditional coupling.
+- The sample-site names `log_cint`, `log_rate`, `log_delta` used in `_ModelSummariserBRC._compute_contact_intensities` are NumPyro-specific. A PyMC backend would produce different site names. A `sample_site_map: Dict[str, str]` attribute on `ModelSummariserBRC` (defaulting to current NumPyro names) is the intended future extension point but is **not** implemented here — it is only relevant once a second backend exists.
 
 ---
 

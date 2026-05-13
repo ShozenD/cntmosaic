@@ -6,12 +6,19 @@ Internal API — not exported from ``cntmosaic.dataloader``. Used exclusively by
 columns and the variables required by contact matrix estimation models.
 """
 
+from __future__ import annotations
+
 import warnings
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
+
+if TYPE_CHECKING:
+    from .containers._ContactData import ContactData
+    from .containers._ParticipantData import ParticipantData
+    from .containers._PopulationData import PopulationData
 
 
-@dataclass
+@dataclass(frozen=True)
 class CoordToColumns:
     """
     This dataclass helps manage the id, age, stratification, contact counts, group conntact counts,
@@ -263,3 +270,51 @@ class CoordToColumns:
             object.__setattr__(self, "strat_vars_pop", [self.strat_vars_pop])
         elif self.strat_vars_pop is None:
             object.__setattr__(self, "strat_vars_pop", [])
+
+    @classmethod
+    def from_containers(
+        cls,
+        part_data: ParticipantData,
+        cnt_data: ContactData,
+        pop_data: PopulationData,
+    ) -> CoordToColumns:
+        """
+        Build a CoordToColumns from validated container objects.
+
+        This is the canonical factory used by DataFrameSurveySource and
+        ContactSurveyLoader to avoid manually constructing column specs.
+        """
+        if part_data.strat_var_cols:
+            strat_vars_part = [
+                var if var.endswith("_part") else f"{var}_part"
+                for var in part_data.strat_var_cols
+            ]
+        else:
+            strat_vars_part = None
+
+        if cnt_data.strat_var_cols:
+            strat_vars_cnt = [
+                var if var.endswith("_cnt") else f"{var}_cnt"
+                for var in cnt_data.strat_var_cols
+            ]
+        else:
+            strat_vars_cnt = None
+
+        return cls(
+            age_part="age_part" if cnt_data.age_col or part_data.age_col else "age_grp_part",
+            age_cnt="age_cnt" if cnt_data.age_col else None,
+            age_grp_cnt="age_grp_cnt" if cnt_data.age_grp_col else None,
+            id_col="id",
+            y="y",
+            z=part_data.amb_cnt_col,
+            strat_vars_part=strat_vars_part,
+            strat_vars_cnt=strat_vars_cnt,
+            repeat_part="repeat_part" if part_data.repeat_col else None,
+            age_pop="age",
+            P="P",
+            strat_vars_pop=pop_data.strat_var_cols if pop_data.strat_var_cols else None,
+        )
+
+
+# Alias: ColumnSpec is the new preferred name; CoordToColumns is kept for backward compatibility.
+ColumnSpec = CoordToColumns

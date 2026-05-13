@@ -198,7 +198,7 @@ class DataLoader(BaseLoader):
         for col in data.columns:
             # Check if column exists in participant data and is categorical
             if col in self.part_data.data.columns:
-                if pd.api.types.is_categorical_dtype(self.part_data.data[col]):
+                if pd.api.types.is_categorical_dtype(self.part_data.data[col]):  # type: ignore
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.part_data.data[col].cat.categories,
@@ -206,7 +206,7 @@ class DataLoader(BaseLoader):
                     )
             # Check if column exists in contact data and is categorical
             elif col in self.cnt_data.data.columns:
-                if pd.api.types.is_categorical_dtype(self.cnt_data.data[col]):
+                if pd.api.types.is_categorical_dtype(self.cnt_data.data[col]):  # type: ignore
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.cnt_data.data[col].cat.categories,
@@ -271,8 +271,8 @@ class DataLoader(BaseLoader):
             id_col="id",
             y="y",
             z=part_data.amb_cnt_col,
-            strat_vars_part=strat_vars_part,
-            strat_vars_cnt=strat_vars_cnt,
+            strat_vars_part=strat_vars_part,  # type: ignore
+            strat_vars_cnt=strat_vars_cnt,  # type: ignore
             repeat_part="repeat_part" if part_data.repeat_col else None,
             age_pop="age",
             P="P",

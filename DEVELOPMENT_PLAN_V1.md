@@ -46,10 +46,17 @@ These issues directly prevent external researchers from adding new models. They 
 
 ## Phase 2 — Design Refactoring: Maintainability and SOLID Compliance
 
-### 2.1 Redesign the `dataloader` pipeline (replaces BaseLoader + DataLoader)
+### ~~2.1 Redesign the `dataloader` pipeline (replaces BaseLoader + DataLoader)~~ ✅ DONE
 - **Files**: Entire `cntmosaic/dataloader/` module
 - **Effort**: L
-- **Rationale**: `BaseLoader` (751 lines) performs data validation, column mapping, stratification inference, Cartesian grid construction, population log-proportion computation, caching, and model data assembly — six unrelated concerns in one class. The coupling makes every concern untestable in isolation and blocks external survey support without subclassing the entire 750-line class.
+- **Rationale**: `BaseLoader` (~744 lines) performs data validation, column mapping, stratification inference, Cartesian grid construction, population log-proportion computation, caching, and model data assembly — six unrelated concerns in one class. The coupling makes every concern untestable in isolation and blocks external survey support without subclassing the entire class.
+
+**Final state** (all 5 stages complete, 2026-05-13):
+- Stage 1: `DataValidator.validate()` returns validated container copies; no mutation of caller's objects.
+- Stage 2: `_observation.py` — six free functions (`build_participant_counts`, `build_contact_offsets`, `build_contact_counts`, `build_observation_grid`, `construct_log_P`, `align_age_range`); `BaseLoader` delegates.
+- Stage 3: `_stratification.py` — eight free functions (`infer_strat_modes`, `infer_strat_dims`, `infer_strat_labels`, `infer_full_strat_labels`, `infer_strat_ixs`, `infer_strat_pixs`, `make_flat_ix`, `assemble_strat_kwargs`); `BaseLoader` delegates.
+- Stage 4: `CoordToColumns` frozen (`frozen=True`) + `from_containers` classmethod + `ColumnSpec` alias; `DataFrameSurveySource` bundles validated containers, merged data, and col spec.
+- Stage 5: `ContactSurveyLoader` with `from_containers()` factory; exports (`ColumnSpec`, `ContactSurveyLoader`, `DataFrameSurveySource`) added to `cntmosaic.dataloader.__init__`.
 
 **Refined architecture** (synthesised from design, critical, and UX review):
 
@@ -61,8 +68,8 @@ The following components replace `BaseLoader` + `DataLoader`. Abstractions are i
 | `DataFrameSurveySource` | concrete class | `DataLoader.__init__` | Default `SurveySource` impl: wraps three raw DataFrames + column kwargs. This is what 90 % of researchers use without knowing the Protocol exists. |
 | `ColumnSpec` | frozen dataclass | `CoordToColumns` | Carries all column-name bindings; no behaviour. Assembled internally via `ColumnSpec.from_containers(part_data, cnt_data, pop_data)` — researchers never construct it directly. |
 | `DataValidator` (refactored) | concrete class | `DataValidator` (mutating) | Returns normalised container *copies* rather than mutating inputs in-place. No new ABC — just change the return type and remove the side effects. |
-| `_observation.py` | module of free functions | `BaseLoader._build_df_full`, `df_n`, `df_y`, `df_V` | `build_observation_grid(merged, col_spec, age_min, age_max) → pd.DataFrame`. Free function, not a class — no `ObservationBuilder` ABC (there will never be a second implementation needing substitution). |
-| `_stratification.py` | module of free functions | `BaseLoader.infer_strat_*` (7 methods) | Keep the existing six functions as module-level free functions. They are already modular with clear inputs/outputs. No `StratificationAssembler` class needed. |
+| `_observation.py` | module of free functions | `BaseLoader._build_df_full`, `df_participant_counts`, `df_contact_counts`, `df_contact_offsets` | `build_observation_grid(merged, col_spec, age_min, age_max) → pd.DataFrame`. Free function, not a class — no `ObservationBuilder` ABC (there will never be a second implementation needing substitution). |
+| `_stratification.py` | module of free functions | `BaseLoader.infer_strat_*` (7 methods) | Keep the existing seven functions as module-level free functions. They are already modular with clear inputs/outputs. No `StratificationAssembler` class needed. |
 | `ContactSurveyLoader` | concrete class | `BaseLoader` orchestration | Thin orchestrator: accepts a `SurveySource` and calls the above free functions in sequence. Primary entry point is a class method (see below). |
 
 **Primary public API** (what researchers actually call):
@@ -75,22 +82,22 @@ loader = ContactSurveyLoader.from_dataframes(
     strat_var_cols=["setting"],
     smooth_amb_cnt_offsets=True,   # must survive migration
 )
-model_data = loader.load()   # returns xarray Dataset with y, log_N, pop_prop_* — contract unchanged
+model_data = loader.load()   # returns ModelData — contract unchanged
 ```
 
 **Non-negotiable UX contracts that must be preserved:**
 - Per-container column specification (`id_col`, `age_col`, `strat_var_cols`) as keyword arguments
 - Automatic categorical dtype handling for stratification variables after merge
 - `strat_prop_data` as a top-level argument (demographic stratification)
-- `.load()` returns a `ModelData` instance (comprising `ModelBaseData` and optionally `ModelStratData`). Key fields that downstream model code depends on: `y`, `aid`, `log_N`, `log_P`, `age_min`, `age_max`; optional fields `log_V`, `bid`, `rid`, `flat_ix`, `flat_pixs`. These field names must not change.
+- `.load()` returns a flat `ModelData` dataclass. Key fields that downstream model code depends on: `y`, `aid`, `log_N`, `log_P`, `age_min`, `age_max`; optional fields `log_V`, `bid`, `rid`, `flat_ix`, `flat_pixs`. These field names must not change.
 - `UserWarning` on dropped NaN rows (silent data loss is unacceptable in epidemiology)
 - Eager validation fires at `ContactSurveyLoader.__init__`, not lazily in `.load()`, with column-level error messages
 
-**Migration path (5 stages, down from the originally proposed 7):**
+**Migration path (5 stages):**
 
-1. **Refactor `DataValidator` to be non-mutating** — return container copies; wire `DataLoader.__init__` to use new return values. No API change.
-2. **Extract `_observation.py`** — move `_build_df_full`, `df_n`, `df_y`, `df_V` to free functions. `BaseLoader` delegates to them; full unit-test coverage unlocked.
-3. **Extract `_stratification.py`** — move the six `infer_strat_*` methods to module-level free functions. `BaseLoader` delegates.
+1. **Refactor `DataValidator` to be non-mutating** — return container copies rather than mutating in-place; wire `DataLoader.__init__` to use new return values. No API change.
+2. **Extract `_observation.py`** — move `_build_df_full`, `df_participant_counts`, `df_contact_counts`, `df_contact_offsets` to free functions. `BaseLoader` delegates to them; full unit-test coverage unlocked.
+3. **Extract `_stratification.py`** — move the seven `infer_strat_*` / `make_*` methods to module-level free functions. `BaseLoader` delegates.
 4. **Introduce `ColumnSpec.from_containers()`** and `DataFrameSurveySource`. `DataLoader._create_col_map` constructs `ColumnSpec` internally. No public API change.
 5. **Introduce `ContactSurveyLoader` with `.from_dataframes()` factory**. Deprecate `BaseLoader` and `DataLoader` as thin shims for one release cycle. Audit for direct `BaseLoader` subclasses before removal (it is documented as a subclassing surface).
 

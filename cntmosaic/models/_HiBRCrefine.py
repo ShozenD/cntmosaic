@@ -223,7 +223,7 @@ class HiBRCrefine(BRCrefine):
         super().__init__(dataloader, effective_priors, likelihood)
 
         # Override log_P for stratified case
-        self.log_P = jnp.array(self.data.base_data["log_P"])
+        self.log_P = jnp.array(self.data.log_P)
 
         # Validate hierarchical-specific requirements
         self._validate_hierarchical_inputs()
@@ -235,9 +235,9 @@ class HiBRCrefine(BRCrefine):
         self.set_prior_loc()
 
         # Optional: Set up repeat interview effects if present
-        if self.data.base_data.get("rid") is not None:
-            self.rid = jnp.array(self.data.base_data["rid"], dtype=jnp.int32)
-            self.hill = Hill(max_value=int(self.data.base_data["rid"].max()))
+        if self.data.rid is not None:
+            self.rid = jnp.array(self.data.rid, dtype=jnp.int32)
+            self.hill = Hill(max_value=int(self.data.rid.max()))
 
     def _validate_hierarchical_inputs(self) -> None:
         """
@@ -269,7 +269,7 @@ class HiBRCrefine(BRCrefine):
             )
 
         # Check that stratification variables match between priors and data
-        data_strat_vars = set(self.data.strat_data["modes"].keys())
+        data_strat_vars = set(self.data.strat_modes.keys())
         prior_strat_vars = set(var for var in self.priors.keys() if var != "rate")
 
         if prior_strat_vars != data_strat_vars:
@@ -281,7 +281,7 @@ class HiBRCrefine(BRCrefine):
             )
 
         # Check that each stratification prior has compatible prior_type
-        data_strat_modes = self.data.strat_data["modes"]
+        data_strat_modes = self.data.strat_modes
         prior_strat_modes = {
             var: self.priors[var].prior_type for var in prior_strat_vars
         }
@@ -316,16 +316,16 @@ class HiBRCrefine(BRCrefine):
                 prior.set_event_dim(1)  # Shared baseline
             else:
                 # Number of strata for this variable
-                if self.data.strat_data["modes"][var] == StratMode.PARTIAL:
-                    n_strata = self.data.strat_data["dims"][var]
+                if self.data.strat_modes[var] == StratMode.PARTIAL:
+                    n_strata = self.data.strat_dims[var]
                     prior.set_event_dim(n_strata)
-                elif self.data.strat_data["modes"][var] == StratMode.FULL:
-                    n_strata = self.data.strat_data["dims"][var]
+                elif self.data.strat_modes[var] == StratMode.FULL:
+                    n_strata = self.data.strat_dims[var]
                     prior.set_event_dim(int(np.sqrt(n_strata)))
                 else:
                     raise ValueError(
                         f"Unknown stratification mode for variable '{var}': "
-                        f"{self.data.strat_data['modes'][var]}"
+                        f"{self.data.strat_modes[var]}"
                     )
 
     def set_prior_loc(self) -> None:
@@ -349,7 +349,7 @@ class HiBRCrefine(BRCrefine):
         for var, prior in self.priors.items():
             if var != "rate":
                 loc = clr(
-                    self.data.strat_data["marginal_multipliers"][var], axis=0
+                    self.data.marginal_multipliers[var], axis=0
                 )  # Apply CLR transform
                 prior.set_loc(loc)
 
@@ -391,7 +391,7 @@ class HiBRCrefine(BRCrefine):
         delta = inverse_clr(Omega)
 
         return numpyro.deterministic(
-            "log_delta", jnp.log(delta) - jnp.log(self.data.strat_data["multipliers"])
+            "log_delta", jnp.log(delta) - jnp.log(self.data.multipliers)
         )
 
     def model(
@@ -480,11 +480,9 @@ class HiBRCrefine(BRCrefine):
         index_mask_logsumexp : Age aggregation function
         """
         len_y = len(self.y) if y is None else len(y)
-        aid_exp = self.data.base_data["aid_exp"] if aid_exp is None else aid_exp
-        bid_pad = self.data.base_data["bid_pad"] if bid_pad is None else bid_pad
-        flat_ix_exp = (
-            self.data.strat_data["flat_ix_exp"] if flat_ix_exp is None else flat_ix_exp
-        )
+        aid_exp = self.data.aid_exp if aid_exp is None else aid_exp
+        bid_pad = self.data.bid_pad if bid_pad is None else bid_pad
+        flat_ix_exp = self.data.flat_ix_exp if flat_ix_exp is None else flat_ix_exp
         log_N = self.log_N if log_N is None else log_N
         log_V = self.log_V if log_V is None else log_V
         rid = self.rid if hasattr(self, "rid") and rid is None else rid

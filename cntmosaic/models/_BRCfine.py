@@ -172,23 +172,23 @@ class BRCfine(BRC):
         super().__init__(dataloader, priors, likelihood)
 
         # Convert to JAX arrays
-        self.y = jnp.array(self.data.base_data["y"])
-        self.aid = jnp.array(self.data.base_data["aid"], dtype=jnp.int32)
-        self.bid = jnp.array(self.data.base_data["bid"], dtype=jnp.int32)
-        self.log_N = jnp.array(self.data.base_data["log_N"])
-        self.log_P = jnp.array(self.data.base_data["log_P"])
+        self.y = jnp.array(self.data.y)
+        self.aid = jnp.array(self.data.aid, dtype=jnp.int32)
+        self.bid = jnp.array(self.data.bid, dtype=jnp.int32)
+        self.log_N = jnp.array(self.data.log_N)
+        self.log_P = jnp.array(self.data.log_P)
 
         # Optional offset for different settings (e.g., home, work, school)
         self.log_V = (
-            jnp.array(self.data.base_data["log_V"])
-            if "log_V" in self.data.base_data
+            jnp.array(self.data.log_V)
+            if self.data.log_V is not None
             else jnp.zeros_like(self.y)
         )
 
         # Optional repeat interview effect
-        if "rid" in self.data.base_data:
-            self.rid = jnp.array(self.data.base_data["rid"], dtype=jnp.int32)
-            self.hill = Hill(max_value=int(self.data.base_data["rid"].max()))
+        if self.data.rid is not None:
+            self.rid = jnp.array(self.data.rid, dtype=jnp.int32)
+            self.hill = Hill(max_value=int(self.data.rid.max()))
 
     def model(
         self,

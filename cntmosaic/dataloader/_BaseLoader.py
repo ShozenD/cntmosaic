@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from .._types import StratMode
 from ._CoordToColumns import CoordToColumns
 from ._utils import expand_ix_array, gaussian_smooth_by_group, make_idarrs_for_intervals
-from .containers._ModelData import ModelBaseData, ModelData, ModelStratData
+from .containers._ModelData import ModelData
 from .containers._StratificationData import StratificationData
 
 
@@ -575,7 +575,8 @@ class BaseLoader(ABC):
 
         return flat_ix
 
-    def make_strat_data(self) -> ModelStratData:
+    def make_strat_data(self) -> Dict:
+        """Return stratification fields as a dict of ModelData keyword arguments."""
         modes = self.infer_strat_modes()
         dims = self.infer_strat_dims(modes)
         labels = self.infer_strat_labels(modes)
@@ -584,34 +585,22 @@ class BaseLoader(ABC):
         flat_ix = self.make_flat_ix(ixs, dims)
         full_labels = self.infer_full_strat_labels(dims, labels)
 
+        kwargs: Dict = dict(
+            strat_modes=modes,
+            strat_dims=dims,
+            strat_labels=labels,
+            flat_pixs=flat_pixs,
+            flat_ix=flat_ix,
+            full_labels=full_labels,
+        )
+
         if self.strat_data is not None:
-            marginal_demopty = self.strat_data.compute_marginal_demopty(modes, labels)
-
-            # Demographic Opportunity
-            demopty = self.strat_data.compute_demopty(modes, full_labels)
-
-            return ModelStratData(
-                modes=modes,
-                dims=dims,
-                labels=labels,
-                ixs=ixs,
-                flat_pixs=flat_pixs,
-                flat_ix=flat_ix,
-                full_labels=full_labels,
-                marginal_multipliers=marginal_demopty,
-                multipliers=demopty,
+            kwargs["marginal_multipliers"] = self.strat_data.compute_marginal_demopty(
+                modes, labels
             )
-        else:
-            # Multipliers are not needed for vdKassteele models
-            return ModelStratData(
-                modes=modes,
-                dims=dims,
-                labels=labels,
-                ixs=ixs,
-                flat_pixs=flat_pixs,
-                flat_ix=flat_ix,
-                full_labels=full_labels,
-            )
+            kwargs["multipliers"] = self.strat_data.compute_demopty(modes, full_labels)
+
+        return kwargs
 
     def load(self) -> ModelData:
         """
@@ -704,49 +693,51 @@ class BaseLoader(ABC):
         self._df_full_cache = self._build_df_full()
 
         # ========================
-        # Construct ModelBaseData
+        # Build required fields
         # ========================
-        base_data = ModelBaseData(
+        aid = self.df_full[self.col_map.age_part].to_numpy()
+
+        bid = None
+        aid_exp = None
+        bid_pad = None
+        if self.col_map.age_cnt:
+            bid = self.df_full[self.col_map.age_cnt].to_numpy()
+        elif self.col_map.age_grp_cnt:
+            aid_exp, bid_pad = make_idarrs_for_intervals(
+                self.df_full, self.col_map.age_grp_cnt, aid
+            )
+
+        rid = None
+        if self.col_map.repeat_part is not None:
+            rid = self.df_full[self.col_map.repeat_part].astype(int).to_numpy()
+
+        # ============================
+        # Build stratification kwargs
+        # ============================
+        strat_kwargs: Dict = {}
+        if len(self.col_map.strat_vars_part) > 0:
+            strat_kwargs = self.make_strat_data()
+            if self.col_map.age_grp_cnt:
+                strat_kwargs["flat_ix_exp"] = expand_ix_array(
+                    strat_kwargs["flat_ix"], bid_pad.shape[1]
+                )
+
+        # ============================
+        # Construct ModelData
+        # ============================
+        self.model_data = ModelData(
             y=self.df_full["y"].to_numpy(),
-            aid=self.df_full[self.col_map.age_part].to_numpy(),
+            aid=aid,
             log_N=np.log(self.df_full["N"].to_numpy()),
             log_V=self.df_full["log_V"].to_numpy(),
             log_P=self.construct_log_P(),
             age_min=self.min_age,
             age_max=self.max_age,
+            bid=bid,
+            aid_exp=aid_exp,
+            bid_pad=bid_pad,
+            rid=rid,
+            **strat_kwargs,
         )
-
-        if self.col_map.age_cnt:
-            base_data["bid"] = self.df_full[self.col_map.age_cnt].to_numpy()
-        elif self.col_map.age_grp_cnt:
-            # [Do] Create indices for age aggregation
-            aid_exp, bid_pad = make_idarrs_for_intervals(
-                self.df_full, self.col_map.age_grp_cnt, base_data["aid"]
-            )
-            base_data["aid_exp"] = aid_exp
-            base_data["bid_pad"] = bid_pad
-
-        # If repeat effects are specified
-        if self.col_map.repeat_part is not None:
-            base_data["rid"] = (
-                self.df_full[self.col_map.repeat_part].astype(int).to_numpy()
-            )
-
-        # ============================
-        # Construct stratification data
-        # ============================
-        if len(self.col_map.strat_vars_part) > 0:
-            strat_data = self.make_strat_data()
-            if self.col_map.age_grp_cnt:
-                strat_data["flat_ix_exp"] = expand_ix_array(
-                    strat_data["flat_ix"], base_data["bid_pad"].shape[1]
-                )
-        else:
-            strat_data = {}
-
-        # ============================
-        # Construct ModelData
-        # ============================
-        self.model_data = ModelData(base_data, strat_data)
 
         return self.model_data

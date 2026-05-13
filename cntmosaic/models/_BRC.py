@@ -127,9 +127,7 @@ class BRC(ContactModel, ABC):
         self._svi_result: Optional[numpyro.infer.SVI] = None
         self._guide: Optional[Callable] = None
 
-        self.set_age_dims(
-            int(self.data.base_data["age_min"]), int(self.data.base_data["age_max"])
-        )
+        self.set_age_dims(self.data.age_min, self.data.age_max)
 
     def _validate_common_inputs(
         self, dataloader: DataLoader, priors: Dict[str, Any], likelihood: str

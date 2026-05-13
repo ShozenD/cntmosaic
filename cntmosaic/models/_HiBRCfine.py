@@ -168,7 +168,7 @@ class HiBRCfine(BRCfine):
         super().__init__(dataloader, priors, likelihood)
 
         # Override log_P for stratified case (already has shape (K, A), no need for newaxis)
-        self.log_P = jnp.array(self.data.base_data["log_P"])
+        self.log_P = jnp.array(self.data.log_P)
 
         # Validate hierarchical-specific requirements
         self._validate_hierarchical_inputs()
@@ -180,9 +180,9 @@ class HiBRCfine(BRCfine):
         self.set_prior_loc()
 
         # Optional: Set up repeat interview effects if present
-        if self.data.get("rid") is not None:
-            self.rid = jnp.array(self.data.base_data["rid"], dtype=jnp.int32)
-            self.hill = Hill(max_value=int(self.data.base_data["rid"].max()))
+        if self.data.rid is not None:
+            self.rid = jnp.array(self.data.rid, dtype=jnp.int32)
+            self.hill = Hill(max_value=int(self.data.rid.max()))
 
     def _validate_hierarchical_inputs(self) -> None:
         """
@@ -217,7 +217,7 @@ class HiBRCfine(BRCfine):
             )
 
         # Check that stratification variables match between priors and data
-        data_strat_vars = set(self.data.strat_data["modes"].keys())
+        data_strat_vars = set(self.data.strat_modes.keys())
         prior_strat_vars = set(var for var in self.priors.keys() if var != "rate")
 
         if prior_strat_vars != data_strat_vars:
@@ -229,7 +229,7 @@ class HiBRCfine(BRCfine):
             )
 
         # Check that each stratification prior has compatible prior_type
-        data_strat_modes = self.data.strat_data["modes"]
+        data_strat_modes = self.data.strat_modes
         prior_strat_modes = {
             var: self.priors[var].prior_type for var in prior_strat_vars
         }
@@ -264,16 +264,16 @@ class HiBRCfine(BRCfine):
                 prior.set_event_dim(1)  # Shared baseline
             else:
                 # Number of strata for this variable
-                if self.data.strat_data["modes"][var] == StratMode.PARTIAL:
-                    n_strata = self.data.strat_data["dims"][var]
+                if self.data.strat_modes[var] == StratMode.PARTIAL:
+                    n_strata = self.data.strat_dims[var]
                     prior.set_event_dim(n_strata)
-                elif self.data.strat_data["modes"][var] == StratMode.FULL:
-                    n_strata = self.data.strat_data["dims"][var]
+                elif self.data.strat_modes[var] == StratMode.FULL:
+                    n_strata = self.data.strat_dims[var]
                     prior.set_event_dim(int(np.sqrt(n_strata)))
                 else:
                     raise ValueError(
                         f"Unknown stratification mode for variable '{var}': "
-                        f"{self.data.strat_data['modes'][var]}"
+                        f"{self.data.strat_modes[var]}"
                     )
 
     def set_prior_loc(self) -> None:
@@ -296,7 +296,7 @@ class HiBRCfine(BRCfine):
                 continue  # Skip baseline prior
             else:
                 loc = clr(
-                    self.data.strat_data["marginal_multipliers"][var], axis=0
+                    self.data.marginal_multipliers[var], axis=0
                 )  # Apply CLR transform
                 prior.set_loc(loc)
 
@@ -338,7 +338,7 @@ class HiBRCfine(BRCfine):
         delta = inverse_clr(Omega)
 
         return numpyro.deterministic(
-            "log_delta", jnp.log(delta) - jnp.log(self.data.strat_data["multipliers"])
+            "log_delta", jnp.log(delta) - jnp.log(self.data.multipliers)
         )
 
     def model(
@@ -390,10 +390,8 @@ class HiBRCfine(BRCfine):
         aid = self.aid if aid is None else aid
         bid = self.bid if bid is None else bid
         rid = getattr(self, "rid", None) if rid is None else rid
-        flat_ix = self.data.strat_data["flat_ix"] if flat_ix is None else flat_ix
-        flat_pixs = (
-            self.data.strat_data["flat_pixs"] if flat_pixs is None else flat_pixs
-        )
+        flat_ix = self.data.flat_ix if flat_ix is None else flat_ix
+        flat_pixs = self.data.flat_pixs if flat_pixs is None else flat_pixs
         log_N = self.log_N if log_N is None else log_N
         log_V = self.log_V if log_V is None else log_V
         len_y = len(self.y) if y is None else len(y)

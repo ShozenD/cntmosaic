@@ -267,12 +267,12 @@ class ModelSummariserBRC:
         log_P = self.model.log_P.astype(np.float32)  # Shape (1, A) or (K, A)
 
         # Get full labels sorted by flat_ix
-        full_labels = self.model.data.strat_data["full_labels"]
+        full_labels = self.model.data.full_labels
 
         # Map flat_ix to flat_pixs for population stratification
         flat_ix_to_flat_pixs = {}
-        flat_ix_array = self.model.data.strat_data["flat_ix"]
-        flat_pixs_array = self.model.data.strat_data["flat_pixs"]
+        flat_ix_array = self.model.data.flat_ix
+        flat_pixs_array = self.model.data.flat_pixs
         for flat_idx in np.unique(flat_ix_array):
             mask = flat_ix_array == flat_idx
             flat_pixs_val = flat_pixs_array[mask][0]
@@ -335,13 +335,13 @@ class ModelSummariserBRC:
         log_P = self.model.log_P.astype(np.float32)  # Shape (1, A) or (K, A)
 
         # Get full labels sorted by flat_ix
-        full_labels = self.model.data.strat_data["full_labels"]
+        full_labels = self.model.data.full_labels
 
         # Map flat_ix to flat_pixs for population stratification
         # For each flat_ix, find the corresponding flat_pixs value
         flat_ix_to_flat_pixs = {}
-        flat_ix_array = self.model.data.strat_data["flat_ix"]
-        flat_pixs_array = self.model.data.strat_data["flat_pixs"]
+        flat_ix_array = self.model.data.flat_ix
+        flat_pixs_array = self.model.data.flat_pixs
         for flat_idx in np.unique(flat_ix_array):
             # Get first occurrence of this flat_idx
             mask = flat_ix_array == flat_idx
@@ -463,8 +463,8 @@ class ModelSummariserBRC:
             # Compute rate for each stratum
             log_rate = self.post_samples["log_rate"]
             log_delta = self.post_samples["log_delta"]
-            full_labels = self.model.data.strat_data["full_labels"]
-            flat_ix_values = np.unique(self.model.data.strat_data["flat_ix"])
+            full_labels = self.model.data.full_labels
+            flat_ix_values = np.unique(self.model.data.flat_ix)
 
             result = {}
             for flat_idx in flat_ix_values:
@@ -711,8 +711,8 @@ class ModelSummariserBRC:
                 result = {}
                 log_rate = self.post_samples["log_rate"]
                 log_delta = self.post_samples["log_delta"]
-                full_labels = self.model.data.strat_data["full_labels"]
-                flat_ix_values = np.unique(self.model.data.strat_data["flat_ix"])
+                full_labels = self.model.data.full_labels
+                flat_ix_values = np.unique(self.model.data.flat_ix)
 
                 for flat_idx in flat_ix_values:
                     label = full_labels[flat_idx]

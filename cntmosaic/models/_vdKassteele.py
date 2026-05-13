@@ -73,29 +73,35 @@ class vdKassteele(ContactModel):
         self.tau_shape = tau_shape
         self.tau_rate = tau_rate
 
-        self.age_min = int(self.data.base_data["age_min"])
-        self.age_max = int(self.data.base_data["age_max"])
+        self.age_min = self.data.age_min
+        self.age_max = self.data.age_max
         self.A = int(self.age_max - self.age_min + 1)
-        self.aid = jnp.array(self.data.base_data["aid"], dtype=jnp.int8)
-        self.bid = jnp.array(self.data.base_data["bid"], dtype=jnp.int8)
-        self.y = jnp.array(self.data.base_data["y"])
-        self.log_N = jnp.array(self.data.base_data["log_N"])
+        self.aid = jnp.array(self.data.aid, dtype=jnp.int8)
+        self.bid = jnp.array(self.data.bid, dtype=jnp.int8)
+        self.y = jnp.array(self.data.y)
+        self.log_N = jnp.array(self.data.log_N)
         # Handle log_P shape: add newaxis only if 1D (unstratified case)
-        log_P_raw = self.data.base_data["log_P"]
+        log_P_raw = self.data.log_P
         if log_P_raw.ndim == 1:
             self.log_P = jnp.array(log_P_raw[jnp.newaxis, :])
         else:
             self.log_P = jnp.array(log_P_raw)
-        self.log_S = jnp.array(self.data.base_data["log_S"])
+
+        # log_S is an optional field; default to zeros if not provided by the loader
+        self.log_S = (
+            jnp.array(self.data.log_S)
+            if self.data.log_S is not None
+            else jnp.zeros_like(self.y)
+        )
 
         # Initialize optional attributes
         self.rid: Optional[ArrayLike] = None
         self.hill: Optional[Hill] = None
 
         # Optional repeat interview effect
-        if "rid" in self.data.base_data:
-            self.rid = jnp.array(self.data.base_data["rid"], dtype=jnp.int8)
-            self.hill = Hill(max_value=int(self.data.base_data["rid"].max()))
+        if self.data.rid is not None:
+            self.rid = jnp.array(self.data.rid, dtype=jnp.int8)
+            self.hill = Hill(max_value=int(self.data.rid.max()))
 
         self.prior_type: str = None
         self.prior: vdKassteele2D = None
@@ -112,10 +118,10 @@ class vdKassteele(ContactModel):
 
         Note: This method is used within _set_prior
         """
-        if self.data.strat_data == {}:
+        if not self.data.is_stratified:
             prior_type = "global"
         else:
-            modes = list(self.data.strat_data["modes"].values())
+            modes = list(self.data.strat_modes.values())
 
             # If mixed type stratification
             if StratMode.PARTIAL in modes and StratMode.FULL in modes:
@@ -163,8 +169,8 @@ class vdKassteele(ContactModel):
             self.prior.set_event_dim(1)
             self.prior.set_loc(0.0)
         elif self.prior_type != "full":
-            modes = list(self.data.strat_data["modes"].values())
-            dims = list(self.data.strat_data["dims"].values())
+            modes = list(self.data.strat_modes.values())
+            dims = list(self.data.strat_dims.values())
 
             # Calculate total number of strata (product of all dimensions)
             # For example: gender (2) × setting (4) = 8 strata
@@ -187,7 +193,7 @@ class vdKassteele(ContactModel):
             self.prior.set_loc(total_dims)
         else:
             # For FULL mode with multiple variables, compute product of sqrt(dims)
-            dims = np.asarray(list(self.data.strat_data["dims"].values()))
+            dims = np.asarray(list(self.data.strat_dims.values()))
             total_dims = int(np.prod(np.sqrt(dims)))
             self.prior = vdKassteele2D(
                 prior_type="full",
@@ -211,8 +217,8 @@ class vdKassteele(ContactModel):
         else:
             # Initialize log contact intensity with population adjustment
             log_cint = (
-                log_rate[self.data.strat_data["flat_ix"], self.aid, self.bid]
-                + self.log_P[self.data.strat_data["flat_pixs"], self.bid]
+                log_rate[self.data.flat_ix, self.aid, self.bid]
+                + self.log_P[self.data.flat_pixs, self.bid]
             )
 
         # Add repeat interview effect if present

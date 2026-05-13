@@ -209,26 +209,26 @@ class BRCrefine(BRC):
         super().__init__(dataloader, effective_priors, likelihood)
 
         # Convert data to JAX arrays for efficient computation
-        self.y = jnp.array(self.data.base_data["y"])
-        self.log_N = jnp.array(self.data.base_data["log_N"])
-        self.log_P = jnp.array(self.data.base_data["log_P"])
+        self.y = jnp.array(self.data.y)
+        self.log_N = jnp.array(self.data.log_N)
+        self.log_P = jnp.array(self.data.log_P)
 
         # Optional offset for different settings (e.g., home, work, school)
         self.log_V = (
-            jnp.array(self.data.base_data["log_V"])
-            if "log_V" in self.data.base_data
+            jnp.array(self.data.log_V)
+            if self.data.log_V is not None
             else jnp.zeros_like(self.y)
         )
 
         # Age aggregation indices for coarse-to-fine refinement
-        self.aid = jnp.array(self.data.base_data["aid"], dtype=jnp.int32)
-        self.aid_exp = jnp.array(self.data.base_data["aid_exp"], dtype=jnp.int32)
-        self.bid_pad = jnp.array(self.data.base_data["bid_pad"], dtype=jnp.int32)
+        self.aid = jnp.array(self.data.aid, dtype=jnp.int32)
+        self.aid_exp = jnp.array(self.data.aid_exp, dtype=jnp.int32)
+        self.bid_pad = jnp.array(self.data.bid_pad, dtype=jnp.int32)
 
         # Optional repeat interview effect
-        if "rid" in self.data.base_data:
-            self.rid = jnp.array(self.data.base_data["rid"], dtype=jnp.int32)
-            self.hill = Hill(max_value=int(self.data.base_data["rid"].max()))
+        if self.data.rid is not None:
+            self.rid = jnp.array(self.data.rid, dtype=jnp.int32)
+            self.hill = Hill(max_value=int(self.data.rid.max()))
 
     def model(
         self,

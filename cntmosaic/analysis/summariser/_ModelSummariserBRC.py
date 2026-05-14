@@ -103,7 +103,7 @@ class ModelSummariserBRC:
     Examples
     --------
     >>> from cntmosaic.models import BRCfine
-    >>> from cntmosaic.models.priors import Spline2D
+    >>> from cntmosaic.models.numpyro.priors import Spline2D
     >>> from cntmosaic.analysis import ModelSummariserBRC
     >>>
     >>> # Fit BRC model with MCMC

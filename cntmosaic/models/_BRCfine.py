@@ -96,7 +96,7 @@ class BRCfine(BRCfineNumPyroMixin, BRC):
     --------
     >>> from cntmosaic.dataloader import DataLoader, CoordToColumns
     >>> from cntmosaic.models import BRCfine
-    >>> from cntmosaic.models.priors import Spline2D
+    >>> from cntmosaic.models.numpyro.priors import Spline2D
     >>> from jax.random import PRNGKey
     >>>
     >>> # Set up dataloader

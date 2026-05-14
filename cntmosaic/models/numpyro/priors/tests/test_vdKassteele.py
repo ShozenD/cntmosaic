@@ -11,7 +11,7 @@ import numpyro
 import pytest
 from jax import random
 
-from cntmosaic.models.priors import vdKassteele2D
+from cntmosaic.models.numpyro.priors import vdKassteele2D
 
 
 class TestInitialization:

@@ -4,8 +4,8 @@ import numpy as np
 import numpyro
 from numpyro import distributions as dist
 
-from ...distributions._IGMRF2D import IGMRF2D
-from .._utils import age_age_grid, diff_age_age_grid, symm_from_tril_ix_row
+from ....distributions._IGMRF2D import IGMRF2D
+from ..._utils import age_age_grid, diff_age_age_grid, symm_from_tril_ix_row
 from ._Spline2D import Spline2D
 
 
@@ -113,7 +113,7 @@ class PSpline2D(Spline2D):
 
     Examples
     --------
-    >>> from cntmosaic.models.priors._PSpline2D import PSpline2D
+    >>> from cntmosaic.models.numpyro.priors._PSpline2D import PSpline2D
     >>> import numpyro
     >>> from jax import random
     >>> import jax.numpy as jnp

@@ -87,7 +87,7 @@ class HiBRCfine(HiBRCfineNumPyroMixin, BRCfine):
     --------
     >>> from cntmosaic.dataloader import DataLoader, CoordToColumns
     >>> from cntmosaic.models import HiBRCfine
-    >>> from cntmosaic.models.priors import HSGP2D
+    >>> from cntmosaic.models.numpyro.priors import HSGP2D
     >>> from jax.random import PRNGKey
     >>>
     >>> # Set up stratified dataloader with fine contact ages

@@ -74,7 +74,7 @@ class BRC(ContactModel, ABC):
     Examples
     --------
     >>> from cntmosaic.dataloader import DataLoader
-    >>> from cntmosaic.models.priors import Spline2D
+    >>> from cntmosaic.models.numpyro.priors import Spline2D
     >>> from cntmosaic.models import BRCfine
     >>>
     >>> # Create dataloader with contact data
@@ -376,7 +376,7 @@ class BRC(ContactModel, ABC):
 
         Examples
         --------
-        >>> from cntmosaic.models.priors import Spline2D
+        >>> from cntmosaic.models.numpyro.priors import Spline2D
         >>> priors = {"rate": Spline2D(prior_type="global", M=30, degree=3)}
         >>> model = BRCfine(dataloader, priors)
         >>>

@@ -4,9 +4,9 @@ import numpyro
 from jax.typing import ArrayLike
 from numpyro import distributions as dist
 
-from ...distributions._IGMRF2D import IGMRF2D as IGMRF2D_dist
-from ...distributions._SymIGMRF2D import SymIGMRF2D
-from .._utils import symm_from_tril_ix_col
+from ....distributions._IGMRF2D import IGMRF2D as IGMRF2D_dist
+from ....distributions._SymIGMRF2D import SymIGMRF2D
+from ..._utils import symm_from_tril_ix_col
 from ._Prior2D import Prior2D
 
 
@@ -101,7 +101,7 @@ class IGMRF2D(Prior2D):
 
     Examples
     --------
-    >>> from cntmosaic.models.priors._IGMRF2D import IGMRF2D
+    >>> from cntmosaic.models.numpyro.priors._IGMRF2D import IGMRF2D
     >>> import numpyro
     >>> from jax import random
     >>>

@@ -21,7 +21,7 @@ from cntmosaic.analysis import ModelEvaluatorBRC, ModelSummariserBRC
 from cntmosaic.dataloader import ContactData, DataLoader, ParticipantData, PopulationData
 from cntmosaic.datasets import load_age_distribution, load_template_patterns
 from cntmosaic.models import BRCfine
-from cntmosaic.models.priors import Spline2D
+from cntmosaic.models.numpyro.priors import Spline2D
 from cntmosaic.sim import (
     ContactGenerator,
     MatrixGenerator,

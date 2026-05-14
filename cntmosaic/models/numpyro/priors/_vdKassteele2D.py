@@ -3,8 +3,8 @@ import numpyro
 from jax.typing import ArrayLike
 from numpyro import distributions as dist
 
-from ...distributions import IGMRF2D, SymIGMRF2D
-from ...utils import symm_from_tril_ix_col
+from ....distributions import IGMRF2D, SymIGMRF2D
+from ....utils import symm_from_tril_ix_col
 from ._Prior2D import Prior2D
 
 
@@ -87,7 +87,7 @@ class vdKassteele2D(Prior2D):
 
     Examples
     --------
-    >>> from cntmosaic.models.priors import vdKassteele
+    >>> from cntmosaic.models.numpyro.priors import vdKassteele
     >>> import numpyro
     >>> from jax import random
     >>> import jax.numpy as jnp

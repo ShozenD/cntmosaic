@@ -116,7 +116,7 @@ class BRCrefine(BRCrefineNumPyroMixin, BRC):
     --------
     >>> from cntmosaic.dataloader import DataLoader, CoordToColumns
     >>> from cntmosaic.models import BRCrefine
-    >>> from cntmosaic.models.priors import HSGP2D
+    >>> from cntmosaic.models.numpyro.priors import HSGP2D
     >>> from jax.random import PRNGKey
     >>> import pandas as pd
     >>>

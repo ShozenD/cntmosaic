@@ -14,7 +14,7 @@ from numpyro.distributions.distribution import Distribution
 from numpyro.util import is_prng_key
 from numpyro.distributions.util import validate_sample
 
-from ..utils import symm_from_tril_ix_col, tril_ix_col
+from ....utils import symm_from_tril_ix_col, tril_ix_col
 
 
 def diff_matrix_np(num_nodes: int, order: int) -> NDArray:
@@ -294,7 +294,7 @@ class SymIGMRF2D(Distribution):
 
     Examples
     --------
-    >>> from cntmosaic.distributions import SymIGMRF2D
+    >>> from cntmosaic.models.numpyro.distributions import SymIGMRF2D
     >>> import jax.numpy as jnp
     >>> from jax import random
     >>>

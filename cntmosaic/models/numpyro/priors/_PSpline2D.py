@@ -4,7 +4,7 @@ import numpy as np
 import numpyro
 from numpyro import distributions as dist
 
-from ....distributions._IGMRF2D import IGMRF2D
+from ..distributions._IGMRF2D import IGMRF2D
 from ..._utils import age_age_grid, diff_age_age_grid, symm_from_tril_ix_row
 from ._Spline2D import Spline2D
 

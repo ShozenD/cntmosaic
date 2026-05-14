@@ -13,7 +13,7 @@ class PremNumPyroMixin:
         from numpyro import distributions as dist
         from numpyro.handlers import plate
 
-        from ...distributions import IGMRF2D
+        from .distributions import IGMRF2D
 
         if self.K == 1:
             beta0 = numpyro.sample("beta0", dist.Normal(0.0, 2.5))

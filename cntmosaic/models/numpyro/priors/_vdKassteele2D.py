@@ -3,7 +3,7 @@ import numpyro
 from jax.typing import ArrayLike
 from numpyro import distributions as dist
 
-from ....distributions import IGMRF2D, SymIGMRF2D
+from ..distributions import IGMRF2D, SymIGMRF2D
 from ....utils import symm_from_tril_ix_col
 from ._Prior2D import Prior2D
 

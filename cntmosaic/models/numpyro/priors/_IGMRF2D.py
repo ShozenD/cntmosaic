@@ -4,8 +4,8 @@ import numpyro
 from jax.typing import ArrayLike
 from numpyro import distributions as dist
 
-from ....distributions._IGMRF2D import IGMRF2D as IGMRF2D_dist
-from ....distributions._SymIGMRF2D import SymIGMRF2D
+from ..distributions._IGMRF2D import IGMRF2D as IGMRF2D_dist
+from ..distributions._SymIGMRF2D import SymIGMRF2D
 from ..._utils import symm_from_tril_ix_col
 from ._Prior2D import Prior2D
 

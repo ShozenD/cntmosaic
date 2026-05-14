@@ -182,32 +182,32 @@ class TestSingle:
         df_part, df_cnt, df_pop = data_single
 
         # Create dataclass objects with standardized column names
-        part_data = ParticipantData(df_part=df_part, id_col="id", age_col="age")
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        part_data = ParticipantData(data=df_part, id_col="id", age_col="age")
+        cnt_data = ContactData(data=df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         dataloader = DataLoader(part_data, cnt_data, pop_data)
 
         model_data = dataloader.load()
 
         # Test if anticipated types
         assert isinstance(model_data, ModelData)
-        assert isinstance(model_data.base_data["y"], np.ndarray)
-        assert isinstance(model_data.base_data["aid"], np.ndarray)
-        assert isinstance(model_data.base_data["bid"], np.ndarray)
-        assert isinstance(model_data.base_data["log_N"], np.ndarray)
-        assert isinstance(model_data.base_data["log_P"], np.ndarray)
-        assert isinstance(model_data.base_data["log_V"], np.ndarray)
+        assert isinstance(model_data.y, np.ndarray)
+        assert isinstance(model_data.aid, np.ndarray)
+        assert isinstance(model_data.bid, np.ndarray)
+        assert isinstance(model_data.log_N, np.ndarray)
+        assert isinstance(model_data.log_P, np.ndarray)
+        assert isinstance(model_data.log_V, np.ndarray)
 
         # Test shapes
-        len_y = len(model_data.base_data["y"])
-        len_aid = len(model_data.base_data["aid"])
-        len_bid = len(model_data.base_data["bid"])
-        len_log_N = len(model_data.base_data["log_N"])
-        len_log_V = len(model_data.base_data["log_V"])
+        len_y = len(model_data.y)
+        len_aid = len(model_data.aid)
+        len_bid = len(model_data.bid)
+        len_log_N = len(model_data.log_N)
+        len_log_V = len(model_data.log_V)
         assert len_y == len_aid == len_bid == len_log_N == len_log_V
 
         # No stratication configuration
-        assert model_data.strat_data == {}
+        assert not model_data.is_stratified
 
     def test_repeat_effect(self, data_single):
         df_part, df_cnt, df_pop = data_single
@@ -215,17 +215,17 @@ class TestSingle:
 
         # Create dataclass objects with repeat column
         part_data = ParticipantData(df_part, "id", "age", repeat_col="repeat")
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         dataloader = DataLoader(part_data, cnt_data, pop_data)
 
         model_data = dataloader.load()
 
-        assert isinstance(model_data.base_data["rid"], np.ndarray)
-        assert model_data.base_data["rid"].shape == model_data.base_data["y"].shape
+        assert isinstance(model_data.rid, np.ndarray)
+        assert model_data.rid.shape == model_data.y.shape
 
         # No stratication configuration
-        assert model_data.strat_data == {}
+        assert not model_data.is_stratified
 
     def test_age_grp_cnt(self, data_single):
         df_part, df_cnt, df_pop = data_single
@@ -237,29 +237,29 @@ class TestSingle:
 
         # Create dataclass objects with age groups
         part_data = ParticipantData(df_part, "id", "age")
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_grp_col="age_grp_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         dataloader = DataLoader(part_data, cnt_data, pop_data)
 
         model_data = dataloader.load()
 
-        assert isinstance(model_data.base_data["y"], np.ndarray)
-        assert isinstance(model_data.base_data["log_N"], np.ndarray)
-        assert isinstance(model_data.base_data["log_P"], np.ndarray)
-        assert isinstance(model_data.base_data["log_V"], np.ndarray)
-        assert isinstance(model_data.base_data["aid_exp"], np.ndarray)
-        assert isinstance(model_data.base_data["bid_pad"], np.ndarray)
+        assert isinstance(model_data.y, np.ndarray)
+        assert isinstance(model_data.log_N, np.ndarray)
+        assert isinstance(model_data.log_P, np.ndarray)
+        assert isinstance(model_data.log_V, np.ndarray)
+        assert isinstance(model_data.aid_exp, np.ndarray)
+        assert isinstance(model_data.bid_pad, np.ndarray)
 
         assert (
-            model_data.base_data["aid_exp"].shape[0]
-            == model_data.base_data["bid_pad"].shape[0]
+            model_data.aid_exp.shape[0]
+            == model_data.bid_pad.shape[0]
         )
         assert (
-            model_data.base_data["y"].shape[0]
-            == model_data.base_data["aid_exp"].shape[0]
+            model_data.y.shape[0]
+            == model_data.aid_exp.shape[0]
         )
         assert (
-            model_data.base_data["log_N"].shape == model_data.base_data["log_V"].shape
+            model_data.log_N.shape == model_data.log_V.shape
         )
 
 
@@ -272,13 +272,13 @@ class TestPartial:
 
         # Create dataclass objects with stratification
         part_data = ParticipantData(
-            df_part=df_part,
+            data=df_part,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
             age_col="age",
@@ -291,18 +291,18 @@ class TestPartial:
         model_data = dataloader.load()
 
         assert isinstance(model_data, ModelData)
-        assert isinstance(model_data.base_data["y"], np.ndarray)
-        assert isinstance(model_data.base_data["aid"], np.ndarray)
-        assert isinstance(model_data.base_data["bid"], np.ndarray)
-        assert isinstance(model_data.base_data["log_N"], np.ndarray)
-        assert isinstance(model_data.base_data["log_P"], np.ndarray)
-        assert isinstance(model_data.base_data["log_V"], np.ndarray)
+        assert isinstance(model_data.y, np.ndarray)
+        assert isinstance(model_data.aid, np.ndarray)
+        assert isinstance(model_data.bid, np.ndarray)
+        assert isinstance(model_data.log_N, np.ndarray)
+        assert isinstance(model_data.log_P, np.ndarray)
+        assert isinstance(model_data.log_V, np.ndarray)
 
         # Test shapes
-        assert model_data.base_data["aid"].shape == model_data.base_data["bid"].shape
-        assert model_data.base_data["y"].shape == model_data.base_data["aid"].shape
+        assert model_data.aid.shape == model_data.bid.shape
+        assert model_data.y.shape == model_data.aid.shape
         assert (
-            model_data.base_data["log_N"].shape == model_data.base_data["log_V"].shape
+            model_data.log_N.shape == model_data.log_V.shape
         )
 
     def test_repeat_effect(self, data_partial):
@@ -311,16 +311,16 @@ class TestPartial:
 
         # Create dataclass objects with stratification and repeat
         part_data = ParticipantData(
-            df_part=df_part,
+            data=df_part,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
             repeat_col="repeat",
         )
 
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
 
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
 
         pop_prop = StratificationData(
             data=df_strat,
@@ -334,27 +334,24 @@ class TestPartial:
         model_data = dataloader.load()
 
         # Test that rid exists and has correct shape
-        assert isinstance(model_data.base_data["rid"], np.ndarray)
-        assert model_data.base_data["rid"].shape == model_data.base_data["aid"].shape
+        assert isinstance(model_data.rid, np.ndarray)
+        assert model_data.rid.shape == model_data.aid.shape
 
         # Should have stratification data
-        assert model_data.strat_data is not None
-        assert model_data.strat_data["modes"].keys() == {"sex", "hhsize"}
-        assert model_data.strat_data["modes"] == {
+        assert model_data.is_stratified
+        assert model_data.strat_modes.keys() == {"sex", "hhsize"}
+        assert model_data.strat_modes == {
             "sex": StratMode.PARTIAL,
             "hhsize": StratMode.PARTIAL,
         }
-        assert model_data.strat_data["labels"]["sex"] == ["M->All", "F->All"]
-        assert model_data.strat_data["labels"]["hhsize"] == [
+        assert model_data.strat_labels["sex"] == ["M->All", "F->All"]
+        assert model_data.strat_labels["hhsize"] == [
             "1->All",
             "2->All",
             "3->All",
             "4->All",
             "5+->All",
         ]
-        assert model_data.strat_data["ixs"].keys() == {"sex", "hhsize"}
-        assert model_data.strat_data["ixs"]["sex"] is not None
-
     def test_age_grp_cnt(self, data_partial):
         df_part, df_cnt, df_pop, df_strat = data_partial
 
@@ -364,14 +361,14 @@ class TestPartial:
 
         # Create dataclass objects with age groups and stratification
         part_data = ParticipantData(
-            df_part=df_part,
+            data=df_part,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
 
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_grp_col="age_grp_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         pop_prop = StratificationData(
             data=df_strat,
             age_col="age",
@@ -383,32 +380,30 @@ class TestPartial:
         model_data = dataloader.load()
 
         assert isinstance(model_data, ModelData)
-        assert isinstance(model_data.base_data["aid_exp"], np.ndarray)
-        assert isinstance(model_data.base_data["bid_pad"], np.ndarray)
+        assert isinstance(model_data.aid_exp, np.ndarray)
+        assert isinstance(model_data.bid_pad, np.ndarray)
 
         # Should have stratification data
-        assert model_data.strat_data is not None
-        assert model_data.strat_data["modes"].keys() == {"sex", "hhsize"}
-        assert model_data.strat_data["labels"]["sex"] == ["M->All", "F->All"]
-        assert model_data.strat_data["modes"] == {
+        assert model_data.is_stratified
+        assert model_data.strat_modes.keys() == {"sex", "hhsize"}
+        assert model_data.strat_labels["sex"] == ["M->All", "F->All"]
+        assert model_data.strat_modes == {
             "sex": StratMode.PARTIAL,
             "hhsize": StratMode.PARTIAL,
         }
-        assert model_data.strat_data["ixs"].keys() == {"sex", "hhsize"}
-        assert model_data.strat_data["ixs"]["sex"] is not None
 
     def test_partial_multi(self, data_partial):
         df_part, df_cnt, df_pop, df_strat = data_partial
 
         # Create dataclass objects with stratification
         part_data = ParticipantData(
-            df_part=df_part,
+            data=df_part,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
             age_col="age",
@@ -418,24 +413,21 @@ class TestPartial:
 
         dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
         model_data = dataloader.load()
-        assert model_data.strat_data is not None
-        assert model_data.strat_data["modes"].keys() == {"sex", "hhsize"}
-        assert model_data.strat_data["modes"] == {
+        assert model_data.is_stratified
+        assert model_data.strat_modes.keys() == {"sex", "hhsize"}
+        assert model_data.strat_modes == {
             "sex": StratMode.PARTIAL,
             "hhsize": StratMode.PARTIAL,
         }
-        assert model_data.strat_data["labels"]["sex"] == ["M->All", "F->All"]
-        assert model_data.strat_data["ixs"].keys() == {"sex", "hhsize"}
-        assert model_data.strat_data["ixs"]["sex"] is not None
-        assert model_data.strat_data["ixs"]["hhsize"] is not None
-        assert model_data.strat_data["flat_ix"] is not None
+        assert model_data.strat_labels["sex"] == ["M->All", "F->All"]
+        assert model_data.flat_ix is not None
 
         sex_labels = ["M", "F"]
         hhsize_labels = ["1", "2", "3", "4", "5+"]
         expected_full_labels = [
             f"{s1}_{s2}->All" for s1 in sex_labels for s2 in hhsize_labels
         ]
-        assert model_data.strat_data["full_labels"] == expected_full_labels
+        assert model_data.full_labels == expected_full_labels
 
 
 class TestFull:
@@ -445,19 +437,19 @@ class TestFull:
 
         # Create dataclass objects with stratification
         part_data = ParticipantData(
-            df_part=df_part,
+            data=df_part,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
         cnt_data = ContactData(
-            df_cnt=df_cnt,
+            df_cnt,
             id_col="id",
             age_col="age_cnt",
             strat_var_cols=["sex_cnt", "hhsize_cnt"],
         )
         pop_data = PopulationData(
-            df_pop=df_pop, age_col="age", size_col="P", strat_var_cols=["sex", "hhsize"]
+            data=df_pop, age_col="age", size_col="P", strat_var_cols=["sex", "hhsize"]
         )
         strat_prop_data = StratificationData(
             data=df_strat,  # Empty since full info is in contacts
@@ -471,32 +463,30 @@ class TestFull:
         model_data = dataloader.load()
 
         assert isinstance(model_data, ModelData)
-        assert isinstance(model_data.base_data["y"], np.ndarray)
-        assert isinstance(model_data.base_data["aid"], np.ndarray)
-        assert isinstance(model_data.base_data["bid"], np.ndarray)
-        assert isinstance(model_data.base_data["log_N"], np.ndarray)
-        assert isinstance(model_data.base_data["log_P"], np.ndarray)
-        assert isinstance(model_data.base_data["log_V"], np.ndarray)
+        assert isinstance(model_data.y, np.ndarray)
+        assert isinstance(model_data.aid, np.ndarray)
+        assert isinstance(model_data.bid, np.ndarray)
+        assert isinstance(model_data.log_N, np.ndarray)
+        assert isinstance(model_data.log_P, np.ndarray)
+        assert isinstance(model_data.log_V, np.ndarray)
 
         # Test shapes
-        y_shape = model_data.base_data["y"].shape
-        aid_shape = model_data.base_data["aid"].shape
-        bid_shape = model_data.base_data["bid"].shape
-        log_N_shape = model_data.base_data["log_N"].shape
-        log_V_shape = model_data.base_data["log_V"].shape
+        y_shape = model_data.y.shape
+        aid_shape = model_data.aid.shape
+        bid_shape = model_data.bid.shape
+        log_N_shape = model_data.log_N.shape
+        log_V_shape = model_data.log_V.shape
         assert aid_shape == bid_shape
         assert y_shape == aid_shape
         assert log_N_shape == log_V_shape
 
         # Test strat data
-        assert model_data.strat_data is not None
-        assert model_data.strat_data["modes"].keys() == {"sex", "hhsize"}
-        assert model_data.strat_data["modes"] == {
+        assert model_data.is_stratified
+        assert model_data.strat_modes.keys() == {"sex", "hhsize"}
+        assert model_data.strat_modes == {
             "sex": StratMode.FULL,
             "hhsize": StratMode.FULL,
         }
-        assert model_data.strat_data["ixs"]["sex"] is not None
-        assert model_data.strat_data["ixs"]["hhsize"] is not None
 
 
 class TestMethods:
@@ -505,13 +495,13 @@ class TestMethods:
 
         df_part, df_cnt, df_pop, df_strat = data_partial
         part_data = ParticipantData(
-            df_part=df_part,
+            data=df_part,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
             age_col="age",
@@ -523,42 +513,29 @@ class TestMethods:
         dataloader.load()
 
         # Test strat modes
-        assert dataloader.model_data.strat_data["modes"] == {
+        assert dataloader.model_data.strat_modes == {
             "sex": StratMode.PARTIAL,
             "hhsize": StratMode.PARTIAL,
         }
 
         # Test strat dims
-        assert dataloader.model_data.strat_data["dims"] == {
+        assert dataloader.model_data.strat_dims == {
             "sex": 2,
             "hhsize": 5,
         }
 
         # Test strat labels
-        assert dataloader.model_data.strat_data["labels"] == {
+        assert dataloader.model_data.strat_labels == {
             "sex": ["M->All", "F->All"],
             "hhsize": ["1->All", "2->All", "3->All", "4->All", "5+->All"],
         }
 
-        # Test strat ixs
-        expected_codes_sex = dataloader.df_full["sex_part"].cat.codes.to_numpy()
+        # Test flat_ix (derived from df_full categorical codes)
+        sex_codes = dataloader.df_full["sex_part"].cat.codes.to_numpy()
+        hhsize_codes = dataloader.df_full["hhsize_part"].cat.codes.to_numpy()
+        expected_flat_ixs = sex_codes * dataloader.model_data.strat_dims["hhsize"] + hhsize_codes
         np.testing.assert_array_equal(
-            dataloader.model_data.strat_data["ixs"]["sex"], expected_codes_sex
-        )
-
-        expected_codes_hhsize = dataloader.df_full["hhsize_part"].cat.codes.to_numpy()
-        np.testing.assert_array_equal(
-            dataloader.model_data.strat_data["ixs"]["hhsize"], expected_codes_hhsize
-        )
-
-        # Test flat_ix
-        expected_flat_ixs = (
-            dataloader.model_data.strat_data["ixs"]["sex"]
-            * dataloader.model_data.strat_data["dims"]["hhsize"]
-            + dataloader.model_data.strat_data["ixs"]["hhsize"]
-        )
-        np.testing.assert_array_equal(
-            dataloader.model_data.strat_data["flat_ix"], expected_flat_ixs
+            dataloader.model_data.flat_ix, expected_flat_ixs
         )
 
 
@@ -636,13 +613,13 @@ class TestStratificationOrdering:
         df_part, df_cnt, df_pop, df_strat = data_full
 
         part_data = ParticipantData(
-            df_part=df_part, id_col="id", age_col="age", strat_var_cols=["sex"]
+            data=df_part, id_col="id", age_col="age", strat_var_cols=["sex"]
         )
         cnt_data = ContactData(
-            df_cnt=df_cnt, id_col="id", age_col="age_cnt", strat_var_cols=["sex_cnt"]
+            df_cnt, id_col="id", age_col="age_cnt", strat_var_cols=["sex_cnt"]
         )
         pop_data = PopulationData(
-            df_pop=df_pop, age_col="age", size_col="P", strat_var_cols=["sex"]
+            data=df_pop, age_col="age", size_col="P", strat_var_cols=["sex"]
         )
         strat_prop_data = StratificationData(
             data=df_strat, age_col="age", strat_var_cols=["sex"], prop_col="Q"
@@ -651,7 +628,7 @@ class TestStratificationOrdering:
         dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
         dataloader.load()
 
-        full_labels = dataloader.model_data.strat_data["full_labels"]
+        full_labels = dataloader.model_data.full_labels
 
         # Expected ordering for sex (M, F):
         # flat_ix 0: M->M, flat_ix 1: M->F, flat_ix 2: F->M, flat_ix 3: F->F
@@ -663,19 +640,19 @@ class TestStratificationOrdering:
         df_part, df_cnt, df_pop, df_strat = data_multi_strat
 
         part_data = ParticipantData(
-            df_part=df_part,
+            data=df_part,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "setting"],
         )
         cnt_data = ContactData(
-            df_cnt=df_cnt,
+            df_cnt,
             id_col="id",
             age_col="age_cnt",
             strat_var_cols=["sex_cnt", "setting_cnt"],
         )
         pop_data = PopulationData(
-            df_pop=df_pop,
+            data=df_pop,
             age_col="age",
             size_col="P",
             strat_var_cols=["sex", "setting"],
@@ -691,8 +668,8 @@ class TestStratificationOrdering:
         dataloader.load()
 
         # Get full labels
-        flat_ix = dataloader.model_data.strat_data["flat_ix"]
-        full_labels = dataloader.model_data.strat_data["full_labels"]
+        flat_ix = dataloader.model_data.flat_ix
+        full_labels = dataloader.model_data.full_labels
 
         # Row-major ordering: sex varies SLOWEST, setting varies FASTEST
         # flat_ix = sex_ix * 4 + setting_ix
@@ -760,10 +737,10 @@ class TestStratificationOrdering:
         df_part, df_cnt, df_pop, df_strat = data_partial
 
         part_data = ParticipantData(
-            df_part=df_part, id_col="id", age_col="age", strat_var_cols=["sex"]
+            data=df_part, id_col="id", age_col="age", strat_var_cols=["sex"]
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat, age_col="age", strat_var_cols=["sex"], prop_col="Q"
         )
@@ -771,8 +748,8 @@ class TestStratificationOrdering:
         dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
         dataloader.load()
 
-        flat_ix = dataloader.model_data.strat_data["flat_ix"]
-        full_labels = dataloader.model_data.strat_data["full_labels"]
+        flat_ix = dataloader.model_data.flat_ix
+        full_labels = dataloader.model_data.full_labels
 
         # PARTIAL: labels are "cat->All", flat_ix = sex_part_code
         expected_labels = ["M->All", "F->All"]
@@ -798,13 +775,13 @@ class TestStratificationOrdering:
         df_part, df_cnt, df_pop, df_strat = data_partial
 
         part_data = ParticipantData(
-            df_part=df_part,
+            data=df_part,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        pop_data = PopulationData(df_pop=df_pop, age_col="age", size_col="P")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
             age_col="age",
@@ -815,8 +792,8 @@ class TestStratificationOrdering:
         dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
         dataloader.load()
 
-        flat_ix = dataloader.model_data.strat_data["flat_ix"]
-        full_labels = dataloader.model_data.strat_data["full_labels"]
+        flat_ix = dataloader.model_data.flat_ix
+        full_labels = dataloader.model_data.full_labels
 
         # PARTIAL for both: strat_dims = {'sex': 2, 'hhsize': 5}
         # flat_ix = sex_ix * 5 + hhsize_ix  (sex varies slowest, hhsize fastest)

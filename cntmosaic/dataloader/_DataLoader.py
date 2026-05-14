@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import List, Tuple, Union
 
 import pandas as pd
@@ -109,14 +111,14 @@ class DataLoader(BaseLoader):
     >>>
     >>> # Create validated data objects
     >>> part_data = ParticipantData(
-    ...     df_part=part_df,
+    ...     data=part_df,
     ...     id_col='participant_id',
     ...     age_col='age',
     ...     strat_var_cols='gender'
     ... )
     >>>
     >>> cnt_data = ContactData(
-    ...     df_cnt=cnt_df,
+    ...     data=cnt_df,
     ...     id_col='participant_id',
     ...     age_col='contact_age',
     ...     strat_vars='setting'
@@ -169,9 +171,9 @@ class DataLoader(BaseLoader):
 
     def __init__(
         self,
-        part_data,  # ParticipantData type hint removed to avoid circular import
-        cnt_data,  # ContactData type hint removed to avoid circular import
-        pop_data,  # PopulationData type hint removed to avoid circular import
+        part_data: ParticipantData,
+        cnt_data: ContactData,
+        pop_data: PopulationData,
         strat_prop_data: Union[StratificationData, None] = None,
         smooth_amb_cnt_offsets: bool = True,
     ) -> None:
@@ -196,7 +198,7 @@ class DataLoader(BaseLoader):
         for col in data.columns:
             # Check if column exists in participant data and is categorical
             if col in self.part_data.data.columns:
-                if pd.api.types.is_categorical_dtype(self.part_data.data[col]):
+                if pd.api.types.is_categorical_dtype(self.part_data.data[col]):  # type: ignore
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.part_data.data[col].cat.categories,
@@ -204,7 +206,7 @@ class DataLoader(BaseLoader):
                     )
             # Check if column exists in contact data and is categorical
             elif col in self.cnt_data.data.columns:
-                if pd.api.types.is_categorical_dtype(self.cnt_data.data[col]):
+                if pd.api.types.is_categorical_dtype(self.cnt_data.data[col]):  # type: ignore
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.cnt_data.data[col].cat.categories,
@@ -269,8 +271,8 @@ class DataLoader(BaseLoader):
             id_col="id",
             y="y",
             z=part_data.amb_cnt_col,
-            strat_vars_part=strat_vars_part,
-            strat_vars_cnt=strat_vars_cnt,
+            strat_vars_part=strat_vars_part,  # type: ignore
+            strat_vars_cnt=strat_vars_cnt,  # type: ignore
             repeat_part="repeat_part" if part_data.repeat_col else None,
             age_pop="age",
             P="P",

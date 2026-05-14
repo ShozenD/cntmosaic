@@ -9,7 +9,7 @@ from numpyro import distributions as dist
 from numpyro.contrib.hsgp.laplacian import eigenfunctions
 from numpyro.contrib.hsgp.spectral_densities import diag_spectral_density_matern
 
-from .._utils import age_age_grid, diff_age_age_grid, symm_from_tril_ix_row, tril_ix_row
+from ..._utils import age_age_grid, diff_age_age_grid, symm_from_tril_ix_row, tril_ix_row
 from ._Prior2D import Prior2D
 
 
@@ -108,7 +108,7 @@ class HSGP2D(Prior2D):
     Examples
     --------
     >>> import numpyro
-    >>> from cntmosaic.models.priors import HSGP2D
+    >>> from cntmosaic.models.numpyro.priors import HSGP2D
     >>> import jax.numpy as jnp
     >>>
     >>> # Global rate prior

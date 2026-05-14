@@ -142,16 +142,21 @@ def mock_prem_stratified_full(age_bins):
     strata_labels = ["M->M", "M->F", "F->M", "F->F"]
     prem.data = pd.DataFrame({"stratum": np.repeat(strata_labels, 10)})
 
+    # Mock part_data with gender_part column for validation
+    part_data_mock = type("ParticipantData", (), {})()
+    part_data_mock.data = pd.DataFrame({
+        "gender_part": pd.Categorical(["M", "F"] * 20, categories=["M", "F"])
+    })
+    prem.part_data = part_data_mock
+
     # Mock posterior samples for stratified model
     n_samples = 20
-    K = 2  # 2 strata per dimension
+    K = 4  # 4 strata total (M->M, M->F, F->M, F->F)
     D = C = len(age_bins.left)
 
     prem._mcmc_result = type("MCMCResult", (), {})()
     prem._mcmc_result.get_samples = lambda: {
-        "beta0": np.random.normal(0, 0.1, (n_samples, K, K)),
-        "beta_cd": np.random.normal(0, 0.5, (n_samples, K, K, D, C)),
-        "tau": np.random.gamma(2, 0.5, (n_samples, K, K)),
+        "log_cint": np.random.normal(0, 0.5, (n_samples, K, D, C)),
     }
     prem._svi_result = None
 
@@ -199,15 +204,10 @@ class TestModelSummariserPremInitialization:
         with pytest.raises(ValueError, match="Either MCMC or SVI must have been run"):
             ModelSummariserPrem(prem)
 
-    def test_backward_compat_df_age_dist(
-        self, mock_prem_unstratified, df_age_dist_fine
-    ):
-        """Test backward compatibility with df_age_dist parameter."""
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            summariser = ModelSummariserPrem(
-                mock_prem_unstratified, df_age_dist=df_age_dist_fine
-            )
+    def test_init_with_pop_data(self, mock_prem_unstratified, df_age_dist_fine):
+        """Test initialization with PopulationData (new API)."""
+        pop_data = PopulationData(df_age_dist_fine, age_col="age", size_col="P")
+        summariser = ModelSummariserPrem(mock_prem_unstratified, pop_data=pop_data)
 
         assert summariser.age_dist is not None
         assert len(summariser.age_dist) == 25
@@ -241,8 +241,8 @@ class TestStratumLabels:
         """Test that labels maintain correct ordering."""
         summariser = ModelSummariserPrem(mock_prem_stratified_full)
 
-        # Labels should match the order from pd.factorize
-        expected_labels = ["M->M", "M->F", "F->M", "F->F"]
+        # Labels are sorted alphabetically when not categorical
+        expected_labels = sorted(["M->M", "M->F", "F->M", "F->F"])
         assert summariser.strata_labels == expected_labels
 
 
@@ -406,12 +406,13 @@ class TestSummariseCintOutputFormat:
 
         summary = summariser.summarise_cint(alpha=0.05)
 
-        # Should return NDArray, not Dict
-        assert isinstance(summary, np.ndarray)
-        # Shape should be (3, A, A) where A is age groups (5)
-        assert summary.shape == (3, 5, 5)
+        # Always returns Dict keyed by strata label
+        assert isinstance(summary, dict)
+        assert "All->All" in summary
+        # Shape of each entry should be (3, A, A) where A is age groups (5)
+        assert summary["All->All"].shape == (3, 5, 5)
         # Order: [lower, median, upper]
-        assert summary[0, 0, 0] <= summary[1, 0, 0] <= summary[2, 0, 0]
+        assert summary["All->All"][0, 0, 0] <= summary["All->All"][1, 0, 0] <= summary["All->All"][2, 0, 0]
 
     def test_output_format_k_gt_1(self, mock_prem_stratified_full, pop_data_stratified):
         """Test K>1 returns Dict[str, NDArray]."""
@@ -434,19 +435,16 @@ class TestSummariseCintOutputFormat:
             assert np.all(quantiles[0] <= quantiles[1])
             assert np.all(quantiles[1] <= quantiles[2])
 
-    def test_backward_compat_return_symmetrized(
+    def test_summarise_cint_k1_returns_dict(
         self, mock_prem_unstratified, pop_data_unstratified
     ):
-        """Test backward compatibility with return_symmetrized parameter."""
+        """Test that summarise_cint always returns a dict (even for K=1)."""
         summariser = ModelSummariserPrem(
             mock_prem_unstratified, pop_data=pop_data_unstratified
         )
-
-        with pytest.warns(DeprecationWarning, match="return_symmetrized is deprecated"):
-            summary = summariser.summarise_cint(alpha=0.05, return_symmetrized=True)
-
-        # Should still work
-        assert isinstance(summary, np.ndarray)
+        summary = summariser.summarise_cint(alpha=0.05)
+        assert isinstance(summary, dict)
+        assert "All->All" in summary
 
 
 # ============================================================================
@@ -528,7 +526,7 @@ class TestEdgeCases:
         """Test error when depixilation requested without population data."""
         summariser = ModelSummariserPrem(mock_prem_unstratified)
 
-        with pytest.raises(ValueError, match="PopulationData.*must be provided"):
+        with pytest.raises(ValueError, match="pop_data must be provided"):
             summariser.summarise_cint(alpha=0.05, return_depixilated=True)
 
     def test_invalid_alpha(self, mock_prem_unstratified):
@@ -551,7 +549,9 @@ class TestEdgeCases:
         summary2 = summariser.summarise_cint(alpha=0.05)
 
         # Should be identical (from cache)
-        assert np.array_equal(summary1, summary2)
+        assert summary1.keys() == summary2.keys()
+        for key in summary1:
+            assert np.array_equal(summary1[key], summary2[key])
 
         # Cache info should show 1 cached item
         cache_info = summariser.get_cache_info()
@@ -567,7 +567,7 @@ class TestEdgeCases:
         summary2 = summariser.summarise_cint(alpha=0.05, force_recompute=True)
 
         # Shapes should match but values might differ slightly due to recomputation
-        assert summary1.shape == summary2.shape
+        assert summary1["All->All"].shape == summary2["All->All"].shape
 
 
 # ============================================================================

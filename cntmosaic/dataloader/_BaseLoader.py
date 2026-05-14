@@ -1,14 +1,14 @@
 """
 Base class for loading and preprocessing contact survey data.
 
-This module provides the BaseLoader abstract base class with core functionality
-for validating, merging, and transforming contact survey data into formats suitable
-for statistical modeling.
+Internal API — not exported from ``cntmosaic.dataloader``. Provides the
+``BaseLoader`` abstract base class with core functionality for validating,
+merging, and transforming contact survey data into formats suitable for
+statistical modeling. Concrete users should subclass ``DataLoader`` instead.
 """
 
 import warnings
 from abc import ABC
-from itertools import product
 from typing import Dict, List, Optional, Union
 
 import numpy as np
@@ -17,8 +17,26 @@ from numpy.typing import NDArray
 
 from .._types import StratMode
 from ._CoordToColumns import CoordToColumns
+from ._observation import (
+    align_age_range,
+    build_contact_counts,
+    build_contact_offsets,
+    build_observation_grid,
+    build_participant_counts,
+    construct_log_P,
+)
+from ._stratification import (
+    assemble_strat_kwargs,
+    infer_full_strat_labels,
+    infer_strat_dims,
+    infer_strat_ixs,
+    infer_strat_labels,
+    infer_strat_modes,
+    infer_strat_pixs,
+    make_flat_ix,
+)
 from ._utils import expand_ix_array, gaussian_smooth_by_group, make_idarrs_for_intervals
-from .containers._ModelData import ModelBaseData, ModelData, ModelStratData
+from .containers._ModelData import ModelData
 from .containers._StratificationData import StratificationData
 
 
@@ -123,7 +141,7 @@ class BaseLoader(ABC):
 
         # Auto-create the ambiguous contact count column if missing
         # (documented behaviour: if not present, created with value 0)
-        if col_map.z not in self.data.columns:
+        if col_map.z is not None and col_map.z not in self.data.columns:
             self.data = self.data.copy()
             self.data[col_map.z] = 0
         self.strat_data = strat_data
@@ -134,159 +152,29 @@ class BaseLoader(ABC):
         self.model_data: Optional[ModelData] = None
 
     def _align_age_range(self) -> None:
-        """
-        Align age ranges between sample and population data.
-
-        Parameters
-        ----------
-        data : pd.DataFrame
-            Input dataframe with contact and participant information.
-        pop : pd.DataFrame
-            Population dataframe with age distribution.
-        col_map : CoordToColumns
-            Column mapping specification.
-
-        Warnings
-        --------
-        UserWarning
-            - If age ranges between sample and population don't match
-        """
-        # Determine age ranges and ensure consistency
-        part_min_age = int(self.data[self.col_map.age_part].min())
-        part_max_age = int(self.data[self.col_map.age_part].max())
-
-        if self.col_map.age_cnt:
-            cnt_min_age = int(self.data[self.col_map.age_cnt].min())
-            cnt_max_age = int(self.data[self.col_map.age_cnt].max())
-        else:  # age_grp_cnt is specified
-            cnt_min_age = int(self.data[self.col_map.age_grp_cnt].min().left)
-            cnt_max_age = int(self.data[self.col_map.age_grp_cnt].max().right - 1)
-
-        pop_min_age = int(self.pop_data[self.col_map.age_pop].min())
-        pop_max_age = int(self.pop_data[self.col_map.age_pop].max())
-
-        # Determine overall sample age range
-        sample_min_age = min(part_min_age, cnt_min_age)
-        sample_max_age = max(part_max_age, cnt_max_age)
-
-        # Align minimum age with population data
-        if sample_min_age != pop_min_age:
-            warnings.warn(
-                f"Sample minimum age ({sample_min_age}) differs from population minimum age ({pop_min_age}). "
-                f"Filtering sample data to match population (age >= {pop_min_age}).",
-                UserWarning,
-                stacklevel=2,
-            )
-            self.data = self.data[
-                self.data[self.col_map.age_part] >= pop_min_age
-            ].copy()
-            if self.data.empty:
-                raise ValueError(
-                    f"After filtering to age >= {pop_min_age}, no data remains. "
-                    "Check age range compatibility."
-                )
-            min_age = pop_min_age
-        else:
-            min_age = sample_min_age
-
-        # Align maximum age with population data
-        if sample_max_age != pop_max_age:
-            warnings.warn(
-                f"Sample maximum age ({sample_max_age}) differs from population maximum age ({pop_max_age}). "
-                f"Using population maximum age ({pop_max_age}) for analysis.",
-                UserWarning,
-                stacklevel=2,
-            )
-            max_age = pop_max_age
-        else:
-            max_age = sample_max_age
-
-        # Store age bounds as instance attributes
+        """Align age ranges between sample and population data."""
+        self.data, min_age, max_age = align_age_range(
+            self.data, self.pop_data, self.col_map
+        )
         self.min_age: int = min_age
         self.max_age: int = max_age
 
     @property
-    def df_n(self) -> pd.DataFrame:
+    def df_participant_counts(self) -> pd.DataFrame:
         """Construct dataframe of participant counts (N) stratified by age and grouping variables."""
-        df_n = (
-            self.data.groupby(self.col_map.strat_vars_n, observed=False)
-            .agg(N=(self.col_map.id_col, "nunique"))
-            .reset_index()
-        )
-        return df_n
+        return build_participant_counts(self.data, self.col_map)
 
     @property
-    def df_V(self) -> pd.DataFrame:
-        """
-        Construct dataframe of ambiguous contact offsets (V) stratified by age and grouping variables.
-        """
-        df_z = (
-            self.data[
-                [self.col_map.id_col] + self.col_map.strat_vars_n + [self.col_map.z]
-            ]
-            .drop_duplicates()
-            .groupby(self.col_map.strat_vars_n, observed=False)[self.col_map.z]
-            .sum()
-            .reset_index()
+    def df_contact_offsets(self) -> pd.DataFrame:
+        """Construct dataframe of ambiguous contact offsets (V) stratified by age and grouping variables."""
+        return build_contact_offsets(
+            self.data, self.col_map, self.smooth_amb_cnt_offsets
         )
-        df_yz = (
-            self.data[
-                [self.col_map.id_col] + self.col_map.strat_vars_n + [self.col_map.y]
-            ]
-            .drop_duplicates()
-            .groupby(self.col_map.strat_vars_n, observed=False)[self.col_map.y]
-            .sum()
-            .reset_index()
-        )
-        df_V = df_yz.merge(df_z, on=self.col_map.strat_vars_n, how="left")
-        df_V["V"] = 1 - df_V[self.col_map.z] / (
-            df_V[self.col_map.z] + df_V[self.col_map.y]
-        )
-        # Little bit arbitrary - to avoid zero offsets
-        df_V["V"] = np.where(
-            df_V["V"] == 0, 1.0 / (df_V[self.col_map.z] + 1.0), df_V["V"]
-        )
-        df_V.fillna({"V": 1.0}, inplace=True)
-        df_V = df_V.drop(columns=[self.col_map.z, self.col_map.y])
-
-        if self.smooth_amb_cnt_offsets:
-            # For smoothing, group by stratification vars EXCLUDING age_part
-            # so we smooth V across ages within each stratification group
-            smooth_group_vars = [
-                var for var in self.col_map.strat_vars_n if var != self.col_map.age_part
-            ]
-            # Only smooth if there are grouping variables (otherwise just one group)
-            if len(smooth_group_vars) > 0:
-                df_V = gaussian_smooth_by_group(
-                    df_V,
-                    group_by=smooth_group_vars,
-                    target="V",
-                    cv=True,
-                    sort_by=self.col_map.age_part,
-                )
-            else:
-                # No stratification - smooth the entire column
-                df_V = gaussian_smooth_by_group(
-                    df_V,
-                    group_by=None,
-                    target="V",
-                    cv=True,
-                    sort_by=self.col_map.age_part,
-                )
-            # Replace original V with smoothed V_gs
-            df_V["V"] = df_V["V_gs"]
-
-        return df_V
 
     @property
-    def df_y(self) -> pd.DataFrame:
+    def df_contact_counts(self) -> pd.DataFrame:
         """Construct dataframe of contact counts (y) stratified by age and grouping variables."""
-        df_y = (
-            self.data.groupby(self.col_map.strat_vars_y, observed=False)
-            .agg({self.col_map.y: "sum"})
-            .reset_index()
-        )
-        return df_y
+        return build_contact_counts(self.data, self.col_map)
 
     @property
     def df_full(self) -> pd.DataFrame:
@@ -301,68 +189,12 @@ class BaseLoader(ABC):
 
     def _build_df_full(self) -> pd.DataFrame:
         """Build the full dataframe from scratch."""
-        df_n = self.df_n
-        df_V = self.df_V
-        df_y = self.df_y
-
-        # Create a full Cartesian product of all stratification variable levels
-        unique_coords = {
-            var: self.data[var].unique() for var in self.col_map.strat_vars_y
-        }
-        unique_coords[self.col_map.age_part] = np.arange(
-            self.min_age, self.max_age + 1, dtype=int
+        df_n = self.df_participant_counts
+        df_V = self.df_contact_offsets
+        df_y = self.df_contact_counts
+        return build_observation_grid(
+            self.data, self.col_map, self.min_age, self.max_age, df_n, df_y, df_V
         )
-
-        if self.col_map.age_cnt:
-            unique_coords[self.col_map.age_cnt] = np.arange(
-                self.min_age, self.max_age + 1, dtype=int
-            )
-        elif self.col_map.age_grp_cnt:
-            unique_coords[self.col_map.age_grp_cnt] = self.data[
-                self.col_map.age_grp_cnt
-            ].cat.categories
-
-        index = pd.MultiIndex.from_product(
-            unique_coords.values(), names=unique_coords.keys()
-        )
-
-        df_full = pd.DataFrame(list(index), columns=unique_coords.keys())
-        df_full = pd.merge(df_full, df_y, on=self.col_map.strat_vars_y, how="left")
-        df_full = pd.merge(df_full, df_n, on=self.col_map.strat_vars_n, how="left")
-        df_full = pd.merge(df_full, df_V, on=self.col_map.strat_vars_n, how="left")
-
-        # Restore all category information for categorical columns
-        if self.col_map.age_grp_cnt:
-            df_full[self.col_map.age_grp_cnt] = pd.Categorical(
-                df_full[self.col_map.age_grp_cnt],
-                categories=self.data[self.col_map.age_grp_cnt].cat.categories,
-                ordered=True,
-            )
-        if self.col_map.strat_vars_part:
-            for var in self.col_map.strat_vars_part:
-                categories = self.data[var].cat.categories
-                df_full[var] = pd.Categorical(
-                    df_full[var],
-                    categories=categories,
-                    ordered=True,
-                )
-        if self.col_map.strat_vars_cnt:
-            for var in self.col_map.strat_vars_cnt:
-                categories = self.data[var].cat.categories
-                df_full[var] = pd.Categorical(
-                    df_full[var],
-                    categories=categories,
-                    ordered=True,
-                )
-
-        # [Do] Finalise the data
-        df_full = df_full.dropna(subset=["N"])
-        df_full = df_full[df_full["N"] > 0]
-        df_full["V"] = df_full["V"].fillna(1.0)
-        df_full["log_V"] = np.where(df_full["V"] > 0, np.log(df_full["V"]), 0.0)
-        df_full["y"] = df_full["y"].fillna(0)
-
-        return df_full
 
     def construct_log_P(self) -> NDArray:
         """
@@ -372,239 +204,49 @@ class BaseLoader(ABC):
         -------
         NDArray
             Log population distribution. If no stratification, shape (1, A). If stratified,
-            shape (1, K*A) where K is the possible strata combinations.
+            shape (K, A) where K is the possible strata combinations.
         """
-        if self.col_map.strat_vars_pop:
-            P = (
-                self.pop_data.pivot(
-                    index=self.col_map.strat_vars_pop,
-                    columns=self.col_map.age_pop,
-                    values=self.col_map.P,
-                )
-                .fillna(1)
-                .to_numpy()
-            )  # shape (K, A)
-
-        else:
-            P = self.pop_data[self.col_map.P].to_numpy()[np.newaxis, :]  # shape (1, A)
-
-        return np.log(P)
+        return construct_log_P(self.pop_data, self.col_map)
 
     def infer_strat_modes(self) -> Dict[str, StratMode]:
-        """
-        Infer stratification modes (PARTIAL vs FULL) for each stratification variable.
-
-        Returns
-        -------
-        Dict[str, StratMode]
-            Dictionary mapping variable name to StratMode ('partial' or 'full').
-        """
-        strat_modes: Dict[str, StratMode] = {}
-
-        strat_vars_part = (
-            [var.replace("_part", "") for var in self.col_map.strat_vars_part]
-            if self.col_map.strat_vars_part
-            else []
-        )
-
-        strat_vars_cnt = (
-            [var.replace("_cnt", "") for var in self.col_map.strat_vars_cnt]
-            if self.col_map.strat_vars_cnt
-            else []
-        )
-
-        if len(strat_vars_part) > 0:
-            for var in strat_vars_part:
-                if len(strat_vars_cnt) > 0 and var in strat_vars_cnt:
-                    strat_modes[var] = StratMode.FULL
-                else:
-                    strat_modes[var] = StratMode.PARTIAL
-
-        return strat_modes
+        """Infer stratification modes (PARTIAL vs FULL) for each stratification variable."""
+        return infer_strat_modes(self.col_map)
 
     def infer_strat_dims(self, strat_modes: Dict[str, StratMode]) -> Dict[str, int]:
-        """Infer number of categories (dimensions) for each stratification variable."""
-        strat_dims: Dict[str, int] = {}
-
-        for var, mode in strat_modes.items():
-            categories = self.data[var + "_part"].cat.categories
-
-            if mode == StratMode.PARTIAL:
-                strat_dims[var] = len(categories)
-            elif mode == StratMode.FULL:
-                strat_dims[var] = len(categories) ** 2
-
-        return strat_dims
+        """Infer number of category combinations for each stratification variable."""
+        return infer_strat_dims(self.df_full, strat_modes)
 
     def infer_strat_labels(
         self, strat_modes: Dict[str, StratMode]
     ) -> Dict[str, List[str]]:
         """Infer labels for each stratification variable based on its mode."""
-        strat_labels: Dict[str, List[str]] = {}
-
-        for var, mode in strat_modes.items():
-            categories = self.data[var + "_part"].cat.categories
-
-            if mode == StratMode.PARTIAL:
-                labels = [f"{cat}->All" for cat in categories]
-            elif mode == StratMode.FULL:
-                labels = [
-                    f"{cat1}->{cat2}" for cat1 in categories for cat2 in categories
-                ]
-
-            strat_labels[var] = labels
-
-        return strat_labels
+        return infer_strat_labels(self.df_full, strat_modes)
 
     def infer_full_strat_labels(
         self, strat_dims: Dict[str, int], strat_labels: Dict[str, List[str]]
     ) -> List[str]:
-        """
-        Infer full stratification labels combining participant and contact categories.
-
-        Generates labels for ALL possible category combinations based on dims,
-        not just observed combinations. This is important for cross-validation
-        scenarios where some category combinations may be missing from the data.
-
-        Parameters
-        ----------
-        strat_dims : Dict[str, int]
-            Dictionary mapping stratification variable names to their dimensions
-            (already accounting for FULL mode squaring).
-        strat_labels : Dict[str, List[str]]
-            Dictionary mapping variable names to their category labels
-            (in "source->target" format).
-
-        Returns
-        -------
-        List[str]
-            Full stratification labels for all possible combinations.
-
-        Notes
-        -----
-        Labels are generated in row-major order to match make_flat_ix():
-        rightmost variable varies fastest.
-        """
-        full_labels: List[str] = []
-        strat_vars = list(strat_dims.keys())
-
-        # CRITICAL: Reverse the variable order to match make_flat_ix()
-        # This ensures rightmost variable varies fastest, consistent with how flat_ix is constructed
-        dim_ranges = [range(strat_dims[var]) for var in strat_vars]
-
-        for cat_codes in product(*dim_ranges):
-            # Build composite label by concatenating source and target parts
-            parts = []
-            for i, code in enumerate(cat_codes):
-                var = strat_vars[i]
-                parts.append(strat_labels[var][code])
-
-            # Split each "source->target" and combine
-            sources = [p.split("->")[0] for p in parts]
-            targets = [p.split("->")[1] for p in parts]
-
-            # Join with underscores
-            source_label = "_".join(sources)
-            # Filter out "All" targets and join remaining
-            target_parts = [t for t in targets if t != "All"]
-            target_label = "_".join(target_parts) if target_parts else "All"
-
-            full_label = f"{source_label}->{target_label}"
-            full_labels.append(full_label)
-
-        return full_labels
+        """Infer full stratification labels for all possible category combinations."""
+        return infer_full_strat_labels(strat_dims, strat_labels)
 
     def infer_strat_ixs(self, strat_modes: Dict[str, StratMode]) -> Dict[str, NDArray]:
         """Infer stratification variable indices for each observation."""
-        strat_ixs: Dict[str, NDArray] = {}
-
-        for var, mode in strat_modes.items():
-            if mode == StratMode.PARTIAL:
-                strat_ixs[var] = self.df_full[var + "_part"].cat.codes.to_numpy()
-            elif mode == StratMode.FULL:
-                part_codes = self.df_full[var + "_part"].cat.codes.to_numpy()
-                cnt_codes = self.df_full[var + "_cnt"].cat.codes.to_numpy()
-                n_categories = len(self.df_full[var + "_part"].cat.categories)
-                strat_ixs[var] = part_codes * n_categories + cnt_codes
-
-        return strat_ixs
+        return infer_strat_ixs(self.df_full, strat_modes)
 
     def infer_strat_pixs(
         self, strat_modes: Dict[str, StratMode], strat_dims: Dict[str, int]
-    ) -> Dict[str, NDArray]:
-        """Infer population stratification variable indices for each observation."""
-        strat_pixs: Dict[str, NDArray] = {}
-
-        for var, mode in strat_modes.items():
-            # Only relevanat for FULL mode
-            if mode == StratMode.FULL:
-                cnt_codes = self.df_full[var + "_cnt"].cat.codes.to_numpy()
-                strat_pixs[var] = cnt_codes
-            else:
-                strat_pixs[var] = np.zeros(len(self.df_full), dtype=int)
-
-        # Create flat indices for population stratification
-        n_obs = len(next(iter(strat_pixs.values())))
-        flat_pixs = np.zeros(n_obs, dtype=int)
-        multiplier = 1
-        for var, mode in reversed(strat_modes.items()):
-            dim = strat_dims[var] if mode == StratMode.FULL else 1
-            flat_pixs += strat_pixs[var] * multiplier
-            multiplier *= dim
-
-        return flat_pixs
+    ) -> NDArray:
+        """Infer population stratum flat indices for each observation."""
+        return infer_strat_pixs(self.df_full, strat_modes, strat_dims)
 
     def make_flat_ix(
         self, strat_ixs: Dict[str, NDArray], strat_dims: Dict[str, int]
     ) -> NDArray:
         """Create flat index combining all stratification variable indices."""
-        n_obs = len(next(iter(strat_ixs.values())))
-        flat_ix = np.zeros(n_obs, dtype=int)
+        return make_flat_ix(strat_ixs, strat_dims)
 
-        multiplier = 1
-        for var, dim in reversed(strat_dims.items()):
-            flat_ix += strat_ixs[var] * multiplier
-            multiplier *= dim
-
-        return flat_ix
-
-    def make_strat_data(self) -> ModelStratData:
-        modes = self.infer_strat_modes()
-        dims = self.infer_strat_dims(modes)
-        labels = self.infer_strat_labels(modes)
-        ixs = self.infer_strat_ixs(modes)
-        flat_pixs = self.infer_strat_pixs(modes, dims)
-        flat_ix = self.make_flat_ix(ixs, dims)
-        full_labels = self.infer_full_strat_labels(dims, labels)
-
-        if self.strat_data is not None:
-            marginal_demopty = self.strat_data.compute_marginal_demopty(modes, labels)
-
-            # Demographic Opportunity
-            demopty = self.strat_data.compute_demopty(modes, full_labels)
-
-            return ModelStratData(
-                modes=modes,
-                dims=dims,
-                labels=labels,
-                ixs=ixs,
-                flat_pixs=flat_pixs,
-                flat_ix=flat_ix,
-                full_labels=full_labels,
-                marginal_multipliers=marginal_demopty,
-                multipliers=demopty,
-            )
-        else:
-            # Multipliers are not needed for vdKassteele models
-            return ModelStratData(
-                modes=modes,
-                dims=dims,
-                labels=labels,
-                ixs=ixs,
-                flat_pixs=flat_pixs,
-                flat_ix=flat_ix,
-                full_labels=full_labels,
-            )
+    def make_strat_data(self) -> Dict:
+        """Return stratification fields as a dict of ModelData keyword arguments."""
+        return assemble_strat_kwargs(self.df_full, self.col_map, self.strat_data)
 
     def load(self) -> ModelData:
         """
@@ -697,49 +339,51 @@ class BaseLoader(ABC):
         self._df_full_cache = self._build_df_full()
 
         # ========================
-        # Construct ModelBaseData
+        # Build required fields
         # ========================
-        base_data = ModelBaseData(
+        aid = self.df_full[self.col_map.age_part].to_numpy()
+
+        bid = None
+        aid_exp = None
+        bid_pad = None
+        if self.col_map.age_cnt:
+            bid = self.df_full[self.col_map.age_cnt].to_numpy()
+        elif self.col_map.age_grp_cnt:
+            aid_exp, bid_pad = make_idarrs_for_intervals(
+                self.df_full, self.col_map.age_grp_cnt, aid
+            )
+
+        rid = None
+        if self.col_map.repeat_part is not None:
+            rid = self.df_full[self.col_map.repeat_part].astype(int).to_numpy()
+
+        # ============================
+        # Build stratification kwargs
+        # ============================
+        strat_kwargs: Dict = {}
+        if len(self.col_map.strat_vars_part) > 0:  # type: ignore
+            strat_kwargs = self.make_strat_data()
+            if self.col_map.age_grp_cnt:
+                strat_kwargs["flat_ix_exp"] = expand_ix_array(
+                    strat_kwargs["flat_ix"], bid_pad.shape[1]  # type: ignore
+                )
+
+        # ============================
+        # Construct ModelData
+        # ============================
+        self.model_data = ModelData(
             y=self.df_full["y"].to_numpy(),
-            aid=self.df_full[self.col_map.age_part].to_numpy(),
+            aid=aid,
             log_N=np.log(self.df_full["N"].to_numpy()),
             log_V=self.df_full["log_V"].to_numpy(),
             log_P=self.construct_log_P(),
             age_min=self.min_age,
             age_max=self.max_age,
+            bid=bid,
+            aid_exp=aid_exp,
+            bid_pad=bid_pad,
+            rid=rid,
+            **strat_kwargs,
         )
-
-        if self.col_map.age_cnt:
-            base_data["bid"] = self.df_full[self.col_map.age_cnt].to_numpy()
-        elif self.col_map.age_grp_cnt:
-            # [Do] Create indices for age aggregation
-            aid_exp, bid_pad = make_idarrs_for_intervals(
-                self.df_full, self.col_map.age_grp_cnt, base_data["aid"]
-            )
-            base_data["aid_exp"] = aid_exp
-            base_data["bid_pad"] = bid_pad
-
-        # If repeat effects are specified
-        if self.col_map.repeat_part is not None:
-            base_data["rid"] = (
-                self.df_full[self.col_map.repeat_part].astype(int).to_numpy()
-            )
-
-        # ============================
-        # Construct stratification data
-        # ============================
-        if len(self.col_map.strat_vars_part) > 0:
-            strat_data = self.make_strat_data()
-            if self.col_map.age_grp_cnt:
-                strat_data["flat_ix_exp"] = expand_ix_array(
-                    strat_data["flat_ix"], base_data["bid_pad"].shape[1]
-                )
-        else:
-            strat_data = {}
-
-        # ============================
-        # Construct ModelData
-        # ============================
-        self.model_data = ModelData(base_data, strat_data)
 
         return self.model_data

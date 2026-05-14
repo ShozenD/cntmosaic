@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 
 from ...dataloader.containers import PopulationData
 from ...models import Prem
-from ...models._socialmix_age_processing import AgeBinProcessor
+from ...models.classical._socialmix_age_processing import AgeBinProcessor
 from ...utils import AgeBins, depixilate, pixilate
 
 
@@ -345,8 +345,7 @@ class ModelSummariserPrem:
         # Extract age distribution from PopulationData if provided
         if self.pop_data is not None:
             # Get fine-grained age distribution (unstratified)
-            age_dist_df = self.pop_data.get_age_distribution(by_group=False)
-            self.age_dist = age_dist_df.values
+            self.age_dist = self.pop_data.data.groupby("age")["P"].sum().values
         else:
             warnings.warn(
                 "PopulationData not provided. "
@@ -440,7 +439,7 @@ class ModelSummariserPrem:
         from cntmosaic.utils import AgeBins
 
         # Get the population DataFrame
-        df_pop = pop_data.df_pop.copy()
+        df_pop = pop_data.data.copy()
 
         # Create age group bins
         age_edges = list(age_bins.left) + [age_bins.max + 1]
@@ -560,7 +559,7 @@ class ModelSummariserPrem:
                 )
 
             # Get population distribution
-            age_grp_dist = pop_data.get_age_distribution(by_group=False).values
+            age_grp_dist = pop_data.data.groupby("age")["P"].sum().values
 
             # Check if aggregation is needed
             n_age_groups = cint_samples.shape[1]
@@ -575,7 +574,7 @@ class ModelSummariserPrem:
                 pop_data = ModelSummariserPrem._aggregate_population_to_bins(
                     pop_data, age_bins, strat_mode
                 )
-                age_grp_dist = pop_data.get_age_distribution(by_group=False).values
+                age_grp_dist = pop_data.data.groupby("age")["P"].sum().values
 
                 # Validate after aggregation
                 if len(age_grp_dist) != n_age_groups:
@@ -605,20 +604,19 @@ class ModelSummariserPrem:
                 )
 
             # Extract stratified populations
-            pop_by_group = pop_data.get_age_distribution(by_group=True)
+            pop_by_group = pop_data.data.copy()
+            strat_vars = pop_data.get_strat_vars()
 
             # Determine stratification variable name
-            if not pop_data.strat_var_cols:
+            if not strat_vars:
                 raise ValueError(
                     "PopulationData must have stratification variables for full mode"
                 )
 
-            if pop_data.n_strat_vars > 1:
+            if len(strat_vars) > 1:
                 # Build composite strata string
-                pop_by_group["strata"] = pop_by_group[pop_data.strat_var_cols[0]].astype(
-                    str
-                )
-                for col in pop_data.strat_var_cols[1:]:
+                pop_by_group["strata"] = pop_by_group[strat_vars[0]].astype(str)
+                for col in strat_vars[1:]:
                     pop_by_group["strata"] = (
                         pop_by_group["strata"] + "_" + pop_by_group[col].astype(str)
                     )
@@ -630,7 +628,7 @@ class ModelSummariserPrem:
                 )["P"]
             else:
                 # Set as index and keep only age and population columns
-                composite_col = pop_data.strat_var_cols[0]
+                composite_col = strat_vars[0]
                 pop_by_group_indexed = pop_by_group[[composite_col, "age", "P"]].set_index(
                     [composite_col, "age"]
                 )["P"]
@@ -660,12 +658,13 @@ class ModelSummariserPrem:
                 pop_data = ModelSummariserPrem._aggregate_population_to_bins(
                     pop_data, age_bins, strat_mode
                 )
-                pop_by_group = pop_data.get_age_distribution(by_group=True)
-                
+                pop_by_group = pop_data.data.copy()
+
                 # Re-index after aggregation
-                if pop_data.n_strat_vars > 1:
-                    pop_by_group["strata"] = pop_by_group[pop_data.strat_var_cols[0]].astype(str)
-                    for col in pop_data.strat_var_cols[1:]:
+                _strat_vars = pop_data.get_strat_vars()
+                if len(_strat_vars) > 1:
+                    pop_by_group["strata"] = pop_by_group[_strat_vars[0]].astype(str)
+                    for col in _strat_vars[1:]:
                         pop_by_group["strata"] = pop_by_group["strata"] + "_" + pop_by_group[col].astype(str)
                     pop_by_group_indexed = pop_by_group[["strata", "age", "P"]].set_index(["strata", "age"])["P"]
                 else:
@@ -808,7 +807,7 @@ class ModelSummariserPrem:
                     "For unstratified mode, samples should be NDArray, not Dict"
                 )
 
-            age_dist = pop_data.get_age_distribution(by_group=False)["P"].values
+            age_dist = pop_data.data.groupby("age")["P"].sum().values
             n_samples = samples.shape[0]
 
             # Preallocate output
@@ -825,19 +824,18 @@ class ModelSummariserPrem:
             raise ValueError("For stratified mode, samples should be Dict")
 
         # Extract stratified populations
-        pop_by_group = pop_data.get_age_distribution(by_group=True)
+        pop_by_group = pop_data.data.copy()
+        _strat_vars = pop_data.get_strat_vars()
 
-        if not pop_data.strat_var_cols:
+        if not _strat_vars:
             raise ValueError(
                 "PopulationData must have stratification variables for stratified depixilation"
             )
 
-        if pop_data.n_strat_vars > 1:
+        if len(_strat_vars) > 1:
             # Build composite strata string
-            pop_by_group["strata"] = pop_by_group[pop_data.strat_var_cols[0]].astype(
-                str
-            )
-            for col in pop_data.strat_var_cols[1:]:
+            pop_by_group["strata"] = pop_by_group[_strat_vars[0]].astype(str)
+            for col in _strat_vars[1:]:
                 pop_by_group["strata"] = (
                     pop_by_group["strata"] + "_" + pop_by_group[col].astype(str)
                 )
@@ -849,7 +847,7 @@ class ModelSummariserPrem:
             )["P"]
         else:
             # Set as index and keep only age and population columns
-            composite_var = pop_data.strat_var_cols[0]
+            composite_var = _strat_vars[0]
             pop_by_group = pop_by_group[[composite_var, "age", "P"]].set_index(
                 [composite_var, "age"]
             )["P"]

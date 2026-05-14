@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from .._types import StratumLabel  # noqa: F401
+
 
 class ContactGenerator:
     """
@@ -741,7 +743,7 @@ class ContactGenerator:
 
     def get_contact_matrix_empirical(
         self, contacts: pd.DataFrame = None, normalize: bool = False
-    ) -> Dict[str, NDArray]:
+    ) -> Dict[str, NDArray]:  # keys are "source->target" matrix labels
         """
         Calculate empirical contact matrix from generated contact data.
 

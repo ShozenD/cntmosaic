@@ -23,7 +23,7 @@ class TestInit:
     def test_basic(self, df_cnt_one_year):
         """Test basic initialization with exact contact ages."""
 
-        cnt_data = ContactData(df_cnt=df_cnt_one_year, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(data=df_cnt_one_year, id_col="id", age_col="age_cnt")
 
         assert cnt_data.n == 6
         assert cnt_data.n_part == 5
@@ -33,7 +33,7 @@ class TestInit:
     def test_basic_age_grp(self, df_cnt_age_grps):
         """Test initialization with age groups (IntervalIndex)."""
         df_cnt = df_cnt_age_grps
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+        cnt_data = ContactData(data=df_cnt, id_col="id", age_grp_col="age_grp_cnt")
 
         assert cnt_data.n == 6
         assert cnt_data.n_part == 5
@@ -44,13 +44,12 @@ class TestInit:
         """Test initialization with a single stratification variable as string."""
 
         cnt_data = ContactData(
-            df_cnt=df_cnt_one_year,
+            data=df_cnt_one_year,
             id_col="id",
             age_col="age_cnt",
             strat_var_cols="sex_cnt",
         )
 
-        assert cnt_data.strat_vars == ["sex_cnt"]
         assert cnt_data.get_strat_vars(suffix=False) == ["sex"]
         assert cnt_data.get_strat_vars(suffix=True) == ["sex_cnt"]
 
@@ -59,13 +58,12 @@ class TestInit:
         df_cnt = df_cnt_one_year
 
         cnt_data = ContactData(
-            df_cnt=df_cnt,
+            data=df_cnt,
             id_col="id",
             age_col="age_cnt",
             strat_var_cols=["sex_cnt", "hhsize_cnt"],
         )
 
-        assert cnt_data.strat_vars == ["sex_cnt", "hhsize_cnt"]
         assert cnt_data.get_strat_vars(suffix=False) == ["sex", "hhsize"]
         assert cnt_data.get_strat_vars(suffix=True) == ["sex_cnt", "hhsize_cnt"]
 
@@ -80,9 +78,11 @@ class TestValidation:
 
     def test_invalid_input(self):
         """Test that non-DataFrame input raises TypeError."""
-        with pytest.raises(TypeError, match="df_cnt must be a pandas DataFrame"):
+        with pytest.raises(TypeError, match="data must be a pandas DataFrame"):
             ContactData(
-                df_cnt=[1, 2, 3], id_col="id", age_col="contact_age"  # Not a DataFrame
+                data=[1, 2, 3],  # type: ignore
+                id_col="id",
+                age_col="contact_age",  # Not a DataFrame
             )
 
     def test_missing_age_specification(self, df_cnt_one_year):
@@ -90,7 +90,7 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="Must specify exactly one"):
             ContactData(
-                df_cnt=df_cnt_one_year,
+                data=df_cnt_one_year,
                 id_col="id",
                 # Neither age_col nor age_grp_col specified
             )
@@ -109,7 +109,7 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="Cannot specify both"):
             ContactData(
-                df_cnt=df,
+                data=df,
                 id_col="id",
                 age_col="age_cnt",
                 age_grp_col="age_grp_cnt",  # Both specified - invalid
@@ -120,24 +120,20 @@ class TestValidation:
         df = pd.DataFrame({"pid": [1, 2, 3], "age_cnt": [25, 34, 45]})
 
         with pytest.raises(KeyError, match="Missing participant ID column 'id'"):
-            ContactData(
-                df_cnt=df, id_col="id", age_col="age_cnt"  # Column doesn't exist
-            )
+            ContactData(data=df, id_col="id", age_col="age_cnt")  # Column doesn't exist
 
     def test_missing_age_column(self):
         """Test that missing age column raises KeyError."""
         df = pd.DataFrame({"id": [1, 2, 3], "age_of_contact": [25, 34, 45]})
 
         with pytest.raises(KeyError, match="Missing contact age column 'age_cnt'"):
-            ContactData(
-                df_cnt=df, id_col="id", age_col="age_cnt"  # Column doesn't exist
-            )
+            ContactData(data=df, id_col="id", age_col="age_cnt")  # Column doesn't exist
 
     def test_missing_strat_col(self, df_cnt_one_year):
         """Test that missing stratification variable raises KeyError."""
         with pytest.raises(KeyError, match="Missing contact stratification variable"):
             ContactData(
-                df_cnt=df_cnt_one_year,
+                data=df_cnt_one_year,
                 id_col="id",
                 age_col="age_cnt",
                 strat_var_cols=["sex_cnt", "workstat_cnt"],  # 'workstat' doesn't exist
@@ -148,7 +144,7 @@ class TestValidation:
         df = pd.DataFrame({"id": [1, 2, np.nan, 4], "age_cnt": [25, 34, 45, 52]})
 
         with pytest.warns(UserWarning, match="Dropped 1 contact record"):
-            cnt_data = ContactData(df_cnt=df, id_col="id", age_col="age_cnt")
+            cnt_data = ContactData(data=df, id_col="id", age_col="age_cnt")
         # Check that row was dropped
         assert cnt_data.n == 3
 
@@ -157,7 +153,7 @@ class TestValidation:
         df = pd.DataFrame({"id": [1, 2, 3, 4], "age_cnt": [25, np.nan, 45, 52]})
 
         with pytest.warns(UserWarning, match="Dropped 1 contact record"):
-            cnt_data = ContactData(df_cnt=df, id_col="id", age_col="age_cnt")
+            cnt_data = ContactData(data=df, id_col="id", age_col="age_cnt")
         # Check that row was dropped
         assert cnt_data.n == 3
 
@@ -173,7 +169,7 @@ class TestValidation:
 
         with pytest.warns(UserWarning, match="Dropped 1 contact record"):
             cnt_data = ContactData(
-                df_cnt=df, id_col="id", age_col="age_cnt", strat_var_cols="setting"
+                data=df, id_col="id", age_col="age_cnt", strat_var_cols="setting"
             )
         # Check that row was dropped
         assert cnt_data.n == 3
@@ -185,7 +181,7 @@ class TestValidation:
         )
 
         with pytest.raises(ValueError, match="negative values"):
-            ContactData(df_cnt=df, id_col="id", age_col="contact_age")
+            ContactData(data=df, id_col="id", age_col="contact_age")
 
     def test_non_numeric_ages(self):
         """Test that non-numeric ages raise ValueError."""
@@ -194,7 +190,7 @@ class TestValidation:
         )
 
         with pytest.raises(ValueError, match="must contain numeric values"):
-            ContactData(df_cnt=df, id_col="id", age_col="contact_age")
+            ContactData(data=df, id_col="id", age_col="contact_age")
 
 
 class TestProperties:
@@ -204,7 +200,7 @@ class TestProperties:
         """Test that data property returns the preprocessed DataFrame with 'y' column."""
         df = pd.DataFrame({"id": [1, 2, 3], "age_cnt": [25, 34, 45]})
 
-        cnt_data = ContactData(df_cnt=df, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(data=df, id_col="id", age_col="age_cnt")
 
         returned_df = cnt_data.data
         assert isinstance(returned_df, pd.DataFrame)
@@ -222,23 +218,23 @@ class TestProperties:
         assert cnt_data.age_range == (30, 80)
 
     def test_strat_vars_empty(self, df_cnt_one_year):
-        """Test strat_vars when no variables specified."""
+        """Test get_strat_vars() when no variables specified."""
         df_cnt = df_cnt_one_year
-        cnt_data = ContactData(df_cnt=df_cnt, id_col="id", age_col="age_cnt")
-        assert cnt_data.strat_vars == []
+        cnt_data = ContactData(data=df_cnt, id_col="id", age_col="age_cnt")
+        assert cnt_data.get_strat_vars() == []
 
     def test_strat_vars_with_vars(self, df_cnt_one_year):
-        """Test strat_vars with multiple variables."""
+        """Test get_strat_vars() with multiple variables."""
         df_cnt = df_cnt_one_year
 
         cnt_data = ContactData(
-            df_cnt,
+            data=df_cnt,
             id_col="id",
             age_col="age_cnt",
             strat_var_cols=["sex_cnt", "hhsize_cnt"],
         )
 
-        assert cnt_data.strat_vars == ["sex_cnt", "hhsize_cnt"]
+        assert cnt_data.get_strat_vars(suffix=True) == ["sex_cnt", "hhsize_cnt"]
 
 
 class TestMethods:
@@ -281,7 +277,7 @@ class TestCEdgeCases:
         """Test with a single contact."""
         df = pd.DataFrame({"id": [1], "contact_age": [25]})
 
-        cnt_data = ContactData(df_cnt=df, id_col="id", age_col="contact_age")
+        cnt_data = ContactData(data=df, id_col="id", age_col="contact_age")
 
         assert cnt_data.n == 1
         assert cnt_data.n_part == 1
@@ -291,7 +287,7 @@ class TestCEdgeCases:
         """Test that age 0 is valid."""
         df = pd.DataFrame({"id": [1, 2, 3], "contact_age": [0, 5, 10]})
 
-        cnt_data = ContactData(df_cnt=df, id_col="id", age_col="contact_age")
+        cnt_data = ContactData(data=df, id_col="id", age_col="contact_age")
 
         assert cnt_data.age_range == (0, 10)
 
@@ -307,9 +303,9 @@ class TestCEdgeCases:
         )
 
         cnt_data = ContactData(
-            df_cnt=df, id_col="id", age_col="age_cnt", strat_var_cols="setting"
+            data=df, id_col="id", age_col="age_cnt", strat_var_cols="setting"
         )
 
         assert cnt_data.n == n
         assert cnt_data.n_part <= 1000
-        assert len(cnt_data.strat_vars) == 1
+        assert len(cnt_data.get_strat_vars()) == 1

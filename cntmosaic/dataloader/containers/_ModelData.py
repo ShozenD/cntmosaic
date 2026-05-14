@@ -1,50 +1,81 @@
 """
-This module defines data container classes for BRC models.
-These containers hold processed data that are then passed to the models as inputs.
-They make sure that the data is of the correct format and type required by the models.
+Unified data container for contact survey model inputs.
+
+Internal API — not exported from ``cntmosaic.dataloader``. Produced by
+``DataLoader.load()`` and consumed by all model classes.
 """
 
-from typing import TYPE_CHECKING, Dict, List, Optional, TypedDict, Union
+from __future__ import annotations
 
-import jax.numpy as jnp
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
 from numpy.typing import NDArray
 
 from ..._types import StratMode
 
-if TYPE_CHECKING:
-    from ._StratificationData import StratificationData
 
-
-class ModelBaseData(TypedDict, total=False):
+@dataclass
+class ModelData:
     """
-    Type-safe container for contact survey data.
+    Flat, type-safe container for contact survey model inputs.
+
+    All fields are direct attributes — no nested dicts. Optional fields default
+    to ``None``; use ``field is not None`` to check presence.
 
     Required Fields
     ---------------
     y : NDArray
-        Contact counts, shape (n_obs,)
+        Contact counts, shape (n_obs,).
     aid : NDArray
-        Participant age indices, shape (n_obs,)
+        Participant age indices, shape (n_obs,).
     log_N : NDArray
-        Log sample sizes, shape (n_obs,)
+        Log sample sizes, shape (n_obs,).
     log_P : NDArray
-        Log population distribution, shape (A,)
+        Log population distribution, shape (1, A) or (K, A) for stratified.
+    age_min : int
+        Minimum age in the aligned age range.
+    age_max : int
+        Maximum age in the aligned age range.
 
-    Optional Fields
-    ---------------
-    log_S : NDArray
-        Log offsets (e.g., for settings), shape (n_obs,)
-    rid : NDArray
-        Repeat interview indicators, shape (n_obs,)
-    aid_exp : NDArray
-        Expanded age indices (for BRCrefine), shape (n_obs,)
-    bid : NDArray
-        Contact age indices, shape (n_obs,)
-    bid_pad : NDArray
-        Padded age indices (for BRCrefine), shape (n_obs,)
+    Optional Observation Fields
+    ---------------------------
+    log_V : NDArray or None
+        Log ambiguous-contact offsets, shape (n_obs,).
+    rid : NDArray or None
+        Repeat interview indicators, shape (n_obs,).
+    bid : NDArray or None
+        Contact age indices (fine resolution), shape (n_obs,).
+    aid_exp : NDArray or None
+        Expanded participant age indices (coarse contact ages), shape (n_obs, B).
+    bid_pad : NDArray or None
+        Padded contact age indices (coarse contact ages), shape (n_obs, B).
+    log_S : NDArray or None
+        Log setting offsets (vdKassteele model), shape (n_obs,).
+
+    Optional Stratification Fields
+    --------------------------------
+    strat_modes : Dict[str, StratMode] or None
+        Stratification mode per variable (PARTIAL or FULL).
+    strat_dims : Dict[str, int] or None
+        Number of category combinations per stratification variable.
+    strat_labels : Dict[str, List[str]] or None
+        Category labels per variable in ``"source->target"`` format.
+    flat_ix : NDArray or None
+        Combined flat stratum indices for each observation.
+    flat_pixs : NDArray or None
+        Combined flat population-stratum indices for each observation.
+    flat_ix_exp : NDArray or None
+        Expanded flat indices for HiBRCrefine (coarse contact ages).
+    full_labels : List[str] or None
+        Labels for all possible stratum combinations.
+    marginal_multipliers : Dict[str, NDArray] or None
+        Marginal demographic opportunity weights per variable.
+    multipliers : NDArray or None
+        Joint demographic opportunity weights.
     """
 
-    # Required fields
+    # Required observation fields
     y: NDArray
     aid: NDArray
     log_N: NDArray
@@ -52,69 +83,40 @@ class ModelBaseData(TypedDict, total=False):
     age_min: int
     age_max: int
 
-    # Optional fields (total=False allows these to be missing)
-    log_V: NDArray
-    rid: NDArray
-    aid_exp: NDArray
-    bid: NDArray
-    bid_pad: NDArray
+    # Optional observation fields
+    log_V: Optional[NDArray] = None
+    rid: Optional[NDArray] = None
+    bid: Optional[NDArray] = None
+    aid_exp: Optional[NDArray] = None
+    bid_pad: Optional[NDArray] = None
+    log_S: Optional[NDArray] = None
 
-
-class ModelStratData(TypedDict):
-    """Metadata for stratification (HiBRC models)."""
-
-    vars: Dict[str, List[str]]  # {var_name: [category_names]}
-    modes: Dict[str, StratMode]  # {var_name: StratMode.PARTIAL | StratMode.FULL}
-    dims: Dict[str, int]  # {var_name: [number of dimensions]}
-    labels: Dict[str, str]  # {var_name: label}
-    ixs: Dict[str, NDArray]  # {var_name: categorical_codes}
-    flat_pixs: NDArray  # Combined flat population category indices
-    flat_ix: NDArray  # Combined flat indices
-    flat_ix_exp: NDArray  # Expanded flat indices for HiBRCrefine model
-    full_labels: List[str]
-    marginal_multipliers: Optional[Dict[str, NDArray]] = None  # {var_name: NDArray}
+    # Optional stratification fields
+    strat_modes: Optional[Dict[str, StratMode]] = None
+    strat_dims: Optional[Dict[str, int]] = None
+    strat_labels: Optional[Dict[str, List[str]]] = None
+    flat_ix: Optional[NDArray] = None
+    flat_pixs: Optional[NDArray] = None
+    flat_ix_exp: Optional[NDArray] = None
+    full_labels: Optional[List[str]] = None
+    marginal_multipliers: Optional[Dict[str, NDArray]] = None
     multipliers: Optional[NDArray] = None
 
-
-class ModelData:
-    """
-    Lightweight, type-safe container for model input data.
-    """
-
-    def __init__(
-        self,
-        base_data: ModelBaseData,
-        strat_data: Optional[ModelStratData] = None,
-    ) -> None:
-        self.base_data = base_data
-        self.strat_data = strat_data or {}
-        self._validate()
-
-    def _validate(self) -> None:
-        """Validate required fields and array shapes."""
-        required = ["y", "aid", "log_N", "log_P"]
-        for field in required:
-            if field not in self.base_data:
-                raise ValueError(f"Missing required field: {field}")
-
-        # Shape validation
-        n_obs = len(self.base_data["y"])
+    def __post_init__(self) -> None:
+        n_obs = len(self.y)
         for field in ["aid", "log_N"]:
-            if len(self.base_data[field]) != n_obs:
+            arr = getattr(self, field)
+            if len(arr) != n_obs:
                 raise ValueError(
-                    f"Shape mismatch: {field} has length {len(self.base_data[field])}, "
-                    f"expected {n_obs}"
+                    f"Shape mismatch: {field} has length {len(arr)}, expected {n_obs}"
                 )
 
-    def get(self, key: str, default=None):
-        """Get an array by key, with optional default."""
-        return self.base_data.get(key, default)
-
-    def has(self, key: str) -> bool:
-        """Check if an array exists in the container."""
-        return key in self.base_data
+    @property
+    def age_range(self) -> Tuple[int, int]:
+        """Return ``(age_min, age_max)``."""
+        return (self.age_min, self.age_max)
 
     @property
-    def age_range(self) -> tuple[int, int]:
-        """Return the age range as (min_age, max_age)."""
-        return (self.base_data["age_min"], self.base_data["age_max"])
+    def is_stratified(self) -> bool:
+        """True when stratification metadata is present."""
+        return self.strat_modes is not None

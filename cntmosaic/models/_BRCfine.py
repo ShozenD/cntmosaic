@@ -1,20 +1,14 @@
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import jax.numpy as jnp
-import numpyro
-import pandas as pd
-from jax.typing import ArrayLike
-from numpy.typing import NDArray
-from numpyro import distributions as dist
-from numpyro.handlers import scope
 
 from ..dataloader import DataLoader
 from ._BRC import BRC
-from .priors import Hill
+from .numpyro import BRCfineNumPyroMixin
+from .numpyro.priors import Hill
 
 
-class BRCfine(BRC):
+class BRCfine(BRCfineNumPyroMixin, BRC):
     """
     Bayesian Rate Consistency model with fine-grained age resolution.
 
@@ -102,7 +96,7 @@ class BRCfine(BRC):
     --------
     >>> from cntmosaic.dataloader import DataLoader, CoordToColumns
     >>> from cntmosaic.models import BRCfine
-    >>> from cntmosaic.models.priors import Spline2D
+    >>> from cntmosaic.models.numpyro.priors import Spline2D
     >>> from jax.random import PRNGKey
     >>>
     >>> # Set up dataloader
@@ -153,6 +147,7 @@ class BRCfine(BRC):
         priors: Dict[str, Any],
         likelihood: str = "negbin",
         inv_odist: float = 1.0,
+        backend: Optional[Any] = None,
     ) -> None:
         """
         Initialize BRCfine model with fine-grained age resolution.
@@ -167,145 +162,28 @@ class BRCfine(BRC):
             Observation likelihood ('negbin' or 'poisson').
         inv_odist : float, default=1.0
             Prior mean for inverse overdispersion (negbin only).
+        backend : InferenceBackend, optional
+            Pluggable inference engine (default: NumPyroBackend).
         """
         self.inv_odist = inv_odist
-        super().__init__(dataloader, priors, likelihood)
+        super().__init__(dataloader, priors, likelihood, backend=backend)
 
         # Convert to JAX arrays
-        self.y = jnp.array(self.data.base_data["y"])
-        self.aid = jnp.array(self.data.base_data["aid"], dtype=jnp.int32)
-        self.bid = jnp.array(self.data.base_data["bid"], dtype=jnp.int32)
-        self.log_N = jnp.array(self.data.base_data["log_N"])
-        self.log_P = jnp.array(self.data.base_data["log_P"])
+        self.y = jnp.array(self.data.y)
+        self.aid = jnp.array(self.data.aid, dtype=jnp.int32)
+        self.bid = jnp.array(self.data.bid, dtype=jnp.int32)
+        self.log_N = jnp.array(self.data.log_N)
+        self.log_P = jnp.array(self.data.log_P)
 
         # Optional offset for different settings (e.g., home, work, school)
         self.log_V = (
-            jnp.array(self.data.base_data["log_V"])
-            if "log_V" in self.data.base_data
+            jnp.array(self.data.log_V)
+            if self.data.log_V is not None
             else jnp.zeros_like(self.y)
         )
 
         # Optional repeat interview effect
-        if "rid" in self.data.base_data:
-            self.rid = jnp.array(self.data.base_data["rid"], dtype=jnp.int32)
-            self.hill = Hill(max_value=int(self.data.base_data["rid"].max()))
+        if self.data.rid is not None:
+            self.rid = jnp.array(self.data.rid, dtype=jnp.int32)
+            self.hill = Hill(max_value=int(self.data.rid.max()))
 
-    def model(
-        self,
-        y: Optional[ArrayLike] = None,
-        aid: Optional[ArrayLike] = None,
-        bid: Optional[ArrayLike] = None,
-        rid: Optional[ArrayLike] = None,
-        log_N: Optional[ArrayLike] = None,
-        log_V: Optional[ArrayLike] = None,
-    ) -> None:
-        """
-        Define the generative model for contact matrix estimation.
-
-        This method specifies the complete Bayesian model including priors,
-        transformations, and likelihood. It follows NumPyro's model specification
-        conventions and can be used with both MCMC and SVI inference.
-
-        Model Structure
-        ---------------
-        1. **Baseline effect**: $\\beta_0 ~ \\text{Normal}(- \\log(\\bar{P}), 2.5^2)$
-           - Global intercept for contact rates
-
-        2. **Smooth age-age function**: $f(a,b)$ from specified prior
-           - Captures age-structured contact patterns
-           - Prior type (Spline2D, HSGP2D, etc.) specified in self.priors['rate']
-
-        3. **Log contact rate**: $\\log(\\text{rate}) = \\beta_0 + f(a,b)$
-           - Deterministic transformation
-
-        4. **Log contact intensity**: $\\log(\\text{cint}) = \\log(\\text{rate}) + \\log(P)$
-           - Incorporates population age distribution
-
-        5. **Expected contacts**: $\\mu = \\exp(\\log(\\text{cint}[aid, bid]) + \\log(N) + \\log(S) + \\eta)$
-           - aid, bid: age indices for each observation
-           - $log(N)$: log sample size
-           - $log(S)$: log group contact offset (if applicable)
-           - $\\eta$: repeat interview effect (if applicable)
-
-        6. **Observation likelihood**:
-           - Poisson: $y \\sim \\text{Poisson}(\\mu)$
-           - Negative Binomial: $y \\sim \\text{NegativeBinomial2}(\\mu, \\text{concentration}=1/\\phi)$
-             where $\\phi \\sim \\text{Exponential}(1)$
-
-        Parameters
-        ----------
-        y : ArrayLike, optional
-            Observed contact counts. This must be provided during inference.
-            During the posterior predictive stage, if None, the model will generate posterior predictive samples.
-        aid : ArrayLike, optional
-            Participant age indices. If None, uses self.aid.
-        bid : ArrayLike, optional
-            Contact age indices. If None, uses self.bid.
-        rid : ArrayLike, optional
-            Repeat interview indicators. If None, uses self.rid.
-        log_N : ArrayLike, optional
-            Log of sample sizes. If None, uses self.log_N.
-        log_V : ArrayLike, optional
-            Log of group contact offsets. If None, uses self.log_V.
-
-        Notes
-        -----
-        - aid, bid, rid, log_N, and log_V are exposed as parameters to allow model selection using ELPD-LOO.
-
-        Examples
-        --------
-        >>> # Trace model structure
-        >>> model.print_model_shape()
-        >>>
-        >>> # Run SVI inference
-        >>> from numpyro.infer.autoguide import AutoNormal
-        >>> from numpyro.infer.initialization import init_to_mean
-        >>>
-        >>> guide = AutoNormal(model.model, init_loc_fn=init_to_mean)
-        >>> model.run_inference_svi(PRNGKey(0), guide)
-        """
-        # Use instance attributes as defaults for model parameters
-        # Note: Coded this way to facilitate model selection with ELPD-LOO
-        aid = self.aid if aid is None else aid
-        bid = self.bid if bid is None else bid
-        log_N = self.log_N if log_N is None else log_N
-        log_V = self.log_V if log_V is None else log_V
-        rid = getattr(self, "rid", None) if rid is None else rid
-        len_y = len(self.y) if y is None else len(y)
-
-        # Baseline contact rate (global intercept)
-        beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
-
-        # Smooth age-age contact rate function from prior
-        with scope(prefix="rate"):
-            f = self.priors["rate"].sample()
-
-        # Log contact rate: baseline + smooth function
-        log_rate = numpyro.deterministic("log_rate", beta0 + f)
-
-        # Log contact intensity: rate + population effect
-        log_cint = numpyro.deterministic("log_cint", log_rate + self.log_P)
-
-        # Repeat interview effect (if repeat interviews in data)
-        repeat_effect = self.hill.sample()[rid] if rid is not None else 0.0
-
-        # Expected number of contacts
-        mu = numpyro.deterministic(
-            "mu",
-            jnp.exp(log_cint[aid, bid] + log_N + log_V + repeat_effect),
-        )
-
-        # Observation likelihood
-        if self.likelihood == "poisson":
-            with numpyro.plate("data", len_y):
-                numpyro.sample("obs", dist.Poisson(rate=mu), obs=y)
-
-        elif self.likelihood == "negbin":
-            # Overdispersion parameter: smaller values = more overdispersion
-            inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
-            with numpyro.plate("data", len_y):
-                numpyro.sample(
-                    "obs",
-                    dist.NegativeBinomial2(mean=mu, concentration=1.0 / inv_disp),
-                    obs=y,
-                )

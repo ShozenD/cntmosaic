@@ -6,7 +6,7 @@ from numpy.typing import NDArray
 from numpyro import distributions as dist
 from scipy.interpolate import BSpline
 
-from .._utils import (
+from ..._utils import (
     age_age_grid,
     diff_age_age_grid,
     diff_age_age_index,
@@ -158,7 +158,7 @@ class Spline2D(Prior2D):
 
     Examples
     --------
-    >>> from cntmosaic.models.priors._Spline2D import Spline2D
+    >>> from cntmosaic.models.numpyro.priors._Spline2D import Spline2D
     >>> import numpyro
     >>> import jax.numpy as jnp
     >>> from jax import random

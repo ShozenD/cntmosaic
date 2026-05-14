@@ -1,32 +1,18 @@
 import warnings
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-import jax
-import jax.numpy as jnp
 import numpy as np
-import numpyro
 import pandas as pd
-from jax import random
 from jax.random import PRNGKey
-from jax.typing import ArrayLike
 from numpy.typing import NDArray
-from numpyro import distributions as dist
-from numpyro.handlers import plate, seed, trace
-from numpyro.infer.autoguide import AutoNormal
 
 from ..dataloader.containers import ContactData, ParticipantData
-from ..distributions import IGMRF2D
 from ..utils import AgeBins
-from ._numpyro import (
-    get_samples_svi,
-    posterior_predictive_mcmc,
-    posterior_predictive_svi,
-    run_inference_mcmc,
-    run_inference_svi,
-)
+from ._base import ContactModel
+from .numpyro import PremNumPyroMixin
 
 
-class Prem:
+class Prem(PremNumPyroMixin, ContactModel):
     """
     Estimate age-structured social contact matrices using the Prem et al. (2017) methodology.
 
@@ -207,7 +193,10 @@ class Prem:
         cnt_data: ContactData,
         age_bins: AgeBins,
         random_effects: bool = False,
+        backend: Optional[Any] = None,
     ):
+        super().__init__(backend=backend)
+
         # Store validated data containers
         self.part_data = part_data
         self.cnt_data = cnt_data
@@ -234,9 +223,6 @@ class Prem:
         self.D: Optional[int] = None
         self.cix: Optional[NDArray[np.int64]] = None
         self.dix: Optional[NDArray[np.int64]] = None
-        self._mcmc_result: Optional[numpyro.infer.MCMC] = None
-        self._svi_result: Optional[numpyro.infer.SVI] = None
-        self._guide: Optional[callable] = None
 
         # Run processing pipeline (validation already done by containers)
         self._preprocess()
@@ -262,19 +248,11 @@ class Prem:
         - Mixed: Some overlap → K=complex product
         """
         # Extract stratification variables from both containers
-        self.strat_vars_part = self.part_data.strat_vars
+        self.strat_vars_part = self.part_data.get_strat_vars()
 
-        # For contact variables, strip _cnt suffix if present (columns may already have it)
-        if self.cnt_data.strat_vars:
-            if isinstance(self.cnt_data.strat_vars, str):
-                # Single variable
-                var = self.cnt_data.strat_vars
-                self.strat_vars_cnt = [var.removesuffix("_cnt")]
-            else:
-                # List of variables
-                self.strat_vars_cnt = [
-                    var.removesuffix("_cnt") for var in self.cnt_data.strat_vars
-                ]
+        cnt_vars = self.cnt_data.get_strat_vars()
+        if cnt_vars:
+            self.strat_vars_cnt = [var.removesuffix("_cnt") for var in cnt_vars]
         else:
             self.strat_vars_cnt = []
 
@@ -675,247 +653,13 @@ class Prem:
         self.C = self.data["age_grp_part"].cat.categories.size
         self.D = self.data["age_grp_cnt"].cat.categories.size
 
-    def model(self, y: Optional[ArrayLike] = None) -> None:
-        """
-        NumPyro model definition with stratification support.
-
-        For unstratified models (K=1), samples a single set of parameters.
-        For stratified models (K>1), samples independent parameters for each
-        stratum using plates, with no hierarchical sharing.
-
-        Parameters
-        ----------
-        y : ArrayLike, optional
-            Observed contact counts. If None, samples from the prior.
-
-        Notes
-        -----
-        **Unstratified Model (K=1)**:
-        - Single beta0 (intercept)
-        - Single tau (precision)
-        - Single beta_cd (2D IGMRF field)
-
-        **Stratified Model (K>1)**:
-        - Independent beta0 for each stratum
-        - Independent tau for each stratum
-        - Independent beta_cd (2D IGMRF) for each stratum
-        - No hierarchical priors (unlike HiBRCfine)
-
-        The model does NOT adjust for reciprocity or population weighting.
-        """
-        if self.K == 1:
-            # Unstratified model - original Prem formulation
-            # Prior on intercept with reasonable scale
-            beta0 = numpyro.sample("beta0", dist.Normal(0.0, 2.5))
-
-            # Precision parameter with informative prior
-            tau = numpyro.sample("tau", dist.Gamma(2.0, 1.0))
-
-            # 2D intrinsic Gaussian Markov random field
-            beta_cd = numpyro.sample(
-                "beta_cd",
-                IGMRF2D(
-                    num_nodes=(self.C, self.D),
-                    order=(1, 1),
-                    cond_prec1=tau,
-                    cond_prec2=tau,
-                ),
-            ).reshape((self.C, self.D))
-
-            # Log contact intensities
-            log_cint = numpyro.deterministic("log_cint", beta0 + beta_cd)
-
-            # Optional random effects
-            if self.random_effects:
-                mu_re = numpyro.sample("mu_re", dist.Normal(0.0, 1.0))
-                tau_re = numpyro.sample("tau_re", dist.HalfNormal(1.0))
-
-                with plate("random_effects", self.N):
-                    sigma_re = numpyro.sample("sigma_re", dist.Normal(mu_re, tau_re))
-
-                log_lambda = log_cint[self.cix, self.dix] + sigma_re[self.iix]
-            else:
-                log_lambda = log_cint[self.cix, self.dix]
-
-        else:
-            # Stratified model - independent priors per stratum
-            # Sample independent intercepts for each stratum
-            with plate("strata", self.K):
-                beta0 = numpyro.sample("beta0", dist.Normal(0.0, 2.5))
-                tau = numpyro.sample("tau", dist.Gamma(2.0, 1.0))
-
-            # Sample independent 2D IGMRF fields for each stratum
-            # Use expand to create K independent fields
-            beta_cd = numpyro.sample(
-                "beta_cd",
-                IGMRF2D(
-                    num_nodes=(self.C, self.D),
-                    order=(1, 1),
-                    cond_prec1=tau,
-                    cond_prec2=tau,
-                )
-                .expand([self.K])
-                .to_event(1),
-            ).reshape((self.K, self.C, self.D))
-
-            # Compute log contact intensities for each stratum
-            # Reshape beta0 from (K,) to (K, 1, 1) for broadcasting with beta_cd (K, D, C)
-            log_cint = numpyro.deterministic(
-                "log_cint", beta0[:, jnp.newaxis, jnp.newaxis] + beta_cd
-            )
-
-            # Optional stratified random effects
-            if self.random_effects:
-                # Independent random effect parameters per stratum
-                with plate("strata_re", self.K):
-                    mu_re = numpyro.sample("mu_re", dist.Normal(0.0, 1.0))
-                    tau_re = numpyro.sample("tau_re", dist.HalfNormal(1.0))
-
-                # Participant-level random effects (within stratum)
-                with plate("random_effects", self.N):
-                    # Use stratum-specific hyperparameters
-                    sigma_re = numpyro.sample(
-                        "sigma_re",
-                        dist.Normal(
-                            mu_re[self.six[self.iix]], tau_re[self.six[self.iix]]
-                        ),
-                    )
-
-                log_lambda = log_cint[self.six, self.cix, self.dix] + sigma_re[self.iix]
-            else:
-                log_lambda = log_cint[self.six, self.cix, self.dix]
-
-        # Likelihood (same for both stratified and unstratified)
-        lambda_param = jnp.exp(log_lambda)
-
-        with plate("data", len(self.y)):
-            numpyro.sample("obs", dist.Poisson(lambda_param), obs=y)
-
-    def print_model_shape(self):
-        """Print the shapes of the model parameters."""
-        tr = trace(seed(self.model, random.PRNGKey(0))).get_trace()
-        print(numpyro.util.format_shapes(tr))
-
-    def run_inference_mcmc(
-        self,
-        prng_key: PRNGKey,
-        num_samples: int = 500,
-        num_warmup: int = 500,
-        num_chains: int = 2,
-        target_accept_prob: float = 0.8,
-        max_tree_depth: int = 10,
-        **kwargs,
-    ) -> None:
-        """Run full Bayesian inference using Hamiltonian Monte Carlo and NUT Sampler.
-
-        Parameters
-        ----------
-        prng_key: jax.random.PRNGKey
-            Random number generator key.
-        num_samples: int, default=1000
-            Number of samples to draw from the posterior.
-        num_warmup: int, default=1000
-            Number of warmup steps.
-        num_chains: int, default=1
-            Number of chains to run.
-        target_accept_prob: float, default=0.8
-            Target acceptance probability for NUTS.
-        max_tree_depth: int, default=10
-            Maximum tree depth for NUTS.
-        **kwargs
-            Additional keyword arguments to pass to the MCMC
-        """
-        try:
-            self._mcmc_result = run_inference_mcmc(
-                prng_key,
-                self.model,
-                num_samples=num_samples,
-                num_warmup=num_warmup,
-                num_chains=num_chains,
-                target_accept_prob=target_accept_prob,
-                max_tree_depth=max_tree_depth,
-                y=self.y,
-                **kwargs,
-            )
-
-            # Log diagnostics
-            self._log_mcmc_diagnostics()
-
-        except Exception as e:
-            raise RuntimeError(f"MCMC inference failed: {e}")
-
-    def _log_mcmc_diagnostics(self) -> None:
-        """Log MCMC diagnostics information."""
-        if self._mcmc_result is None:
-            return
-
-        try:
-            extra_fields = self._mcmc_result.get_extra_fields()
-            n_divergent = sum(extra_fields["diverging", 0])
-            print(f"Number of divergent transitions: {n_divergent}")
-
-            if n_divergent > 0:
-                warnings.warn(
-                    f"Found {n_divergent} divergent transitions. "
-                    "Consider increasing target_accept_prob or max_tree_depth."
-                )
-
-        except Exception as e:
-            warnings.warn(f"Failed to compute MCMC diagnostics: {e}")
-
-    def run_inference_svi(
-        self,
-        prng_key: PRNGKey,
-        guide: callable = None,
-        num_steps: int = 5_000,
-        peak_lr: float = 0.01,
-    ) -> None:
-        """
-        Run stochastic variational inference.
-
-        Parameters
-        ----------
-        prng_key : jax.random.PRNGKey
-            Random number generator key.
-        guide: callable
-            Variational guide function.
-        num_steps: int, default=5_000
-            Number of optimization steps.
-        peak_lr: float, default=0.01
-            Peak learning rate.
-        **model_kwargs
-            Additional keyword arguments to pass to the SVI
-        """
-        if guide is None:
-            # By default, use AutoNormal (mean-field) guide
-            guide = AutoNormal(self.model)
-
-        self._guide = guide
-
-        try:
-            self._svi_result = run_inference_svi(
-                prng_key,
-                self.model,
-                self._guide,
-                num_steps=num_steps,
-                peak_lr=peak_lr,
-                y=self.y,
-            )
-
-        except Exception as e:
-            raise RuntimeError(f"SVI inference failed: {e}")
-
     def get_samples_svi(
         self,
         rng_key: PRNGKey,
         num_samples: int = 2000,
-    ) -> Dict[str, jnp.ndarray]:
+    ) -> Dict[str, Any]:
         """
         Sample parameters from the variational posterior (guide).
-
-        This is the SVI equivalent of MCMC.get_samples() - it returns samples
-        of the model parameters (e.g., beta0, beta_cd, tau) from the learned
-        variational distribution.
 
         Parameters
         ----------
@@ -926,9 +670,8 @@ class Prem:
 
         Returns
         -------
-        Dict[str, jax.Array]
+        Dict[str, Any]
             Dictionary of parameter samples (beta0, beta_cd, tau, etc.).
-            Auto-guide internal variables are filtered out.
 
         Raises
         ------
@@ -938,85 +681,6 @@ class Prem:
         if self._svi_result is None:
             raise AttributeError("run_inference_svi must be run first.")
 
-        return get_samples_svi(
-            rng_key,
-            self._guide,
-            self._svi_result.params,
-            num_samples=num_samples,
-        )
-
-    def posterior_predictive_svi(
-        self,
-        rng_key: PRNGKey,
-        num_samples: int = 5_000,
-    ) -> Dict[str, jnp.ndarray]:
-        """
-        Generate posterior predictive samples using SVI results.
-
-        Parameters
-        ----------
-        rng_key : jax.random.PRNGKey
-            Random number generator key.
-        num_samples: int, default=2000
-            Number of samples to draw.
-
-        Returns
-        -------
-        Dict[str, jax.Array]
-            Posterior predictive samples.
-
-        Raises
-        ------
-        AttributeError
-            If SVI inference has not been run.
-
-        **model_kwargs
-            Additional keyword arguments to pass to the Predictive
-        """
-        if self._svi_result is None:
-            raise AttributeError("run_inference_svi must be run first.")
-
-        return posterior_predictive_svi(
-            rng_key,
-            self.model,
-            self._guide,
-            self._svi_result.params,
-            num_samples=num_samples,
-        )
-
-    def posterior_predictive_mcmc(
-        self,
-        rng_key: PRNGKey,
-        num_samples: int = 1000,
-    ) -> Dict[str, jax.Array]:
-        """Generate posterior predictive samples using MCMC.
-
-        Parameters
-        ----------
-        rng_key : jax.random.PRNGKey
-            Random number generator key.
-        num_samples: int, default=1000
-            Number of samples to generate.
-
-        Returns
-        -------
-        dict[str, jax.Array]
-            Posterior predictive samples.
-
-        Raises
-        ------
-        AttributeError
-            If MCMC inference has not been run.
-
-        **model_kwargs
-            Additional keyword arguments to pass to the Predictive
-        """
-        if self._mcmc_result is None:
-            raise AttributeError("run_inference_mcmc must be run first.")
-
-        return posterior_predictive_mcmc(
-            rng_key,
-            self.model,
-            self._mcmc_result.get_samples(),
-            num_samples=num_samples,
+        return self._get_backend().get_svi_samples(
+            rng_key, self._guide, self._svi_result, num_samples=num_samples
         )

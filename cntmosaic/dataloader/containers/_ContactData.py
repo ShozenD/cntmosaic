@@ -17,7 +17,7 @@ class ContactData:
 
     Attributes
     ----------
-    df_cnt : pd.DataFrame
+    data : pd.DataFrame
         DataFrame containing contact information. Each row represents one contact reported
         by a participant. Must contain columns specified by id_col, age_col (or age_grp_col),
         and strat_var_cols.
@@ -35,7 +35,7 @@ class ContactData:
         Stratification variable column name(s) for contacts.
         Can be a single string or list of strings. Examples: 'setting', ['setting', 'duration'].
     cnt_col : str, default='y'
-        Name of the column for contact counts/indicators. If not present in df_cnt,
+        Name of the column for contact counts/indicators. If not present in data,
         it will be automatically created and initialized to 1 (one contact per row).
 
     Properties
@@ -70,7 +70,7 @@ class ContactData:
     KeyError
         If required columns (id_col, age_col, age_grp_col, strat_var_cols) are missing.
     TypeError
-        If df_cnt is not a pandas DataFrame.
+        If data is not a pandas DataFrame.
 
     Examples
     --------
@@ -81,7 +81,7 @@ class ContactData:
     ...     'setting': ['home', 'work', 'home', 'other']
     ... })
     >>> cnt_data = ContactData(
-    ...     df_cnt=df,
+    ...     data=df,
     ...     id_col='participant_id',
     ...     age_col='contact_age',
     ...     strat_var_cols='setting'
@@ -102,7 +102,7 @@ class ContactData:
     ...     'duration': ['short', 'long', 'medium']
     ... })
     >>> cnt_data = ContactData(
-    ...     df_cnt=df,
+    ...     data=df,
     ...     id_col='pid',
     ...     age_grp_col='age_group',
     ...     strat_var_cols=['setting', 'duration']
@@ -154,7 +154,7 @@ class ContactData:
     ParticipantData : Validated container for participant data
     """
 
-    df_cnt: pd.DataFrame
+    data: pd.DataFrame
     id_col: str
     age_col: Optional[str] = None
     age_grp_col: Optional[str] = None
@@ -175,15 +175,15 @@ class ContactData:
         Raises
         ------
         TypeError
-            If df_cnt is not a pandas DataFrame.
+            If data is not a pandas DataFrame.
         ValueError
             If both or neither of age_col and age_grp_col are specified.
             If DataFrame becomes empty after preprocessing.
         """
         # Type validation
-        if not isinstance(self.df_cnt, pd.DataFrame):
+        if not isinstance(self.data, pd.DataFrame):
             raise TypeError(
-                f"df_cnt must be a pandas DataFrame, got {type(self.df_cnt).__name__}"
+                f"data must be a pandas DataFrame, got {type(self.data).__name__}"
             )
 
         # Normalize strat_var_cols to list format for consistent handling
@@ -208,7 +208,7 @@ class ContactData:
             )
 
         # Preprocess the DataFrame
-        object.__setattr__(self, "df_cnt", self._preprocess())
+        object.__setattr__(self, "data", self._preprocess())
 
         # Perform comprehensive validation
         self.validate()
@@ -254,7 +254,7 @@ class ContactData:
         data handling conventions.
         """
         # Step 1: Create a copy to avoid side effects
-        df = self.df_cnt.copy()
+        df = self.data.copy()
 
         # Step 2: Check that required columns exist BEFORE trying to access them
         age_column = self.age_col if self.age_col else self.age_grp_col
@@ -396,26 +396,26 @@ class ContactData:
         >>> cnt_data.validate()
         """
         # Check 1: Validate standardized ID column exists
-        if "id" not in self.df_cnt.columns:
+        if "id" not in self.data.columns:
             raise KeyError(
                 f"Missing standardized 'id' column in contacts DataFrame.\n"
-                f"Available columns: {list(self.df_cnt.columns)}\n"
+                f"Available columns: {list(self.data.columns)}\n"
                 f"Note: Original column '{self.id_col}' should have been renamed to 'id'."
             )
 
         # Check 2: Validate standardized age column exists
         if self.age_col:
-            if "age_cnt" not in self.df_cnt.columns:
+            if "age_cnt" not in self.data.columns:
                 raise KeyError(
                     f"Missing standardized 'age_cnt' column in contacts DataFrame.\n"
-                    f"Available columns: {list(self.df_cnt.columns)}\n"
+                    f"Available columns: {list(self.data.columns)}\n"
                     f"Note: Original column '{self.age_col}' should have been renamed to 'age_cnt'."
                 )
         else:
-            if "age_grp_cnt" not in self.df_cnt.columns:
+            if "age_grp_cnt" not in self.data.columns:
                 raise KeyError(
                     f"Missing standardized 'age_grp_cnt' column in contacts DataFrame.\n"
-                    f"Available columns: {list(self.df_cnt.columns)}\n"
+                    f"Available columns: {list(self.data.columns)}\n"
                     f"Note: Original column '{self.age_grp_col}' should have been renamed to 'age_grp_cnt'."
                 )
 
@@ -427,18 +427,18 @@ class ContactData:
                 for var in self.strat_var_cols
             ]
             missing_vars = [
-                var for var in expected_vars if var not in self.df_cnt.columns
+                var for var in expected_vars if var not in self.data.columns
             ]
             if missing_vars:
                 raise KeyError(
                     f"Missing standardized contact stratification variable(s) {missing_vars} in DataFrame.\n"
-                    f"Available columns: {list(self.df_cnt.columns)}\n"
+                    f"Available columns: {list(self.data.columns)}\n"
                     f"Note: Original columns {self.strat_var_cols} should have been renamed with '_cnt' suffix."
                 )
 
         # Check 4: Validate age values if using exact ages
         if self.age_col:
-            ages = self.df_cnt["age_cnt"]
+            ages = self.data["age_cnt"]
 
             # Check for non-numeric values
             if not pd.api.types.is_numeric_dtype(ages):
@@ -450,7 +450,7 @@ class ContactData:
 
             # Check for negative ages
             if (ages < 0).any():
-                negative_indices = self.df_cnt[ages < 0].index[:5].tolist()
+                negative_indices = self.data[ages < 0].index[:5].tolist()
                 raise ValueError(
                     f"Contact age column 'age_cnt' contains negative values.\n"
                     f"Contact ages must be non-negative. Rows with negative ages: {negative_indices}\n"
@@ -460,39 +460,22 @@ class ContactData:
         # Check 5: Validate age group values if using age groups
         if self.age_grp_col:
             is_categorical = isinstance(
-                self.df_cnt["age_grp_cnt"].dtype, pd.CategoricalDtype
+                self.data["age_grp_cnt"].dtype, pd.CategoricalDtype
             )
             if is_categorical:
                 are_intervals = isinstance(
-                    self.df_cnt["age_grp_cnt"].cat.categories, pd.IntervalIndex
+                    self.data["age_grp_cnt"].cat.categories, pd.IntervalIndex
                 )
                 if not are_intervals:
                     raise TypeError(
                         f"Column '{"age_grp_cnt"}' must have pd.IntervalIndex categories, "
-                        f"got {type(self.df_cnt["age_grp_cnt"].cat.categories)}"
+                        f"got {type(self.data["age_grp_cnt"].cat.categories)}"
                     )
             else:
                 raise TypeError(
                     f"Column '{"age_grp_cnt"}' must be categorical with interval categories. "
-                    f"Current type: {self.df_cnt[self.age_grp_col].dtype}"
+                    f"Current type: {self.data[self.age_grp_col].dtype}"
                 )
-
-    @property
-    def data(self) -> pd.DataFrame:
-        """
-        Return the validated contact DataFrame.
-
-        Returns
-        -------
-        pd.DataFrame
-            The validated contact data.
-
-        Examples
-        --------
-        >>> cnt_data = ContactData(df, 'id', age_col='contact_age')
-        >>> validated_df = cnt_data.data
-        """
-        return self.df_cnt
 
     @property
     def n(self) -> int:
@@ -510,7 +493,7 @@ class ContactData:
         >>> cnt_data.n
         150
         """
-        return len(self.df_cnt)
+        return len(self.data)
 
     @property
     def n_part(self) -> int:
@@ -528,7 +511,7 @@ class ContactData:
         >>> cnt_data.n_part
         45
         """
-        return self.df_cnt["id"].nunique()
+        return self.data["id"].nunique()
 
     @property
     def age_range(self) -> Tuple[float, float]:
@@ -559,26 +542,8 @@ class ContactData:
                 f"Currently using 'age_grp_col': {self.age_grp_col}"
             )
 
-        ages = self.df_cnt["age_cnt"]
+        ages = self.data["age_cnt"]
         return (float(ages.min()), float(ages.max()))
-
-    @property
-    def strat_vars(self) -> List[str]:
-        """
-        Return list of stratification variable names.
-
-        Returns
-        -------
-        List[str]
-            List of stratification variable column names (empty if none).
-
-        Examples
-        --------
-        >>> cnt_data = ContactData(df, 'id', age_col='contact_age', strat_var_cols=['setting', 'duration'])
-        >>> cnt_data.stratification_vars
-        ['setting', 'duration']
-        """
-        return self.strat_var_cols if self.strat_var_cols else []
 
     def get_strat_vars(self, suffix: bool = False) -> List[str]:
         """
@@ -628,15 +593,19 @@ class ContactData:
             values and their corresponding codes.
         """
         schema = {}
-        for var in self.strat_var_cols:
-            var_cnt = f"{var}_cnt" if not var.endswith("_cnt") else var
-            if var_cnt in self.df_cnt.columns:
-                categories = self.df_cnt[var_cnt].cat.categories.tolist()
-                codes = sorted(self.df_cnt[var_cnt].cat.codes.unique().tolist())
+        if self.strat_var_cols is None:
+            return schema
 
-                var = (
-                    var.removesuffix("_cnt") if var.endswith("_cnt") else var
-                )  # Remove suffix
-                schema[var] = {"categories": categories, "codes": codes}
+        else:
+            for var in self.strat_var_cols:
+                var_cnt = f"{var}_cnt" if not var.endswith("_cnt") else var
+                if var_cnt in self.data.columns:
+                    categories = self.data[var_cnt].cat.categories.tolist()
+                    codes = sorted(self.data[var_cnt].cat.codes.unique().tolist())
 
-        return schema
+                    var = (
+                        var.removesuffix("_cnt") if var.endswith("_cnt") else var
+                    )  # Remove suffix
+                    schema[var] = {"categories": categories, "codes": codes}
+
+            return schema

@@ -48,7 +48,7 @@ class IGMRF2D(Distribution):
 
     Examples
     --------
-    >>> from cntmosaic.distributions import IGMRF2D
+    >>> from cntmosaic.models.numpyro.distributions import IGMRF2D
     >>> import jax.numpy as jnp
     >>> from jax import random
     >>>

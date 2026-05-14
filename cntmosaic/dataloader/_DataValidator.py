@@ -5,6 +5,7 @@ ensuring consistency of stratification variables and categorical encodings
 across participant, contact, population, and stratification proportion data.
 """
 
+import copy
 import warnings
 from typing import Optional, Set, Tuple
 
@@ -298,8 +299,8 @@ class DataValidator:
                 )
 
             # Reorder categories to match reference
-            self.cnt_data.df_cnt[f"{var}_cnt"] = pd.Categorical(
-                self.cnt_data.df_cnt[f"{var}_cnt"],
+            self.cnt_data.data[f"{var}_cnt"] = pd.Categorical(
+                self.cnt_data.data[f"{var}_cnt"],
                 categories=reference_cats,
                 ordered=True,
             )
@@ -319,8 +320,8 @@ class DataValidator:
                 )
 
             # Reorder categories to match reference
-            self.pop_data.df_pop[var] = pd.Categorical(
-                self.pop_data.df_pop[var],
+            self.pop_data.data[var] = pd.Categorical(
+                self.pop_data.data[var],
                 categories=reference_cats,
                 ordered=True,
             )
@@ -389,8 +390,8 @@ class DataValidator:
         Returns
         -------
         tuple of (ParticipantData, ContactData, PopulationData, strat_data or None)
-            Validated data containers with consistent categorical encodings.
-            Categorical columns are modified in-place during validation.
+            Independent copies of the containers with corrected categorical encodings.
+            The objects passed to the constructor are never mutated.
 
         Raises
         ------
@@ -406,9 +407,29 @@ class DataValidator:
         Notes
         -----
         This method should be called before passing data to BRC model classes.
-        The validation process modifies categorical columns in-place to ensure
-        consistency, which is essential for proper array broadcasting in JAX/NumPyro.
+        Returns copies of containers so the caller's originals are not mutated.
         """
+        # Create independent copies with fresh DataFrames so originals are not mutated.
+        # copy.copy gives a shallow instance copy; we then replace .data with a fresh
+        # DataFrame copy so that column-level assignments in _consolidate_strat_var
+        # do not write back to the caller's objects.
+        orig_part = self.part_data
+        self.part_data = copy.copy(orig_part)
+        object.__setattr__(self.part_data, "data", orig_part.data.copy())
+
+        orig_cnt = self.cnt_data
+        self.cnt_data = copy.copy(orig_cnt)
+        object.__setattr__(self.cnt_data, "data", orig_cnt.data.copy())
+
+        orig_pop = self.pop_data
+        self.pop_data = copy.copy(orig_pop)
+        object.__setattr__(self.pop_data, "data", orig_pop.data.copy())
+
+        if self.strat_data is not None:
+            orig_strat = self.strat_data
+            self.strat_data = copy.copy(orig_strat)
+            object.__setattr__(self.strat_data, "data", orig_strat.data.copy())
+
         self._check_strat_var_consistency()
         self._consolidate_strat_var()
 

@@ -20,11 +20,17 @@ from cntmosaic.sim import (
     ParticipantGenerator,
     MatrixGenerator,
     ContactGenerator,
-    Subgroup,
+    PopulationConstructor,
+    Stratification,
 )
-from cntmosaic.dataloader import DataLoader, CoordToColumns
+from cntmosaic.dataloader import (
+    ContactData,
+    DataLoader,
+    ParticipantData,
+    PopulationData,
+)
 from cntmosaic.models import BRCfine
-from cntmosaic.models.priors import Spline2D
+from cntmosaic.models.numpyro.priors import Spline2D
 from cntmosaic.analysis import ModelSummariserBRC
 
 
@@ -39,25 +45,24 @@ templates = load_template_patterns("United_States")
 @pytest.fixture
 def sample_dataloader():
     """Create sample dataloader for testing."""
-    population = Subgroup(
-        n=500, age_dist=df_age_dist.P.values, mean_cint_margin=15.0, label="general"
+    strat = Stratification(
+        name="general", n_strata=1, ref_age_dist=df_age_dist.P.values, labels=["All"], seed=42
     )
+    popcon = PopulationConstructor(strats=strat)
 
     matrix_gen = MatrixGenerator(templates)
-    contact_matrix = matrix_gen.generate_single(population, seed=42)
+    contact_matrix = matrix_gen.generate_single(popcon, mean_intensity=15.0, seed=42)
 
-    part_gen = ParticipantGenerator(population)
+    part_gen = ParticipantGenerator(popcon, n_part=500)
     df_part = part_gen.generate(seed=42)
-    df_part["age_part"] = df_part["age_group"]
 
     cnt_gen = ContactGenerator(df_part, cint_matrices=contact_matrix, model="poisson")
     df_cnt = cnt_gen.generate(seed=42)
 
-    col_map = CoordToColumns(
-        age_part="age_part", age_cnt="age_cnt", age_pop="age", size_pop="P"
-    )
-
-    dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
+    part_data = ParticipantData(df_part, id_col="id", age_col="age")
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    pop_data = PopulationData(df_age_dist, age_col="age", size_col="P")
+    dataloader = DataLoader(part_data, cnt_data, pop_data)
     return dataloader
 
 
@@ -149,10 +154,10 @@ class TestModelSummariserBRCRate:
     def test_summarise_rate_custom_probs(self, brc_mcmc_model):
         """Test summarise_rate with custom probabilities."""
         summariser = ModelSummariserBRC(brc_mcmc_model)
-        summary = summariser.summarise_rate(probs=(0.1, 0.5, 0.9))
+        summary = summariser.summarise_rate(probs=(0.1, 0.9))
 
+        # summarise_rate always inserts a median at index 1 → [lower, median, upper]
         assert summary.shape[0] == 3
-        # Check 10th percentile < median < 90th percentile
         assert np.all(summary[0] <= summary[1])
         assert np.all(summary[1] <= summary[2])
 
@@ -185,10 +190,11 @@ class TestModelSummariserBRCCint:
         summariser = ModelSummariserBRC(brc_mcmc_model)
         summary = summariser.summarise_cint(alpha=0.05)
 
-        assert isinstance(summary, np.ndarray)
-        assert summary.shape[0] == 3
-        assert summary.shape[1] == summariser.model.A
-        assert summary.shape[2] == summariser.model.A
+        assert isinstance(summary, dict)
+        assert "All->All" in summary
+        assert summary["All->All"].shape[0] == 3
+        assert summary["All->All"].shape[1] == summariser.model.A
+        assert summary["All->All"].shape[2] == summariser.model.A
 
     def test_summarise_cint_values(self, brc_mcmc_model):
         """Test summarise_cint values are reasonable."""
@@ -196,20 +202,20 @@ class TestModelSummariserBRCCint:
         summary = summariser.summarise_cint(alpha=0.05)
 
         # Contact intensities should be non-negative
-        assert np.all(summary >= 0)
+        assert np.all(summary["All->All"] >= 0)
 
         # Check ordering
-        assert np.all(summary[0] <= summary[1])
-        assert np.all(summary[1] <= summary[2])
+        assert np.all(summary["All->All"][0] <= summary["All->All"][1])
+        assert np.all(summary["All->All"][1] <= summary["All->All"][2])
 
     def test_summarise_cint_svi(self, brc_svi_model):
         """Test summarise_cint with SVI model."""
         summariser = ModelSummariserBRC(brc_svi_model, num_samples=50)
         summary = summariser.summarise_cint(alpha=0.05)
 
-        assert isinstance(summary, np.ndarray)
-        assert summary.shape[0] == 3
-        assert np.all(summary >= 0)
+        assert isinstance(summary, dict)
+        assert summary["All->All"].shape[0] == 3
+        assert np.all(summary["All->All"] >= 0)
 
 
 class TestModelSummariserBRCMcint:
@@ -220,8 +226,9 @@ class TestModelSummariserBRCMcint:
         summariser = ModelSummariserBRC(brc_mcmc_model)
         summary = summariser.summarise_mcint(alpha=0.05)
 
-        assert isinstance(summary, np.ndarray)
-        assert summary.shape == (3, summariser.model.A)  # [lower, median, upper] x A
+        assert isinstance(summary, dict)
+        assert "All->All" in summary
+        assert summary["All->All"].shape == (3, summariser.model.A)  # [lower, median, upper] x A
 
     def test_summarise_mcint_values(self, brc_mcmc_model):
         """Test summarise_mcint values are reasonable."""
@@ -229,18 +236,18 @@ class TestModelSummariserBRCMcint:
         summary = summariser.summarise_mcint(alpha=0.05)
 
         # Marginal intensities should be non-negative
-        assert np.all(summary >= 0)
+        assert np.all(summary["All->All"] >= 0)
 
         # Check ordering
-        assert np.all(summary[0] <= summary[1])
-        assert np.all(summary[1] <= summary[2])
+        assert np.all(summary["All->All"][0] <= summary["All->All"][1])
+        assert np.all(summary["All->All"][1] <= summary["All->All"][2])
 
     def test_mcint_equals_sum_of_cint(self, brc_mcmc_model):
         """Test that marginal intensity equals sum of intensity matrix."""
         summariser = ModelSummariserBRC(brc_mcmc_model)
 
-        cint_median = summariser.summarise_cint(alpha=0.05)[1]  # Median
-        mcint_median = summariser.summarise_mcint(alpha=0.05)[1]  # Median
+        cint_median = summariser.summarise_cint(alpha=0.05)["All->All"][1]  # Median
+        mcint_median = summariser.summarise_mcint(alpha=0.05)["All->All"][1]  # Median
 
         # Compute marginal from full matrix
         mcint_from_cint = cint_median.sum(axis=1)
@@ -410,8 +417,8 @@ class TestIntegration:
 
         # All should be valid
         assert rate_summary.shape[0] == 3
-        assert cint_summary.shape[0] == 3
-        assert mcint_summary.shape[0] == 3
+        assert cint_summary["All->All"].shape[0] == 3
+        assert mcint_summary["All->All"].shape[0] == 3
         assert "mean" in rate_estimates
         assert rate_samples.ndim == 3
 
@@ -424,4 +431,4 @@ class TestIntegration:
         cint_summary = summariser.summarise_cint(alpha=0.05)
 
         assert rate_summary.shape[0] == 3
-        assert cint_summary.shape[0] == 3
+        assert cint_summary["All->All"].shape[0] == 3

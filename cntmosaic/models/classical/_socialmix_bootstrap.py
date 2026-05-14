@@ -13,8 +13,8 @@ import pandas as pd
 from numpy.typing import NDArray
 from tqdm import tqdm
 
-from ..dataloader import ContactData, ParticipantData, PopulationData
-from ..utils import AgeBins
+from ...dataloader import ContactData, ParticipantData, PopulationData
+from ...utils import AgeBins
 
 
 @dataclass

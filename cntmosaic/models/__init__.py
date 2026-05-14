@@ -1,26 +1,45 @@
+from ._base import ContactModel
 from ._BRC import BRC
 from ._BRCfine import BRCfine
 from ._BRCrefine import BRCrefine
 from ._HiBRCfine import HiBRCfine
 from ._HiBRCrefine import HiBRCrefine
-from ._numpyro import to_inference_data
 from ._Prem import Prem
-from ._SocialMix import SocialMix
-from ._socialmix_bootstrap import SocialMixBootstrap, BootstrapResults
 from ._vdKassteele import vdKassteele
 
+
+def __getattr__(name: str):
+    if name == "to_inference_data":
+        from ._numpyro import to_inference_data
+
+        return to_inference_data
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+# ---------------------------------------------------------------------------
+# Backward-compatibility re-exports
+# SocialMix and related classes have moved to cntmosaic.models.classical.
+# They are re-exported here so that existing code using
+#   from cntmosaic.models import SocialMix
+# continues to work without modification.
+# ---------------------------------------------------------------------------
+from .classical import BootstrapResults, SocialMix, SocialMixBootstrap
+
 __all__ = [
+    # Abstract base
+    "ContactModel",
+    # Bayesian Rate Consistency models
     "BRC",
     "BRCfine",
     "BRCrefine",
     "HiBRCfine",
     "HiBRCrefine",
+    # Other Bayesian models
     "Prem",
-    "HiBRCrefine",
+    "vdKassteele",
+    # Classical models (re-exported for backward compatibility)
     "SocialMix",
     "SocialMixBootstrap",
     "BootstrapResults",
-    "Prem",
-    "vdKassteele",
+    # Utilities
     "to_inference_data",
 ]

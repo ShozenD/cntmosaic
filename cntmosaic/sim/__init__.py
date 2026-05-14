@@ -7,8 +7,6 @@ from ._utils import print_available_countries
 
 __all__ = [
     "print_available_countries",
-    "ModelEvaluatorSVI",
-    "ModelEvaluatorMCMC",
     "Stratification",
     "PopulationConstructor",
     "ParticipantGenerator",

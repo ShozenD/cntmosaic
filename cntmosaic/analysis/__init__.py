@@ -22,6 +22,7 @@ __all__ = [
     "ModelEvaluatorSocialMix",
     "ModelEvaluatorPrem",
     "ModelVisualiser",
+    "svi_to_inference_data",
     "z_marginals",
     "frechet_bounds",
     "rtruncated_beta",

@@ -4,120 +4,17 @@ from typing import Dict, Literal, Optional
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
-from sklearn.metrics import (
-    mean_absolute_error,
-    mean_absolute_percentage_error,
-    root_mean_squared_error,
-)
 
 from ..summariser._ModelSummariserBRC import ModelSummariserBRC
+from ._base import (
+    BaseModelEvaluator,
+    aggregate_metrics,
+    compute_metrics,
+    validate_alpha,
+)
 
 
-def validate_alpha(alpha: float) -> None:
-    """Validate alpha parameter."""
-    if not 0 < alpha < 1:
-        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
-
-
-def interval_score(y_true, y_low, y_high, alpha):
-    """
-    Compute the interval score for given true values and interval bounds.
-    """
-    return np.mean(
-        (y_high - y_low)
-        + 2 / alpha * (y_low - y_true) * np.maximum(0, y_low - y_true)
-        + 2 / alpha * (y_high - y_true) * np.maximum(0, y_high - y_true)
-    )
-
-
-def compute_metrics(y_true, y_est, y_low, y_high):
-    """
-    Compute RMSE, MAE, and coverage for given true values, estimates, and interval bounds.
-    """
-    rmse = root_mean_squared_error(y_true, y_est)
-    mae = mean_absolute_error(y_true, y_est)
-    mape = mean_absolute_percentage_error(y_true, y_est) * 100
-    int_score = interval_score(y_true, y_low, y_high, alpha=0.05)
-    coverage = np.mean((y_true >= y_low) & (y_true <= y_high)) * 100
-    return rmse, mae, mape, int_score, coverage
-
-
-def process_variable_metrics(
-    data_eval: Dict[str, NDArray], data_est: Dict[str, NDArray]
-):
-    """
-    Compute metrics for a single variable across its categories and overall.
-    """
-    metrics = []
-    for key, values in data_est.items():
-        rmse, mae, mape, int_score, coverage = compute_metrics(
-            data_eval[key], values[1], values[0], values[2]
-        )
-        metrics.append(
-            {
-                "cat": key,
-                "rmse": rmse,
-                "mae": mae,
-                "mape": mape,
-                "interval_score": int_score,
-                "coverage": coverage,
-            }
-        )
-
-    # Compute overall metrics for the variable
-    y_true = np.vstack([data_eval[key] for key in data_est.keys()])
-    y_est = np.vstack([values[1] for values in data_est.values()])
-    y_low = np.vstack([values[0] for values in data_est.values()])
-    y_high = np.vstack([values[2] for values in data_est.values()])
-
-    rmse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
-
-    metrics.append(
-        {
-            "cat": "all",
-            "rmse": rmse,
-            "mae": mae,
-            "mape": mape,
-            "interval_score": int_score,
-            "coverage": coverage,
-        }
-    )
-
-    return metrics
-
-
-def aggregate_metrics(
-    data_eval: Dict[str, NDArray], data_est: Dict[str, NDArray]
-) -> pd.DataFrame:
-    """
-    Aggregate metrics for all variables and categories, and compute overall metrics.
-    """
-    all_metrics = []
-    all_metrics.extend(process_variable_metrics(data_eval, data_est))
-
-    # Compute overall metrics across all variables and categories
-    y_true = np.vstack([data_eval[cat] for cat in data_est.keys()])
-    y_est = np.vstack([values[1] for values in data_est.values()])
-    y_low = np.vstack([values[0] for values in data_est.values()])
-    y_high = np.vstack([values[2] for values in data_est.values()])
-
-    rmse, mae, mape, int_score, coverage = compute_metrics(y_true, y_est, y_low, y_high)
-    all_metrics.append(
-        {
-            "cat": "all",
-            "rmse": rmse,
-            "mae": mae,
-            "mape": mape,
-            "interval_score": int_score,
-            "coverage": coverage,
-        }
-    )
-
-    # Combine into a DataFrame
-    return pd.DataFrame(all_metrics)
-
-
-class ModelEvaluatorBRC:
+class ModelEvaluatorBRC(BaseModelEvaluator):
     """
     Evaluator for BRC-family model performance against ground truth.
 
@@ -233,24 +130,10 @@ class ModelEvaluatorBRC:
         TypeError
             If summariser is not ModelSummariserBRC instance, or incompatible types
         """
-        # Validate inputs
-        validate_alpha(alpha)
-        self._validate_summariser(summariser)
-        self._validate_true_matrix(cint_matrix_true)
+        super().__init__(summariser, cint_matrix_true, alpha)
 
-        # Store references
-        self.summariser = summariser
-        self.cint_true = cint_matrix_true
-        self.alpha = alpha
-
-        # Detect model type
+        # BRC-specific attribute
         self.model_type = self.summariser.model_type
-
-        # Compute marginal contact intensities from true matrices
-        self.mcint_true = self._compute_marginals(cint_matrix_true)
-
-        # Cache for computed metrics
-        self._metrics_cache: Dict[str, pd.DataFrame] = {}
 
     def _validate_summariser(self, summariser: ModelSummariserBRC) -> None:
         """Validate that summariser has required posterior samples."""
@@ -266,104 +149,6 @@ class ModelEvaluatorBRC:
                 "Summariser must have posterior contact intensity samples. "
                 "Ensure MCMC or SVI inference was run on the BRC model."
             )
-
-    def _validate_true_matrix(self, cint_true: NDArray | Dict[str, NDArray]) -> None:
-        """Validate true matrix dimensions and values."""
-        if isinstance(cint_true, dict):
-            # HiBRC case: Dictionary of NDArrays
-            for key, values in cint_true.items():
-                if not isinstance(values, np.ndarray):
-                    raise TypeError(
-                        f"For HiBRC models, cint_true must be dict of dicts. "
-                        f"Variable '{key}' is not a dict."
-                    )
-                self._validate_single_matrix(values, f"{key}")
-        else:
-            # BRC case: validate single matrix
-            self._validate_single_matrix(cint_true, "cint_true")
-
-    def _validate_single_matrix(self, matrix: NDArray, name: str) -> None:
-        """Validate a single contact intensity matrix."""
-        if not isinstance(matrix, np.ndarray):
-            raise TypeError(
-                f"{name} must be a numpy array, got {type(matrix).__name__}"
-            )
-
-        if matrix.ndim != 2:
-            raise ValueError(f"{name} must be 2D, got shape {matrix.shape}")
-
-        if matrix.shape[0] != matrix.shape[1]:
-            raise ValueError(f"{name} must be square, got shape {matrix.shape}")
-
-        if not np.all(np.isfinite(matrix)):
-            raise ValueError(f"{name} contains NaN or Inf values")
-
-        if np.any(matrix < 0):
-            raise ValueError(f"{name} contains negative values")
-
-    def _compute_marginals(
-        self, cint: NDArray | Dict[str, NDArray]
-    ) -> NDArray | Dict[str, NDArray]:
-        """Compute marginal contact intensities by summing over contact age."""
-        if isinstance(cint, dict):
-            # HiBRC case: compute for each category
-            mcint = {}
-            for key in cint.keys():
-                mcint[key] = cint[key].sum(axis=1)
-            return mcint
-        else:
-            # BRC case: simple sum
-            return cint.sum(axis=1)
-
-    def evaluate(self, alpha: Optional[float] = None) -> pd.DataFrame:
-        """
-        Compute all evaluation metrics.
-
-        This is a convenience method that calls both evaluate_cint() and
-        evaluate_mcint() and combines their results.
-
-        Parameters
-        ----------
-        alpha : float, optional
-            Significance level for interval metrics. If None, uses self.alpha
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame containing all metrics:
-            - For BRC models: Single row with cint and mcint metrics
-            - For HiBRC models: Multiple rows with metrics per variable/category,
-              plus overall aggregated metrics
-
-        Notes
-        -----
-        Metrics computed include:
-        - RMSE: Root mean squared error
-        - MAE: Mean absolute error
-        - MAPE: Mean absolute percentage error
-        - interval_score: Negatively oriented interval score (lower is better)
-        - coverage: Percentage of true values within credible intervals
-
-        Examples
-        --------
-        >>> evaluator = ModelEvaluatorBRC(summariser, cint_true, alpha=0.05)
-        >>> metrics = evaluator.evaluate()
-        >>> print(metrics)
-        """
-        if alpha is None:
-            alpha = self.alpha
-
-        cint_metrics = self.evaluate_cint(alpha=alpha)
-        mcint_metrics = self.evaluate_mcint(alpha=alpha)
-
-        # Add metric type column for clarity
-        cint_metrics["metric_type"] = "cint"
-        mcint_metrics["metric_type"] = "mcint"
-
-        # Combine
-        all_metrics = pd.concat([cint_metrics, mcint_metrics], ignore_index=True)
-
-        return all_metrics
 
     def evaluate_cint(self, alpha: Optional[float] = None) -> pd.DataFrame:
         """
@@ -554,7 +339,7 @@ class ModelEvaluatorBRC:
             point_est = self.summariser.get_point_estimates(quantity)
             y_hat = point_est["mean"]
 
-            # Get true values
+            # Get true values (dicts for BRC with "All->All" key)
             if quantity == "cint":
                 y_true = self.cint_true
             else:
@@ -562,24 +347,25 @@ class ModelEvaluatorBRC:
 
             # Compute errors
             if self.model_type == "brc":
-                diff = y_hat - y_true
+                y_true_arr = y_true["All->All"] if isinstance(y_true, dict) else y_true
+                diff = y_hat - y_true_arr
                 rmse = float(np.sqrt(np.mean(diff**2)))
                 mae = float(np.mean(np.abs(diff)))
 
                 # Avoid division by zero in MAPE
-                mask = y_true != 0
+                mask = y_true_arr != 0
                 if np.any(mask):
-                    mape = float(np.mean(np.abs(diff[mask] / y_true[mask])) * 100)
+                    mape = float(np.mean(np.abs(diff[mask] / y_true_arr[mask])) * 100)
                 else:
                     mape = np.inf
 
                 # Relative error - use Frobenius norm for matrices, L2 norm for vectors
                 if diff.ndim == 2:
                     norm_diff = np.linalg.norm(diff, "fro")
-                    norm_true = np.linalg.norm(y_true, "fro")
+                    norm_true = np.linalg.norm(y_true_arr, "fro")
                 else:
                     norm_diff = np.linalg.norm(diff)
-                    norm_true = np.linalg.norm(y_true)
+                    norm_true = np.linalg.norm(y_true_arr)
                 relative_error = float(
                     norm_diff / norm_true if norm_true > 0 else np.inf
                 )
@@ -625,10 +411,6 @@ class ModelEvaluatorBRC:
             self._metrics_cache[cache_key] = pd.DataFrame([result])
 
         return self._metrics_cache[cache_key].iloc[0].to_dict()
-
-    def clear_cache(self) -> None:
-        """Clear all cached metric computations."""
-        self._metrics_cache.clear()
 
     def get_cache_info(self) -> Dict[str, any]:
         """

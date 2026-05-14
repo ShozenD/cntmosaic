@@ -1,8 +1,26 @@
 from importlib import resources
 import pickle
+from typing import TypedDict
+
+import numpy as np
 import pandas as pd
-# from numpy.typing import NDArray
+
 from ..sim._utils import symmetrise_patterns, smooth_patterns
+
+
+class SurveyData(TypedDict):
+    """Return type for survey dataset loaders (load_polymod_germany, load_covimod)."""
+    contacts: pd.DataFrame
+    participants: pd.DataFrame
+    population: pd.DataFrame
+
+
+class ContactPatterns(TypedDict):
+    """Return type for load_template_patterns()."""
+    household: np.ndarray
+    school: np.ndarray
+    work: np.ndarray
+    community: np.ndarray
 
 
 def load_pickle_data(data_file_name):
@@ -18,43 +36,39 @@ def load_csv_data(data_file_name, header=0):
 	data_path = resources.files('cntmosaic.datasets.data') / data_file_name
 	return pd.read_csv(data_path, header=header)
 	
-def load_polymod_germany():
+def load_polymod_germany() -> SurveyData:
 	"""Loads the German Polymod dataset.
-	
+
 	This function loads a cleaned version of the German POLYMOD dataset.
-	
+
 	Returns
 	-------
-	dict
-			A dictionary with the following
-			- 'contacts': a pandas DataFrame with the contact data
-			- 'participants': a pandas DataFrame with the participant data
-			- 'population': a pandas DataFrame with the population data
+	SurveyData
+			A typed dict with keys 'contacts', 'participants', 'population'
+			(each a pandas DataFrame).
 	"""
-	
+
 	return load_pickle_data('polymod_germany.pkl')
 
-def load_covimod():
+def load_covimod() -> SurveyData:
 	"""Loads the COVIMOD dataset.
-	
+
 	This function loads the Covimod dataset.
-	
+
 	Returns
 	-------
-	dict
-			A dictionary with the following
-			- 'contacts': a pandas DataFrame with the contact data
-			- 'participants': a pandas DataFrame with the participant data
-			- 'population': a pandas DataFrame with the population data
+	SurveyData
+			A typed dict with keys 'contacts', 'participants', 'population'
+			(each a pandas DataFrame).
 	"""
-	
+
 	return load_pickle_data('covimod.pkl')
 
 def load_template_patterns(country: str,
 													 symmetrise: bool=False,
 													 smooth: bool=False,
 													 normalise: bool=True,
-													 max_age: int=80) -> dict:
+													 max_age: int=80) -> ContactPatterns:
 	"""Load synthetic contact patterns for a given country and region.
  
 	Parameters

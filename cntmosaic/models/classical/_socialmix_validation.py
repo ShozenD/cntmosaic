@@ -14,8 +14,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from ..dataloader import ContactData, ParticipantData, PopulationData
-from ..utils import AgeBins
+from ...dataloader import ContactData, ParticipantData, PopulationData
+from ...utils import AgeBins
 from ._socialmix_age_processing import AgeBinProcessor
 
 

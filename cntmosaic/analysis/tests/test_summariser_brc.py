@@ -154,10 +154,10 @@ class TestModelSummariserBRCRate:
     def test_summarise_rate_custom_probs(self, brc_mcmc_model):
         """Test summarise_rate with custom probabilities."""
         summariser = ModelSummariserBRC(brc_mcmc_model)
-        summary = summariser.summarise_rate(probs=(0.1, 0.5, 0.9))
+        summary = summariser.summarise_rate(probs=(0.1, 0.9))
 
+        # summarise_rate always inserts a median at index 1 → [lower, median, upper]
         assert summary.shape[0] == 3
-        # Check 10th percentile < median < 90th percentile
         assert np.all(summary[0] <= summary[1])
         assert np.all(summary[1] <= summary[2])
 

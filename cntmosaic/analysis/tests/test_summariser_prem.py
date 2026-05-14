@@ -124,6 +124,8 @@ def mock_prem_unstratified(age_bins):
     }
     prem._svi_result = None
     prem.inference_type = "mcmc"
+    prem.inference_method = "mcmc"
+    prem.draw_posterior_samples = lambda rng_key, num_samples=1000: prem._mcmc_result.get_samples()
 
     return prem
 
@@ -159,6 +161,8 @@ def mock_prem_stratified_full(age_bins):
         "log_cint": np.random.normal(0, 0.5, (n_samples, K, D, C)),
     }
     prem._svi_result = None
+    prem.inference_method = "mcmc"
+    prem.draw_posterior_samples = lambda rng_key, num_samples=1000: prem._mcmc_result.get_samples()
 
     return prem
 
@@ -199,6 +203,7 @@ class TestModelSummariserPremInitialization:
         prem = type("Prem", (), {})()
         prem._mcmc_result = None
         prem._svi_result = None
+        prem.inference_method = None
         prem.data = pd.DataFrame()
 
         with pytest.raises(ValueError, match="Either MCMC or SVI must have been run"):

@@ -230,7 +230,7 @@ Stages 3 and 4 are **not** parallelisable: Stage 4 deletes the `model()` body fr
 - No changes to the `ContactModel.model()` abstract method signature — it must remain `def model(self, y=None)` for NumPyro's handler machinery and for the existing `analysis/` code that calls `model.model`.
 - PyMC or INLA backend implementations are out of scope; this item only makes them *possible*.
 
-### 1.8 Decouple the post-processing pipeline (`analysis/`) from NumPyro
+### ~~1.8 Decouple the post-processing pipeline (`analysis/`) from NumPyro~~ ✅ DONE
 
 **Goal**: Remove all top-level `import numpyro` from `analysis/_arviz.py` so that `import cntmosaic.analysis` does not require NumPyro to be installed. Eliminate the `BRC`-specific type annotation and the private `numpyro.infer.util._predictive` call in the same file. Unify the scattered `has_mcmc` / `has_svi` branching in both summarisers by introducing a `ContactModel.get_posterior_samples()` convenience method that hides all inference-method detection and guide handling.
 

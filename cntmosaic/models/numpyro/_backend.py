@@ -145,6 +145,10 @@ class NumPyroBackend:
             **model_kwargs,
         )
 
+    def backend_name(self) -> str:
+        """Return the identifier string for this backend."""
+        return "numpyro"
+
     # ------------------------------------------------------------------
     # Extra NumPyro-specific methods (not on the Protocol)
     # ------------------------------------------------------------------

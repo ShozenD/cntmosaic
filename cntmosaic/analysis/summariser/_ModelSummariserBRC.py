@@ -176,11 +176,9 @@ class ModelSummariserBRC:
                 f"got {type(model).__name__}"
             )
 
-        # Detect inference method
-        has_mcmc = hasattr(model, "_mcmc_result") and model._mcmc_result is not None
-        has_svi = hasattr(model, "_svi_result") and model._svi_result is not None
-
-        if not (has_mcmc or has_svi):
+        # Detect inference method via ContactModel property
+        _method = model.inference_method
+        if _method is None:
             raise ValueError(
                 "Neither MCMC nor SVI has been run on the model. "
                 "Call model.run_inference_mcmc() or model.run_inference_svi() first."
@@ -188,8 +186,10 @@ class ModelSummariserBRC:
 
         # Store configuration
         self.model = model
-        self.inference_method: Literal["mcmc", "svi"] = "mcmc" if has_mcmc else "svi"
+        self.inference_method: Literal["mcmc", "svi"] = _method
         self.num_samples = num_samples
+        # Backend name for dispatch (e.g. "numpyro")
+        self._backend_name: str = model._get_backend().backend_name()
 
         # Detect model type
         # vdKassteele can be either BRC or HIBRC depending on prior_type
@@ -211,14 +211,10 @@ class ModelSummariserBRC:
         self._compute_contact_intensities()
 
     def _load_posterior(self) -> None:
-        """Load posterior samples from MCMC or SVI."""
-        if self.inference_method == "mcmc":
-            self.post_samples = self.model._mcmc_result.get_samples()
-        else:  # svi
-            # Generate samples from variational posterior
-            self.post_samples = self.model.posterior_predictive_svi(
-                PRNGKey(0), self.model._guide, num_samples=self.num_samples
-            )
+        """Load posterior samples, routing through the model's inference backend."""
+        self.post_samples = self.model.draw_posterior_samples(
+            PRNGKey(0), num_samples=self.num_samples
+        )
 
     def _compute_contact_intensities(self) -> None:
         """

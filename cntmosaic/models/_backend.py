@@ -112,3 +112,7 @@ class InferenceBackend(Protocol):
     ) -> Dict[str, Any]:
         """Generate posterior predictive samples using the variational posterior."""
         ...
+
+    def backend_name(self) -> str:
+        """Identifier string for this backend (e.g. ``"numpyro"``)."""
+        ...

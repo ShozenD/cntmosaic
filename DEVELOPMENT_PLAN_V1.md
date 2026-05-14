@@ -36,7 +36,7 @@ These issues directly prevent external researchers from adding new models. They 
 - **Effort**: S
 - **Rationale**: `__all__` exports `ModelEvaluatorSVI` and `ModelEvaluatorMCMC`, which do not exist in the `sim` module. This causes an `ImportError` for any user who does `from cntmosaic.sim import *`.
 
-### 1.7 Decouple the inference engine behind a pluggable `InferenceBackend` protocol *(consolidates former item 1.2)*
+### ~~1.7 Decouple the inference engine behind a pluggable `InferenceBackend` protocol~~ ✅ DONE *(consolidates former item 1.2)*
 
 **Goal**: Remove all top-level `import numpyro` from model files so that importing `cntmosaic.models` does not require NumPyro to be installed. Eliminate ~300 lines of duplicated inference boilerplate across `_BRC.py`, `_Prem.py`, and `_vdKassteele.py` by introducing a single `NumPyroBackend` that all concrete models delegate to.
 
@@ -52,7 +52,7 @@ These issues directly prevent external researchers from adding new models. They 
 
 ---
 
-#### Stage 1 — Introduce `InferenceBackend` Protocol (no behaviour change)
+#### ~~Stage 1~~ ✅ — Introduce `InferenceBackend` Protocol (no behaviour change)
 *PR-a: strictly additive, zero behaviour change, all existing tests must pass unchanged.*
 
 **New file `cntmosaic/models/_backend.py`**:
@@ -128,7 +128,7 @@ class InferenceBackend(Protocol):
 
 ---
 
-#### Stage 2 — Create `NumPyroBackend` in `models/numpyro/`
+#### ~~Stage 2~~ ✅ — Create `NumPyroBackend` in `models/numpyro/`
 *Still part of PR-a. All existing code paths continue to work; `_numpyro.py` free functions are not deleted.*
 
 **New `cntmosaic/models/numpyro/_backend.py`**:
@@ -143,7 +143,7 @@ class InferenceBackend(Protocol):
 
 ---
 
-#### Stage 3 — Extract NumPyro model mixins
+#### ~~Stage 3~~ ✅ — Extract NumPyro model mixins
 *Still part of PR-a. Adds new mixin files; does not modify any existing model files.*
 
 **New files** in `cntmosaic/models/numpyro/`:
@@ -158,7 +158,7 @@ A strategy/composition approach (e.g., `self._model_fn = NumPyroModelStrategy()`
 
 ---
 
-#### Stage 4 — Thread `NumPyroBackend` into model constructors and delete boilerplate
+#### ~~Stage 4~~ ✅ — Thread `NumPyroBackend` into model constructors and delete boilerplate
 *PR-b: the deletion pass. Stages 1–3 (PR-a) must be merged first.*
 
 **`ContactModel._base.py`** gains:
@@ -181,7 +181,7 @@ A strategy/composition approach (e.g., `self._model_fn = NumPyroModelStrategy()`
 
 ---
 
-#### Stage 5 — Clean up `models/__init__.py` and verify zero top-level numpyro imports
+#### ~~Stage 5~~ ✅ — Clean up `models/__init__.py` and verify zero top-level numpyro imports
 *Merged into PR-b (not a separate stage).*
 
 **`models/__init__.py`** currently imports `to_inference_data` from `_numpyro.py`, which pulls in NumPyro at `cntmosaic.models` import time. Fix: make `to_inference_data` a lazy import using `__getattr__`:

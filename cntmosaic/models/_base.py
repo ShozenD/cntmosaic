@@ -7,6 +7,7 @@ sibling modules (_BRC, _Prem, _vdKassteele, …) and must not be
 imported here to avoid circular imports.
 """
 
+import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Optional
 
@@ -32,19 +33,47 @@ class ContactModel(ABC):
         └── Prem              ← Prem et al. (2017) model
         └── vdKassteele       ← van de Kassteele model
 
-    Methods
-    -------
-    model(y=None)
-        Define the NumPyro probabilistic model.
-    run_inference_mcmc(prng_key, ...)
-        Run full Bayesian inference via HMC/NUTS.
-    run_inference_svi(prng_key, guide, ...)
-        Run stochastic variational inference.
-    posterior_predictive_mcmc(prng_key, ...)
-        Generate posterior predictive samples from MCMC results.
-    posterior_predictive_svi(prng_key, guide, ...)
-        Generate posterior predictive samples from SVI results.
+    Parameters
+    ----------
+    backend : InferenceBackend, optional
+        Pluggable inference engine.  When ``None`` (default), a
+        :class:`~cntmosaic.models.numpyro.NumPyroBackend` is constructed
+        on first use via a lazy import so that ``import cntmosaic.models``
+        does not require NumPyro to be installed.
     """
+
+    def __init__(self, backend: Optional[Any] = None) -> None:
+        self._backend: Optional[Any] = backend
+        self._mcmc_result: Optional[Any] = None
+        self._svi_result: Optional[Any] = None
+        self._guide: Optional[Callable] = None
+        self.y: Optional[Any] = None  # overridden by concrete subclasses
+
+    # ------------------------------------------------------------------
+    # Backend plumbing
+    # ------------------------------------------------------------------
+
+    def _get_backend(self) -> Any:
+        """Return the inference backend, lazily creating a NumPyroBackend."""
+        if self._backend is None:
+            from .numpyro._backend import NumPyroBackend
+
+            self._backend = NumPyroBackend()
+        return self._backend
+
+    def _make_guide(self, guide: Optional[Callable]) -> Callable:
+        """Return the guide to use for SVI.
+
+        Override in subclasses that need custom guide construction (e.g. BRC
+        which requires an explicit guide and raises if one is not provided).
+        """
+        if guide is None:
+            return self._get_backend()._build_default_guide(self.model)
+        return guide
+
+    # ------------------------------------------------------------------
+    # Abstract interface
+    # ------------------------------------------------------------------
 
     @abstractmethod
     def model(self, y: Optional[Any] = None) -> None:
@@ -60,15 +89,41 @@ class ContactModel(ABC):
         y : array-like, optional
             Observed contact counts.  When ``None`` the model samples from
             the prior (prior predictive mode).
-
-        Raises
-        ------
-        NotImplementedError
-            Raised by default if a subclass does not override this method.
         """
         raise NotImplementedError
 
-    @abstractmethod
+    # ------------------------------------------------------------------
+    # Concrete inference methods (delegating to backend)
+    # ------------------------------------------------------------------
+
+    def print_model_shape(self) -> None:
+        """Print all sample-site shapes via the backend's NumPyro trace."""
+        self._get_backend().print_model_shape(self.model)
+
+    def _log_mcmc_diagnostics(self) -> None:
+        """Log divergence count from the most recent MCMC run."""
+        if self._mcmc_result is None:
+            return
+        try:
+            extra_fields = self._get_backend().get_mcmc_extra_fields(
+                self._mcmc_result
+            )
+            if "diverging" in extra_fields:
+                import jax.numpy as jnp
+
+                n_divergent = int(jnp.sum(extra_fields["diverging"]))
+                print(f"Number of divergent transitions: {n_divergent}")
+                if n_divergent > 0:
+                    warnings.warn(
+                        f"Found {n_divergent} divergent transitions. "
+                        "Consider increasing target_accept_prob or max_tree_depth.",
+                        stacklevel=2,
+                    )
+            else:
+                print("Divergence information not available for this sampler.")
+        except Exception as e:
+            warnings.warn(f"Failed to compute MCMC diagnostics: {e}", stacklevel=2)
+
     def run_inference_mcmc(
         self,
         prng_key: PRNGKey,
@@ -98,19 +153,32 @@ class ContactModel(ABC):
             Maximum tree depth for NUTS trajectory.
         **kwargs : Any
             Additional keyword arguments forwarded to the MCMC runner.
-
-        Raises
-        ------
-        NotImplementedError
-            Raised by default if a subclass does not override this method.
         """
-        raise NotImplementedError
+        if self.y is None:
+            raise AttributeError(
+                "Observation data (self.y) has not been set. "
+                "Ensure the model is properly initialized."
+            )
+        try:
+            self._mcmc_result = self._get_backend().run_mcmc(
+                self.model,
+                prng_key,
+                num_samples=num_samples,
+                num_warmup=num_warmup,
+                num_chains=num_chains,
+                target_accept_prob=target_accept_prob,
+                max_tree_depth=max_tree_depth,
+                y=self.y,
+                **kwargs,
+            )
+            self._log_mcmc_diagnostics()
+        except Exception as e:
+            raise RuntimeError(f"MCMC inference failed: {e}") from e
 
-    @abstractmethod
     def run_inference_svi(
         self,
         prng_key: PRNGKey,
-        guide: Callable,
+        guide: Optional[Callable] = None,
         num_steps: int = 5_000,
         peak_lr: float = 0.01,
         **kwargs: Any,
@@ -122,23 +190,36 @@ class ContactModel(ABC):
         ----------
         prng_key : jax.random.PRNGKey
             JAX random number generator key for reproducibility.
-        guide : Callable
-            Variational guide (e.g. ``AutoNormal``, ``AutoLowRankMultivariateNormal``).
+        guide : Callable, optional
+            Variational guide.  When ``None``, ``_make_guide()`` constructs
+            a default ``AutoNormal`` guide via the backend.  BRC-family models
+            override ``_make_guide`` to raise if no guide is supplied.
         num_steps : int, default=5_000
             Number of SVI optimisation steps.
         peak_lr : float, default=0.01
             Peak learning rate for the cosine-annealing schedule.
         **kwargs : Any
             Additional keyword arguments forwarded to the SVI runner.
-
-        Raises
-        ------
-        NotImplementedError
-            Raised by default if a subclass does not override this method.
         """
-        raise NotImplementedError
+        if self.y is None:
+            raise AttributeError(
+                "Observation data (self.y) has not been set. "
+                "Ensure the model is properly initialized."
+            )
+        self._guide = self._make_guide(guide)
+        try:
+            self._svi_result = self._get_backend().run_svi(
+                self.model,
+                self._guide,
+                prng_key,
+                num_steps=num_steps,
+                peak_lr=peak_lr,
+                y=self.y,
+                **kwargs,
+            )
+        except Exception as e:
+            raise RuntimeError(f"SVI inference failed: {e}") from e
 
-    @abstractmethod
     def posterior_predictive_mcmc(
         self,
         prng_key: PRNGKey,
@@ -158,22 +239,20 @@ class ContactModel(ABC):
         -------
         Dict[str, jax.Array]
             Posterior predictive samples for all model variables.
-
-        Raises
-        ------
-        NotImplementedError
-            Raised by default if a subclass does not override this method.
-        AttributeError
-            If ``run_inference_mcmc`` has not been called first.
         """
-        raise NotImplementedError
+        if self._mcmc_result is None:
+            raise AttributeError(
+                "MCMC inference has not been run. Call run_inference_mcmc() first."
+            )
+        return self._get_backend().posterior_predictive_mcmc(
+            prng_key, self.model, self._mcmc_result, num_samples=num_samples
+        )
 
-    @abstractmethod
     def posterior_predictive_svi(
         self,
         prng_key: PRNGKey,
-        guide: Callable,
-        num_samples: int = 1000,
+        guide: Optional[Callable] = None,
+        num_samples: int = 1_000,
     ) -> Dict[str, Any]:
         """
         Generate posterior predictive samples from SVI results.
@@ -182,21 +261,22 @@ class ContactModel(ABC):
         ----------
         prng_key : jax.random.PRNGKey
             Random number generator key.
-        guide : Callable
-            The guide function used during SVI inference.
-        num_samples : int, default=1000
+        guide : Callable, optional
+            Guide used during inference.  Falls back to ``self._guide`` when
+            ``None`` (the stored guide from the most recent SVI run).
+        num_samples : int, default=1_000
             Number of posterior predictive samples to draw.
 
         Returns
         -------
         Dict[str, jax.Array]
             Posterior predictive samples for all model variables.
-
-        Raises
-        ------
-        NotImplementedError
-            Raised by default if a subclass does not override this method.
-        AttributeError
-            If ``run_inference_svi`` has not been called first.
         """
-        raise NotImplementedError
+        if self._svi_result is None:
+            raise AttributeError(
+                "SVI inference has not been run. Call run_inference_svi() first."
+            )
+        _guide = guide if guide is not None else self._guide
+        return self._get_backend().posterior_predictive_svi(
+            prng_key, self.model, _guide, self._svi_result, num_samples=num_samples
+        )

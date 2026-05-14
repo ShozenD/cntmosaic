@@ -9,22 +9,16 @@ from typing import Any, Dict, Optional
 
 import jax.numpy as jnp
 import numpy as np
-import numpyro
-import pandas as pd
-from jax.typing import ArrayLike
-from numpy.typing import NDArray
-from numpyro import distributions as dist
-from numpyro.handlers import plate, scope
 
 from .._types import StratMode
 from ..dataloader import DataLoader
 from ._BRCrefine import BRCrefine
-from ._math import clr, inverse_clr, kron_sum_mode_1
-from ._utils import index_mask_logsumexp
-from .priors import Hill, Prior2D, PSpline2D
+from ._math import clr
+from .numpyro import HiBRCrefineNumPyroMixin
+from .numpyro.priors import Hill, Prior2D, PSpline2D
 
 
-class HiBRCrefine(BRCrefine):
+class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
     """
     Hierarchical Bayesian Rate Consistency model with coarse-to-fine age refinement.
 
@@ -189,6 +183,7 @@ class HiBRCrefine(BRCrefine):
         dataloader: DataLoader,
         priors: Dict[str, Prior2D],
         likelihood: str = "negbin",
+        backend: Optional[Any] = None,
     ) -> None:
         """
         Initialize HiBRCrefine model with hierarchical structure and age refinement.
@@ -202,25 +197,15 @@ class HiBRCrefine(BRCrefine):
             per stratification variable.
         likelihood : str, default='negbin'
             Observation likelihood ('negbin' or 'poisson').
-
-        Notes
-        -----
-        Initialization steps:
-        1. Merges user priors with default_priors
-        2. Calls parent BRCrefine.__init__ for base setup
-        3. Validates hierarchical-specific requirements
-        4. Extracts and encodes stratification variables
-        5. Expands categorical IDs for age aggregation
-        6. Configures priors with correct event dimensions
-        7. Sets up log population proportions for centering
-        8. Initializes repeat interview effects if present
+        backend : InferenceBackend, optional
+            Pluggable inference engine (default: NumPyroBackend).
         """
         # Merge user priors with defaults (user priors take precedence)
         effective_priors = self.default_priors.copy()
         effective_priors.update(priors)
 
         # Initialize parent class (BRCrefine) - this calls BRC.__init__ internally
-        super().__init__(dataloader, effective_priors, likelihood)
+        super().__init__(dataloader, effective_priors, likelihood, backend=backend)
 
         # Override log_P for stratified case
         self.log_P = jnp.array(self.data.log_P)
@@ -353,178 +338,3 @@ class HiBRCrefine(BRCrefine):
                 )  # Apply CLR transform
                 prior.set_loc(loc)
 
-    def sample_log_delta(self) -> ArrayLike:
-        """
-        Sample stratum-specific log-scale deviations from population baseline.
-
-        This method generates hierarchical adjustments for a given stratification
-        variable by:
-        1. Sampling from the specified prior and taking the log
-        2. Centering around population proportions by subtracting log(P_s)
-
-        Parameters
-        ----------
-        var : str
-            Name of the stratification variable
-
-        Returns
-        -------
-        ArrayLike
-            Log-scale deviations with shape depending on prior_type:
-            - prior_type='partial': (n_strata, A, 1)
-            - prior_type='full': (n_strata**2, A, A)
-        """
-        Omega = None
-        for var, prior in self.priors.items():
-            if var == "rate":
-                continue  # Skip baseline prior
-
-            # Use scope to ensure unique parameter names for each stratification variable
-            with scope(prefix=var):
-                if Omega is None:
-                    Omega = prior.sample()
-                else:
-                    # Recursively build Kronecker sum for multiple strat variables
-                    Omega = kron_sum_mode_1(Omega, prior.sample())
-
-        # Apply inverse CLR transformation
-        delta = inverse_clr(Omega)
-
-        return numpyro.deterministic(
-            "log_delta", jnp.log(delta) - jnp.log(self.data.multipliers)
-        )
-
-    def model(
-        self,
-        y: Optional[ArrayLike] = None,
-        aid_exp: Optional[ArrayLike] = None,
-        bid_pad: Optional[ArrayLike] = None,
-        flat_ix_exp: Optional[ArrayLike] = None,
-        log_N: Optional[ArrayLike] = None,
-        log_V: Optional[ArrayLike] = None,
-        rid: Optional[ArrayLike] = None,
-    ) -> None:
-        """
-        Define the hierarchical generative model with age refinement.
-
-        This model combines:
-        1. Shared smooth baseline contact rates across all strata
-        2. Stratum-specific multiplicative adjustments
-        3. Age aggregation over coarse contact age groups
-        4. Rate consistency through population weighting
-
-        Model Structure
-        ---------------
-        1. **Baseline**: β₀ ~ Normal(0, 10²)
-           Global intercept for contact rates
-
-        2. **Smooth baseline function**: f(a,b) from priors['rate']
-           Shared across all strata, captures common age patterns
-
-        3. **Log contact rate**: log(rate) = β₀ + f(a,b)
-           Fine-age resolution baseline rates (A × A matrix)
-
-        4. **Contact intensity baseline**: log(cint_base) = log(rate) + log(P)
-           Adds population structure for rate consistency
-
-        5. **Stratum-specific adjustments**:
-           For each stratification variable s:
-               log(δ_s[a,b]) = log(prior_s) - log(P_s[a,b])
-               contribution_s = logsumexp(log(cint_base) + log(δ_s))
-
-           The age aggregation happens here using index_mask_logsumexp:
-           - Sums over fine ages b ∈ [b_l, b_u) within each coarse group
-           - Uses aid_exp and bid_pad for indexing
-           - Applies stratum-specific adjustment (strat_ix_exp)
-
-        6. **Total log contact intensity**:
-           log(cint) = Σ_s contribution_s (sum over stratification variables)
-
-        7. **Repeat interview effect**: η ~ Hill(max_rid) if repeat data present
-
-        8. **Expected contacts**:
-           μ = exp(log(cint) + log(N) + log(S) + η)
-
-        9. **Observation likelihood**:
-           - Poisson: y ~ Poisson(μ)
-           - Negative Binomial: y ~ NegativeBinomial2(μ, concentration=1/φ)
-             where φ ~ Exponential(1)
-
-        Parameters
-        ----------
-        y : ArrayLike, optional
-            Observed contact counts. If None, samples from prior predictive.
-            During inference, set to actual observations.
-
-        Notes
-        -----
-        - All computations in log space for numerical stability
-        - index_mask_logsumexp handles age aggregation with masking (-1 → -inf)
-        - Stratum contributions are additive in log space (multiplicative in counts)
-        - Rate consistency enforced via log(P) term in baseline
-
-        Examples
-        --------
-        >>> # Inspect model structure
-        >>> model.print_model_shape()
-        >>>
-        >>> # Sample from prior predictive
-        >>> from numpyro.infer import Predictive
-        >>> prior_pred = Predictive(model.model, num_samples=100)
-        >>> prior_samples = prior_pred(PRNGKey(0))
-
-        See Also
-        --------
-        BRCrefine.model : Base class model without hierarchical structure
-        HiBRCfine.model : Hierarchical model without age aggregation
-        index_mask_logsumexp : Age aggregation function
-        """
-        len_y = len(self.y) if y is None else len(y)
-        aid_exp = self.data.aid_exp if aid_exp is None else aid_exp
-        bid_pad = self.data.bid_pad if bid_pad is None else bid_pad
-        flat_ix_exp = self.data.flat_ix_exp if flat_ix_exp is None else flat_ix_exp
-        log_N = self.log_N if log_N is None else log_N
-        log_V = self.log_V if log_V is None else log_V
-        rid = self.rid if hasattr(self, "rid") and rid is None else rid
-
-        # Baseline log rate
-        beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
-
-        # Shared rate
-        with scope(prefix="rate"):
-            f = self.priors["rate"].sample()
-
-        # Log contact rate
-        log_rate = numpyro.deterministic("log_rate", beta0 + f)
-
-        # Stratified contact intensity
-        log_delta = self.sample_log_delta()
-        log_cint_tensor = (
-            log_rate[jnp.newaxis, :, :]  # Shape (1, A, A)
-            + self.log_P[:, jnp.newaxis, :]  # Shape (K, 1, A)
-            + log_delta  # Shape (K, A, A)
-        )
-
-        # Sum over fine ages within each coarse group using index_mask_logsumexp
-        log_cint = index_mask_logsumexp(log_cint_tensor, aid_exp, bid_pad, flat_ix_exp)
-
-        # Optional repeat interview effect
-        repeat_effect = self.hill.sample()[rid] if hasattr(self, "rid") else 0.0
-
-        # Expected number of contacts
-        mu = jnp.exp(log_cint + log_N + log_V + repeat_effect)
-
-        # Likelihood
-        if self.likelihood == "poisson":
-            with plate("data", len_y):
-                numpyro.sample("obs", dist.Poisson(rate=mu), obs=y)
-
-        if self.likelihood == "negbin":
-            # Overdispersion parameter (smaller = more overdispersion)
-            inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
-            with plate("data", len_y):
-                numpyro.sample(
-                    "obs",
-                    dist.NegativeBinomial2(mean=mu, concentration=1.0 / inv_disp),
-                    obs=y,
-                )

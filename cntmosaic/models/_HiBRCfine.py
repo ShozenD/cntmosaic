@@ -6,23 +6,20 @@ stratified populations (e.g., by gender, setting) using hierarchical priors
 with fine-grained age resolution for both participants and contacts.
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import jax.numpy as jnp
 import numpy as np
-import numpyro
-from jax.typing import ArrayLike
-from numpyro import distributions as dist
-from numpyro.handlers import plate, scope
 
 from .._types import StratMode
 from ..dataloader import DataLoader
 from ._BRCfine import BRCfine
-from ._math import clr, inverse_clr, kron_sum_mode_1
-from .priors import Hill, Prior2D
+from ._math import clr
+from .numpyro import HiBRCfineNumPyroMixin
+from .numpyro.priors import Hill, Prior2D
 
 
-class HiBRCfine(BRCfine):
+class HiBRCfine(HiBRCfineNumPyroMixin, BRCfine):
     """
     High-resolution Bayesian Rate Consistency model with fine age resolution.
 
@@ -140,6 +137,7 @@ class HiBRCfine(BRCfine):
         dataloader: DataLoader,
         priors: Dict[str, Prior2D],
         likelihood: str = "negbin",
+        backend: Optional[Any] = None,
     ) -> None:
         """
         Initialize HiBRCfine model with hierarchical structure and fine age resolution.
@@ -153,19 +151,11 @@ class HiBRCfine(BRCfine):
             per stratification variable.
         likelihood : str, default='negbin'
             Observation likelihood ('negbin' or 'poisson').
-
-        Notes
-        -----
-        Initialization steps:
-        1. Calls parent BRCfine.__init__ for base setup
-        2. Validates hierarchical-specific requirements
-        3. Extracts and encodes stratification variables
-        4. Configures priors with correct event dimensions
-        5. Sets up log population proportions for centering
-        6. Initializes repeat interview effects if present
+        backend : InferenceBackend, optional
+            Pluggable inference engine (default: NumPyroBackend).
         """
         # Initialize parent class (BRCfine) - this calls BRC.__init__ internally
-        super().__init__(dataloader, priors, likelihood)
+        super().__init__(dataloader, priors, likelihood, backend=backend)
 
         # Override log_P for stratified case (already has shape (K, A), no need for newaxis)
         self.log_P = jnp.array(self.data.log_P)
@@ -300,137 +290,3 @@ class HiBRCfine(BRCfine):
                 )  # Apply CLR transform
                 prior.set_loc(loc)
 
-    def sample_log_delta(self) -> ArrayLike:
-        """
-        Sample stratum-specific log-scale deviations from population baseline.
-
-        This method generates hierarchical adjustments for a given stratification
-        variable by:
-        1. Sampling from the specified prior and taking the log
-        2. Centering around population proportions by subtracting log(P_s)
-
-        Parameters
-        ----------
-        var : str
-            Name of the stratification variable
-
-        Returns
-        -------
-        ArrayLike
-            Log-scale deviations with shape depending on prior_type:
-            - prior_type='partial': (n_strata, A, 1)
-            - prior_type='full': (n_strata**2, A, A)
-        """
-        Omega = None
-        for var, prior in self.priors.items():
-            if var == "rate":
-                continue  # Skip baseline prior
-
-            # Use scope to ensure unique parameter names for each stratification variable
-            with scope(prefix=var):
-                if Omega is None:
-                    Omega = prior.sample()
-                else:
-                    # Recursively build Kronecker sum for multiple strat variables
-                    Omega = kron_sum_mode_1(Omega, prior.sample())
-
-        # Apply inverse CLR transformation
-        delta = inverse_clr(Omega)
-
-        return numpyro.deterministic(
-            "log_delta", jnp.log(delta) - jnp.log(self.data.multipliers)
-        )
-
-    def model(
-        self,
-        y: Optional[ArrayLike] = None,
-        aid: Optional[ArrayLike] = None,
-        bid: Optional[ArrayLike] = None,
-        rid: Optional[ArrayLike] = None,
-        flat_ix: Optional[ArrayLike] = None,
-        flat_pixs: Optional[ArrayLike] = None,
-        log_N: Optional[ArrayLike] = None,
-        log_V: Optional[ArrayLike] = None,
-    ) -> None:
-        """
-        NumPyro generative model for hierarchical Bayesian generalized contact matrix estimation.
-
-        Parameters
-        ----------
-        y : ArrayLike, optional
-            Observed contact counts. Shape: (n_observations,)
-            If None, samples from the prior (useful for prior predictive checks)
-
-        Notes
-        -----
-        This method is intended for use with NumPyro's inference algorithms
-        (MCMC, SVI). Do not call directly - use run_inference_mcmc/svi instead.
-
-        The model uses hierarchical scoping (`numpyro.scope`) to organize parameters:
-        - 'rate' scope: Baseline contact pattern
-        - Variable-specific scopes: Stratification adjustments (e.g., 'gender', 'setting')
-
-        Examples
-        --------
-        Run MCMC inference:
-
-        >>> model = HiBRCfine(dataloader, priors={...})
-        >>> model.run_inference_mcmc(rng_key, num_samples=1000)
-
-        Prior predictive sampling:
-
-        >>> predictive = numpyro.infer.Predictive(model.model, num_samples=100)
-        >>> prior_samples = predictive(rng_key)
-
-        See Also
-        --------
-        run_inference_mcmc : Run NUTS sampling
-        run_inference_svi : Run stochastic variational inference
-        """
-        aid = self.aid if aid is None else aid
-        bid = self.bid if bid is None else bid
-        rid = getattr(self, "rid", None) if rid is None else rid
-        flat_ix = self.data.flat_ix if flat_ix is None else flat_ix
-        flat_pixs = self.data.flat_pixs if flat_pixs is None else flat_pixs
-        log_N = self.log_N if log_N is None else log_N
-        log_V = self.log_V if log_V is None else log_V
-        len_y = len(self.y) if y is None else len(y)
-
-        # Sample baseline log rate
-        beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
-
-        # Sample shared rate pattern
-        with scope(prefix="rate"):
-            f = self.priors["rate"].sample()
-
-        # Compute baseline log rate
-        log_rate = numpyro.deterministic("log_rate", beta0 + f)
-
-        # Initialize log contact intensity with population adjustment
-        log_cint = log_rate[aid, bid]
-
-        # Add stratification effects
-        log_cint += self.sample_log_delta()[flat_ix, aid, bid]
-
-        # Add population offsets
-        log_cint += self.log_P[flat_pixs, bid]
-
-        # Add repeat interview effect if present
-        repeat_effect = self.hill.sample()[rid] if hasattr(self, "rid") else 0.0
-
-        # Compute expected counts
-        mu = jnp.exp(log_cint + log_N + log_V + repeat_effect)
-
-        # Likelihood
-        if self.likelihood == "poisson":
-            with plate("data", len_y):
-                numpyro.sample("obs", dist.Poisson(rate=mu), obs=y)
-
-        if self.likelihood == "negbin":
-            inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
-            with plate("data", len_y):
-                numpyro.sample(
-                    "obs",
-                    dist.NegativeBinomial2(mean=mu, concentration=1.0 / inv_disp),
-                    obs=y,
-                )

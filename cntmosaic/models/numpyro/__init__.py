@@ -40,5 +40,19 @@ does not trigger a NumPyro import at module load time.
 """
 
 from ._backend import NumPyroBackend
+from ._BRCfine import BRCfineNumPyroMixin
+from ._BRCrefine import BRCrefineNumPyroMixin
+from ._HiBRCfine import HiBRCfineNumPyroMixin
+from ._HiBRCrefine import HiBRCrefineNumPyroMixin
+from ._Prem import PremNumPyroMixin
+from ._vdKassteele import vdKassteeleNumPyroMixin
 
-__all__ = ["NumPyroBackend"]
+__all__ = [
+    "NumPyroBackend",
+    "BRCfineNumPyroMixin",
+    "BRCrefineNumPyroMixin",
+    "HiBRCfineNumPyroMixin",
+    "HiBRCrefineNumPyroMixin",
+    "PremNumPyroMixin",
+    "vdKassteeleNumPyroMixin",
+]

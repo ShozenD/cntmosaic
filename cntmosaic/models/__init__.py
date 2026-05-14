@@ -4,9 +4,16 @@ from ._BRCfine import BRCfine
 from ._BRCrefine import BRCrefine
 from ._HiBRCfine import HiBRCfine
 from ._HiBRCrefine import HiBRCrefine
-from ._numpyro import to_inference_data
 from ._Prem import Prem
 from ._vdKassteele import vdKassteele
+
+
+def __getattr__(name: str):
+    if name == "to_inference_data":
+        from ._numpyro import to_inference_data
+
+        return to_inference_data
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # ---------------------------------------------------------------------------
 # Backward-compatibility re-exports

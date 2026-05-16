@@ -24,6 +24,22 @@ def df_part_one_year() -> pd.DataFrame:
 
 
 @pytest.fixture
+def df_part_age_min_max() -> pd.DataFrame:
+    """
+    Participant data with age_min and age_max columns.
+    """
+
+    df_part = pd.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "age_min": [20, 30, 40, 50, 60],
+            "age_max": [29, 39, 49, 59, 69],
+        }
+    )
+    return df_part
+
+
+@pytest.fixture
 def df_part_age_grps() -> pd.DataFrame:
     """
     Participant data with age groups.
@@ -66,6 +82,21 @@ def df_cnt_one_year() -> pd.DataFrame:
 
 
 @pytest.fixture
+def df_cnt_age_min_max() -> pd.DataFrame:
+    """
+    Contact data with age_min and age_max columns.
+    """
+    df_cnt = pd.DataFrame(
+        {
+            "id": [1, 1, 2, 3, 4, 5],
+            "age_min": [20, 30, 40, 50, 60, 70],
+            "age_max": [29, 39, 49, 59, 69, 79],
+        }
+    )
+    return df_cnt
+
+
+@pytest.fixture
 def df_cnt_age_grps() -> pd.DataFrame:
     """
     Contact data with age groups.
@@ -85,6 +116,23 @@ def df_cnt_age_grps() -> pd.DataFrame:
     df_cnt["age_grp_cnt"] = df_cnt["age_grp_cnt"].astype("category")
 
     return df_cnt
+
+
+@pytest.fixture
+def df_strat_age_min_max() -> pd.DataFrame:
+    """
+    Stratification data using age_min/age_max columns instead of age_col.
+    """
+    df = pd.DataFrame(
+        {
+            "age_min": [0, 0, 5, 5, 10, 10],
+            "age_max": [4, 4, 9, 9, 14, 14],
+            "stratum": ["A", "B", "A", "B", "A", "B"],
+            "prop": [0.3, 0.7, 0.4, 0.6, 0.2, 0.8],
+        }
+    )
+    df["stratum"] = pd.Categorical(df["stratum"], categories=["A", "B"])
+    return df
 
 
 @pytest.fixture
@@ -142,6 +190,21 @@ def df_strat_count():
             "age": [0, 0, 1, 1, 2, 2],  # Three age groups: 0, 1, 2
             "stratum": ["A", "B", "A", "B", "A", "B"],  # Two strata: A, B
             "count": [30, 70, 40, 60, 20, 80],  # Counts
+        }
+    )
+    return df
+
+
+@pytest.fixture
+def df_pop_age_min_max() -> pd.DataFrame:
+    """
+    Population data with age_min and age_max columns.
+    """
+    df = pd.DataFrame(
+        {
+            "age_min": [0, 5, 10, 15],
+            "age_max": [4, 9, 14, 19],
+            "population": [5000, 4800, 4600, 4400],
         }
     )
     return df

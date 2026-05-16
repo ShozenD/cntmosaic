@@ -3,7 +3,7 @@ import pytest
 from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
 
-from ...dataloader import DataLoader
+from ...dataloader import ContactSurveyLoader
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator
 from .._vdKassteele import vdKassteele
@@ -23,7 +23,7 @@ class TestInit:
 
     def test_single(self, single_large_sample):
         part_data, cnt_data, pop_data = single_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
         model.prior_type == "global"
@@ -32,35 +32,35 @@ class TestInit:
 
     def test_partial(self, partial_large_sample):
         part_data, cnt_data, pop_data = partial_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
         assert model.prior_type == "partial"
 
     def test_full(self, full_large_sample):
         part_data, cnt_data, pop_data = full_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
         assert model.prior_type == "full"
 
     def test_multi_strat_partial(self, partial_multi_strat_large_sample):
         part_data, cnt_data, pop_data = partial_multi_strat_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
         assert model.prior_type == "partial"
 
     def test_multi_strat_full(self, full_multi_strat_large_sample):
         part_data, cnt_data, pop_data = full_multi_strat_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
         assert model.prior_type == "full"
 
     def test_rid(self, single_large_sample_with_repeats):
         part_data, cnt_data, pop_data = single_large_sample_with_repeats
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
         assert hasattr(model, "rid")
@@ -74,7 +74,7 @@ class TestModel:
         from numpyro.handlers import seed
 
         part_data, cnt_data, pop_data = single_small_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
 
@@ -87,7 +87,7 @@ class TestModel:
     def test_print_model_shape(self, single_small_sample):
         """Test print_model_shape method."""
         part_data, cnt_data, pop_data = single_small_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
 
@@ -102,7 +102,7 @@ class TestInference:
 
     def test_single_svi(self, single_large_sample):
         part_data, cnt_data, pop_data = single_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
         guide = AutoNormal(model.model)
@@ -112,7 +112,7 @@ class TestInference:
 
     def test_partial_svi(self, partial_large_sample):
         part_data, cnt_data, pop_data = partial_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
         guide = AutoNormal(model.model)
@@ -123,7 +123,7 @@ class TestInference:
 
     def test_full_svi(self, full_large_sample):
         part_data, cnt_data, pop_data = full_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
         guide = AutoNormal(model.model)
@@ -134,7 +134,7 @@ class TestInference:
 
     def test_single_mcmc_init(self, single_large_sample):
         part_data, cnt_data, pop_data = single_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
 
@@ -143,7 +143,7 @@ class TestInference:
 
     def test_partial_mcmc_init(self, partial_large_sample):
         part_data, cnt_data, pop_data = partial_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
 
@@ -152,7 +152,7 @@ class TestInference:
 
     def test_full_mcmc_init(self, full_large_sample):
         part_data, cnt_data, pop_data = full_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model = vdKassteele(dataloader, "poisson")
 

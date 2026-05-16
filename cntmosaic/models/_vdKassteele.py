@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from .._types import StratMode
-from ..dataloader import DataLoader
+from ..dataloader import ContactSurveyLoader
 from ._base import ContactModel
 from .numpyro import vdKassteeleNumPyroMixin
 from .numpyro.priors import Hill, vdKassteele2D
@@ -20,7 +20,7 @@ class vdKassteele(vdKassteeleNumPyroMixin, ContactModel):
 
     def __init__(
         self,
-        dataloader: DataLoader,
+        dataloader: ContactSurveyLoader,
         likelihood: str,
         order: int = 2,
         tau_shape: float = 2.0,
@@ -33,8 +33,8 @@ class vdKassteele(vdKassteeleNumPyroMixin, ContactModel):
 
         Parameters
         ----------
-        dataloader : DataLoader
-            DataLoader object containing the processed contact data.
+        dataloader : ContactSurveyLoader
+            ContactSurveyLoader object containing the processed contact data.
         likelihood : str
             Observation likelihood.  Either ``'poisson'`` or ``'negbin'``.
         order : int, default=2

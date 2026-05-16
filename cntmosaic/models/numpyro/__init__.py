@@ -30,7 +30,7 @@ Adding a new backend (e.g. PyMC or INLA)
    .. code-block:: python
 
        from cntmosaic.models.pymc import PyMCBackend
-       model = BRCfine(loader, priors, backend=PyMCBackend())
+       model = AgeMixFF(loader, priors, backend=PyMCBackend())
 
    No changes to ``cntmosaic.models`` or ``ContactModel`` are required.
 
@@ -40,19 +40,19 @@ does not trigger a NumPyro import at module load time.
 """
 
 from ._backend import NumPyroBackend
-from ._BRCfine import BRCfineNumPyroMixin
-from ._BRCrefine import BRCrefineNumPyroMixin
-from ._HiBRCfine import HiBRCfineNumPyroMixin
-from ._HiBRCrefine import HiBRCrefineNumPyroMixin
+from ._AgeMixFF import AgeMixFFNumPyroMixin
+from ._AgeMixFC import AgeMixFCNumPyroMixin
+from ._GenMixFF import GenMixFFNumPyroMixin
+from ._GenMixFC import GenMixFCNumPyroMixin
 from ._Prem import PremNumPyroMixin
 from ._vdKassteele import vdKassteeleNumPyroMixin
 
 __all__ = [
     "NumPyroBackend",
-    "BRCfineNumPyroMixin",
-    "BRCrefineNumPyroMixin",
-    "HiBRCfineNumPyroMixin",
-    "HiBRCrefineNumPyroMixin",
+    "AgeMixFFNumPyroMixin",
+    "AgeMixFCNumPyroMixin",
+    "GenMixFFNumPyroMixin",
+    "GenMixFCNumPyroMixin",
     "PremNumPyroMixin",
     "vdKassteeleNumPyroMixin",
 ]

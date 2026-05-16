@@ -2,19 +2,21 @@ from typing import Any, Dict, Optional
 
 import jax.numpy as jnp
 
-from ..dataloader import DataLoader
-from ._BRC import BRC
-from .numpyro import BRCfineNumPyroMixin
+from ..dataloader import ContactSurveyLoader
+from ._GenMix import GenMix
+from .numpyro import AgeMixFFNumPyroMixin
 from .numpyro.priors import Hill
 
 
-class BRCfine(BRCfineNumPyroMixin, BRC):
+class AgeMixFF(AgeMixFFNumPyroMixin, GenMix):
     """
-    Bayesian Rate Consistency model with fine-grained age resolution.
+    Age-only mixing model with fine-age resolution for both participant and contact.
 
-    This model estimates contact matrices at single-year age resolution using
-    contact survey data. It uses smooth priors (e.g., B-splines, Gaussian processes)
-    to regularize the high-dimensional contact rate estimation problem.
+    AgeMixFF (Age Mixing, Fine-Fine) estimates social contact matrices at
+    single-year age resolution using contact survey data where both participant
+    and contact ages are recorded at 1-year resolution. It uses smooth priors
+    (e.g., B-splines, Gaussian processes) to regularize the high-dimensional
+    contact rate estimation problem.
 
     The model assumes:
     1. Contact rates are smooth functions of participant and contact ages
@@ -41,11 +43,11 @@ class BRCfine(BRCfineNumPyroMixin, BRC):
 
     Parameters
     ----------
-    dataloader : DataLoader
-        DataLoader object containing processed contact data with columns:
+    dataloader : ContactSurveyLoader
+        ContactSurveyLoader object containing processed contact data with columns:
         - y: observed contact counts
-        - aid: participant age indices
-        - bid: contact age indices
+        - aid: participant age indices (1-year resolution)
+        - bid: contact age indices (1-year resolution)
         - log_N: log of survey sample sizes
         - log_P: log of population age distribution
         - log_V: log of setting-specific offsets (optional)
@@ -67,9 +69,9 @@ class BRCfine(BRCfineNumPyroMixin, BRC):
     y : jax.Array
         Observed contact counts, shape (n_obs,)
     aid : jax.Array
-        Participant age indices, shape (n_obs,)
+        Participant age indices (1-year resolution), shape (n_obs,)
     bid : jax.Array
-        Contact age indices, shape (n_obs,)
+        Contact age indices (1-year resolution), shape (n_obs,)
     log_N : jax.Array
         Log of sample sizes, shape (n_obs,)
     log_P : jax.Array
@@ -94,8 +96,8 @@ class BRCfine(BRCfineNumPyroMixin, BRC):
 
     Examples
     --------
-    >>> from cntmosaic.dataloader import DataLoader, CoordToColumns
-    >>> from cntmosaic.models import BRCfine
+    >>> from cntmosaic.dataloader import ContactSurveyLoader, CoordToColumns
+    >>> from cntmosaic.models import AgeMixFF
     >>> from cntmosaic.models.numpyro.priors import Spline2D
     >>> from jax.random import PRNGKey
     >>>
@@ -106,7 +108,7 @@ class BRCfine(BRCfineNumPyroMixin, BRC):
     ...     age_pop="age",
     ...     P="P"
     ... )
-    >>> dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
+    >>> dataloader = ContactSurveyLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
     >>>
     >>> # Specify smooth prior for contact rates
     >>> priors = {
@@ -118,7 +120,7 @@ class BRCfine(BRCfineNumPyroMixin, BRC):
     ... }
     >>>
     >>> # Initialize model
-    >>> model = BRCfine(dataloader, priors, likelihood="negbin")
+    >>> model = AgeMixFF(dataloader, priors, likelihood="negbin")
     >>>
     >>> # Run MCMC inference
     >>> model.run_inference_mcmc(
@@ -135,27 +137,27 @@ class BRCfine(BRCfineNumPyroMixin, BRC):
 
     See Also
     --------
-    BRCrefine : Coarse-to-fine age refinement model
-    HiBRCfine : Hierarchical BRC for multiple populations
-    DataLoader : Data preprocessing utilities
+    AgeMixFC : Age-only mixing model with coarse contact age resolution
+    GenMixFF : Generalised mixing model with fine-age resolution for both ages
+    ContactSurveyLoader : Data preprocessing utilities
     Spline2D : B-spline prior for smooth contact rates
     """
 
     def __init__(
         self,
-        dataloader: DataLoader,
+        dataloader: ContactSurveyLoader,
         priors: Dict[str, Any],
         likelihood: str = "negbin",
         inv_odist: float = 1.0,
         backend: Optional[Any] = None,
     ) -> None:
         """
-        Initialize BRCfine model with fine-grained age resolution.
+        Initialize AgeMixFF model with fine-age resolution for both participant and contact.
 
         Parameters
         ----------
-        dataloader : DataLoader
-            Preprocessed contact data.
+        dataloader : ContactSurveyLoader
+            Preprocessed contact data with 1-year resolution for both ages.
         priors : Dict[str, Any]
             Prior specifications (must include 'rate').
         likelihood : str, default='negbin'

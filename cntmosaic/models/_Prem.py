@@ -160,8 +160,8 @@ class Prem(PremNumPyroMixin, ContactModel):
     - Stratum names follow "participant->contact" format
 
     **Differences from Other Models**:
-    - Unlike HiBRCfine: No hierarchical sharing across strata
-    - Unlike BRCfine: Does not enforce reciprocity/rate consistency
+    - Unlike GenMixFF: No hierarchical sharing across strata
+    - Unlike AgeMixFF: Does not enforce reciprocity/rate consistency
     - Unlike vdKassteele: Uses IGMRF2D priors instead of van de Kassteele basis
 
     **Migration from Old API**:
@@ -183,7 +183,7 @@ class Prem(PremNumPyroMixin, ContactModel):
     --------
     ParticipantData : Validated participant data container
     ContactData : Validated contact data container
-    HiBRCfine : Hierarchical model with shared priors across strata
+    GenMixFF : Hierarchical model with shared priors across strata
     vdKassteele : Alternative model with van de Kassteele basis functions
     """
 

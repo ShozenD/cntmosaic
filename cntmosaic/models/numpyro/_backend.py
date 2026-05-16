@@ -4,7 +4,7 @@ NumPyro implementation of InferenceBackend.
 All methods delegate to the free functions in ``cntmosaic.models._numpyro``
 without duplicating any logic. Stages 3 and 4 of item 1.7 will thread this
 class through the model constructors and delete the duplicated inference
-boilerplate from ``_BRC.py``, ``_Prem.py``, and ``_vdKassteele.py``.
+boilerplate from ``_GenMix.py``, ``_Prem.py``, and ``_vdKassteele.py``.
 """
 
 from __future__ import annotations

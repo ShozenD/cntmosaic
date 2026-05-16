@@ -1,5 +1,5 @@
 """
-Comprehensive unit tests for the BRC (Bayesian Rate Consistency) base class.
+Comprehensive unit tests for the GenMix base class.
 
 Tests cover:
 - Input validation
@@ -26,7 +26,7 @@ from numpyro.infer.autoguide import AutoNormal
 
 from ...dataloader import (
     ContactData,
-    DataLoader,
+    ContactSurveyLoader,
     ParticipantData,
     PopulationData,
     StratificationData,
@@ -39,7 +39,7 @@ from ...sim import (
     PopulationConstructor,
     Stratification,
 )
-from .._BRC import BRC
+from .._GenMix import GenMix
 from ..numpyro.priors import HSGP2D, PSpline2D, Spline2D
 
 # ============================================================================
@@ -47,8 +47,8 @@ from ..numpyro.priors import HSGP2D, PSpline2D, Spline2D
 # ============================================================================
 
 
-class MockBRC(BRC):
-    """Minimal concrete implementation of BRC for testing the base class."""
+class MockGenMix(GenMix):
+    """Minimal concrete implementation of GenMix for testing the base class."""
 
     def __init__(self, dataloader, priors, likelihood="negbin"):
         super().__init__(dataloader, priors, likelihood)
@@ -114,7 +114,7 @@ def sample_dataloader():
     part_data = ParticipantData(df_part, id_col="id", age_col="age")
     cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
     pop_data = PopulationData(df_age_dist, age_col="age", size_col="P")
-    dataloader = DataLoader(part_data, cnt_data, pop_data)
+    dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
     return dataloader
 
@@ -128,7 +128,7 @@ def valid_priors():
 @pytest.fixture
 def mock_brc_model(sample_dataloader, valid_priors):
     """Create a MockBRC instance for testing."""
-    return MockBRC(sample_dataloader, valid_priors, likelihood="poisson")
+    return MockGenMix(sample_dataloader, valid_priors, likelihood="poisson")
 
 
 # ============================================================================
@@ -137,17 +137,17 @@ def mock_brc_model(sample_dataloader, valid_priors):
 
 
 class TestInputValidation:
-    """Test suite for input validation in BRC initialization."""
+    """Test suite for input validation in GenMix initialization."""
 
     def test_invalid_likelihood(self, sample_dataloader, valid_priors):
         """Test that invalid likelihood raises ValueError."""
         with pytest.raises(ValueError, match="likelihood must be one of"):
-            MockBRC(sample_dataloader, valid_priors, likelihood="invalid")
+            MockGenMix(sample_dataloader, valid_priors, likelihood="invalid")
 
     def test_invalid_priors_type(self, sample_dataloader):
         """Test that non-dict priors raises ValueError."""
         with pytest.raises(ValueError, match="priors must be a dictionary"):
-            MockBRC(sample_dataloader, priors="not_a_dict", likelihood="poisson")
+            MockGenMix(sample_dataloader, priors="not_a_dict", likelihood="poisson")
 
     def test_missing_rate_prior(self, sample_dataloader):
         """Test that missing 'rate' key in priors raises ValueError."""
@@ -155,16 +155,16 @@ class TestInputValidation:
         with pytest.raises(
             ValueError, match="priors must contain the specifications for 'rate'"
         ):
-            MockBRC(sample_dataloader, invalid_priors, likelihood="poisson")
+            MockGenMix(sample_dataloader, invalid_priors, likelihood="poisson")
 
     def test_valid_poisson_likelihood(self, sample_dataloader, valid_priors):
         """Test that Poisson likelihood is accepted."""
-        model = MockBRC(sample_dataloader, valid_priors, likelihood="poisson")
+        model = MockGenMix(sample_dataloader, valid_priors, likelihood="poisson")
         assert model.likelihood == "poisson"
 
     def test_valid_negbin_likelihood(self, sample_dataloader, valid_priors):
         """Test that negative binomial likelihood is accepted."""
-        model = MockBRC(sample_dataloader, valid_priors, likelihood="negbin")
+        model = MockGenMix(sample_dataloader, valid_priors, likelihood="negbin")
         assert model.likelihood == "negbin"
 
 
@@ -174,7 +174,7 @@ class TestInputValidation:
 
 
 class TestInitialization:
-    """Test suite for BRC model initialization."""
+    """Test suite for GenMix model initialization."""
 
     def test_basic_initialization(self, mock_brc_model):
         """Test that basic initialization works correctly."""
@@ -330,7 +330,7 @@ class TestAgeDistribution:
 
     def test_set_age_dist_before_age_dims(self, sample_dataloader, valid_priors):
         """Test that set_age_dist works after set_age_dims is called."""
-        model = MockBRC(sample_dataloader, valid_priors)
+        model = MockGenMix(sample_dataloader, valid_priors)
         # Age dims are set during __init__
         age_dist = np.ones(model.A) / model.A
         model.set_age_dist(age_dist)
@@ -356,9 +356,9 @@ class TestModelStructure:
         assert "rate/spline_coefs" in captured.out
 
     def test_abstract_model_method(self, sample_dataloader, valid_priors):
-        """Test that BRC cannot be instantiated directly."""
+        """Test that GenMix cannot be instantiated directly."""
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
-            BRC(sample_dataloader, valid_priors, likelihood="poisson")
+            GenMix(sample_dataloader, valid_priors, likelihood="poisson")
 
 
 # ============================================================================
@@ -418,7 +418,7 @@ class TestMCMCInference:
 
     def test_mcmc_without_data_raises_error(self, sample_dataloader, valid_priors):
         """Test that MCMC without observation data raises error."""
-        model = MockBRC(sample_dataloader, valid_priors)
+        model = MockGenMix(sample_dataloader, valid_priors)
         model.y = None  # Remove observation data
 
         prng_key = PRNGKey(42)
@@ -479,7 +479,7 @@ class TestSVIInference:
 
     def test_svi_without_data_raises_error(self, sample_dataloader, valid_priors):
         """Test that SVI without observation data raises error."""
-        model = MockBRC(sample_dataloader, valid_priors)
+        model = MockGenMix(sample_dataloader, valid_priors)
         model.y = None  # Remove observation data
 
         prng_key = PRNGKey(42)
@@ -572,7 +572,7 @@ class TestDifferentPriors:
     def test_with_pspline_prior(self, sample_dataloader):
         """Test BRC initialization with PSpline2D prior."""
         priors = {"rate": PSpline2D(prior_type="global", M=15, degree=3)}
-        model = MockBRC(sample_dataloader, priors, likelihood="poisson")
+        model = MockGenMix(sample_dataloader, priors, likelihood="poisson")
 
         assert model.priors["rate"].__class__.__name__ == "PSpline2D"
 
@@ -580,7 +580,7 @@ class TestDifferentPriors:
         """Test BRC initialization with HSGP2D prior."""
         # HSGP2D uses C parameter, not ell
         priors = {"rate": HSGP2D(prior_type="global", M=[20, 20], C=[1.5, 1.5])}
-        model = MockBRC(sample_dataloader, priors, likelihood="poisson")
+        model = MockGenMix(sample_dataloader, priors, likelihood="poisson")
 
         assert model.priors["rate"].__class__.__name__ == "HSGP2D"
 
@@ -588,11 +588,11 @@ class TestDifferentPriors:
         """Test BRC with different spline configurations."""
         # Test different M values
         priors1 = {"rate": Spline2D(prior_type="global", M=10, degree=2)}
-        model1 = MockBRC(sample_dataloader, priors1)
+        model1 = MockGenMix(sample_dataloader, priors1)
         assert model1.priors["rate"].M == 10
 
         priors2 = {"rate": Spline2D(prior_type="global", M=40, degree=3)}
-        model2 = MockBRC(sample_dataloader, priors2)
+        model2 = MockGenMix(sample_dataloader, priors2)
         assert model2.priors["rate"].M == 40
 
 
@@ -607,17 +607,17 @@ class TestErrorHandling:
     def test_likelihood_case_sensitivity(self, sample_dataloader, valid_priors):
         """Test that likelihood is case-sensitive."""
         with pytest.raises(ValueError):
-            MockBRC(sample_dataloader, valid_priors, likelihood="Poisson")
+            MockGenMix(sample_dataloader, valid_priors, likelihood="Poisson")
 
         with pytest.raises(ValueError):
-            MockBRC(sample_dataloader, valid_priors, likelihood="NEGBIN")
+            MockGenMix(sample_dataloader, valid_priors, likelihood="NEGBIN")
 
     def test_empty_priors_dict(self, sample_dataloader):
         """Test that empty priors dict raises error."""
         with pytest.raises(
             ValueError, match="must contain the specifications for 'rate'"
         ):
-            MockBRC(sample_dataloader, priors={}, likelihood="poisson")
+            MockGenMix(sample_dataloader, priors={}, likelihood="poisson")
 
     def test_mcmc_with_invalid_chains(self, mock_brc_model):
         """Test MCMC with invalid number of chains."""

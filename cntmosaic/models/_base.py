@@ -3,7 +3,7 @@ Abstract base class for all Bayesian contact models in cntmosaic.
 
 This module defines `ContactModel`, the common interface that every
 Bayesian model must satisfy.  Concrete implementations live in the
-sibling modules (_BRC, _Prem, _vdKassteele, …) and must not be
+sibling modules (_GenMix, _Prem, _vdKassteele, …) and must not be
 imported here to avoid circular imports.
 """
 
@@ -24,14 +24,14 @@ class ContactModel(ABC):
 
     The inheritance hierarchy for the built-in models is::
 
-        ContactModel          ← this class (ABC)
-        └── BRC (ABC)         ← Bayesian Rate Consistency base
-            ├── BRCfine
-            ├── BRCrefine
-            ├── HiBRCfine
-            └── HiBRCrefine
-        └── Prem              ← Prem et al. (2017) model
-        └── vdKassteele       ← van de Kassteele model
+        ContactModel            ← this class (ABC)
+        └── GenMix (ABC)        ← Generalised Contact Mixing base
+            ├── AgeMixFF        ← Age-only, fine participant + fine contact age
+            ├── AgeMixFC        ← Age-only, fine participant + coarse contact age
+            ├── GenMixFF        ← Generalised, fine participant + fine contact age
+            └── GenMixFC        ← Generalised, fine participant + coarse contact age
+        └── Prem                ← Prem et al. (2017) model
+        └── vdKassteele         ← van de Kassteele model
 
     Parameters
     ----------

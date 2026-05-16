@@ -3,9 +3,9 @@ import pytest
 from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
 
-from ...dataloader import DataLoader, StratificationData
+from ...dataloader import ContactSurveyLoader, StratificationData
 from ...datasets import load_age_distribution, load_template_patterns
-from .._HiBRCfine import HiBRCfine
+from .._GenMixFF import GenMixFF
 from ..numpyro.priors import PSpline2D
 from .fixtures import (
     full_large_sample,
@@ -25,11 +25,11 @@ class TestInit:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
+        dataloader = ContactSurveyLoader.from_containers(
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_prop_data=strat_data,
+            strat_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
@@ -37,7 +37,7 @@ class TestInit:
             priors[var] = PSpline2D(prior_type="partial", M=10)
 
         # Test model initialization
-        model = HiBRCfine(dataloader, priors, "poisson")
+        model = GenMixFF(dataloader, priors, "poisson")
 
     def test_full(self, full_large_sample):
         part_data, cnt_data, pop_data = full_large_sample
@@ -47,11 +47,11 @@ class TestInit:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
+        dataloader = ContactSurveyLoader.from_containers(
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_prop_data=strat_data,
+            strat_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
@@ -59,7 +59,7 @@ class TestInit:
             priors[var] = PSpline2D(prior_type="full", M=10)
 
         # Test model initialization
-        model = HiBRCfine(dataloader, priors, "poisson")
+        model = GenMixFF(dataloader, priors, "poisson")
 
     def test_multi_strat_partial(self, partial_multi_strat_large_sample):
         part_data, cnt_data, pop_data = partial_multi_strat_large_sample
@@ -69,11 +69,11 @@ class TestInit:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
+        dataloader = ContactSurveyLoader.from_containers(
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_prop_data=strat_data,
+            strat_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
@@ -81,7 +81,7 @@ class TestInit:
             priors[var] = PSpline2D(prior_type="partial", M=10)
 
         # Test model initialization
-        model = HiBRCfine(dataloader, priors, "poisson")
+        model = GenMixFF(dataloader, priors, "poisson")
 
     def test_multi_strat_full(self, full_multi_strat_large_sample):
         part_data, cnt_data, pop_data = full_multi_strat_large_sample
@@ -91,11 +91,11 @@ class TestInit:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
+        dataloader = ContactSurveyLoader.from_containers(
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_prop_data=strat_data,
+            strat_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
@@ -103,7 +103,7 @@ class TestInit:
             priors[var] = PSpline2D(prior_type="full", M=10)
 
         # Test model initialization
-        model = HiBRCfine(dataloader, priors, "poisson")
+        model = GenMixFF(dataloader, priors, "poisson")
 
 
 class TestModel:
@@ -119,13 +119,13 @@ class TestModel:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
-            part_data, cnt_data, pop_data, strat_prop_data=strat_data
+        dataloader = ContactSurveyLoader.from_containers(
+            part_data, cnt_data, pop_data, strat_data=strat_data
         )
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
         for var in strat_vars:
             priors[var] = PSpline2D(prior_type="partial", M=10)
-        model = HiBRCfine(dataloader, priors, likelihood="poisson")
+        model = GenMixFF(dataloader, priors, likelihood="poisson")
 
         try:
             with seed(rng_seed=0):
@@ -141,13 +141,13 @@ class TestModel:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
-            part_data, cnt_data, pop_data, strat_prop_data=strat_data
+        dataloader = ContactSurveyLoader.from_containers(
+            part_data, cnt_data, pop_data, strat_data=strat_data
         )
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
         for var in strat_vars:
             priors[var] = PSpline2D(prior_type="partial", M=10)
-        model = HiBRCfine(dataloader, priors, likelihood="poisson")
+        model = GenMixFF(dataloader, priors, likelihood="poisson")
 
         try:
             model.print_model_shape()
@@ -166,18 +166,18 @@ class TestInference:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
+        dataloader = ContactSurveyLoader.from_containers(
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_prop_data=strat_data,
+            strat_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
         for var in strat_vars:
             priors[var] = PSpline2D(prior_type="partial", M=10)
 
-        model = HiBRCfine(dataloader, priors, "poisson")
+        model = GenMixFF(dataloader, priors, "poisson")
         guide = AutoNormal(model.model)
 
         try:
@@ -194,18 +194,18 @@ class TestInference:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
+        dataloader = ContactSurveyLoader.from_containers(
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_prop_data=strat_data,
+            strat_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
         for var in strat_vars:
             priors[var] = PSpline2D(prior_type="full", M=10)
 
-        model = HiBRCfine(dataloader, priors, "poisson")
+        model = GenMixFF(dataloader, priors, "poisson")
         guide = AutoNormal(model.model)
 
         try:
@@ -222,18 +222,18 @@ class TestInference:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
+        dataloader = ContactSurveyLoader.from_containers(
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_prop_data=strat_data,
+            strat_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
         for var in strat_vars:
             priors[var] = PSpline2D(prior_type="partial", M=10)
 
-        model = HiBRCfine(dataloader, priors, "poisson")
+        model = GenMixFF(dataloader, priors, "poisson")
 
         assert hasattr(model, "run_inference_mcmc")
         assert callable(model.run_inference_mcmc)
@@ -246,18 +246,18 @@ class TestInference:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(
+        dataloader = ContactSurveyLoader.from_containers(
             part_data=part_data,
             cnt_data=cnt_data,
             pop_data=pop_data,
-            strat_prop_data=strat_data,
+            strat_data=strat_data,
         )
 
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
         for var in strat_vars:
             priors[var] = PSpline2D(prior_type="full", M=10)
 
-        model = HiBRCfine(dataloader, priors, "poisson")
+        model = GenMixFF(dataloader, priors, "poisson")
 
         assert hasattr(model, "run_inference_mcmc")
         assert callable(model.run_inference_mcmc)

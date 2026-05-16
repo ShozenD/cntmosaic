@@ -20,7 +20,7 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
 
     Computes error metrics and uncertainty quantification statistics for estimated
     contact intensity matrices from Bayesian posterior samples. Supports both
-    standard BRC models (BRCfine, BRCrefine) and hierarchical models (HiBRCfine, HiBRCrefine).
+    standard age-only models (AgeMixFF, AgeMixFC) and hierarchical models (GenMixFF, GenMixFC).
 
     This evaluator follows the same design patterns as ModelEvaluatorPrem for consistency,
     with automatic detection of model type and appropriate metric aggregation.
@@ -32,8 +32,8 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
         BRC-family model (MCMC or SVI inference).
     cint_matrix_true : NDArray or dict
         Ground truth contact intensity matrix.
-        - For BRC models: NDArray of shape (A, A) where A is number of age groups
-        - For HiBRC models: dict with structure {var1: {cat1: matrix, ...}, ...}
+        - For AgeMix models: NDArray of shape (A, A) where A is number of age groups
+        - For GenMix models: dict with structure {var1: {cat1: matrix, ...}, ...}
     alpha : float, default=0.05
         Significance level for interval score and coverage computations.
         Must be in (0, 1).
@@ -53,10 +53,10 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
 
     Examples
     --------
-    **Standard BRC model evaluation:**
+    **Standard age-only model evaluation:**
 
     >>> # Fit model
-    >>> model = BRCfine(dataloader, priors, likelihood="poisson")
+    >>> model = AgeMixFF(dataloader, priors, likelihood="poisson")
     >>> model.run_inference_mcmc(rng_key, num_samples=1000)
     >>>
     >>> # Create summariser and evaluator
@@ -74,10 +74,10 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
     >>> # Get all metrics at once
     >>> all_metrics = evaluator.evaluate()
 
-    **Hierarchical BRC model evaluation:**
+    **Hierarchical model evaluation:**
 
-    >>> # For HiBRC models with stratification
-    >>> model = HiBRCfine(dataloader, priors, likelihood="poisson")
+    >>> # For GenMix models with stratification
+    >>> model = GenMixFF(dataloader, priors, likelihood="poisson")
     >>> model.run_inference_svi(rng_key, guide, num_steps=5000)
     >>>
     >>> # True matrices organized by stratification

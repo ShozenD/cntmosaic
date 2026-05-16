@@ -25,11 +25,11 @@ from cntmosaic.sim import (
 )
 from cntmosaic.dataloader import (
     ContactData,
-    DataLoader,
+    ContactSurveyLoader,
     ParticipantData,
     PopulationData,
 )
-from cntmosaic.models import BRCfine
+from cntmosaic.models import AgeMixFF
 from cntmosaic.models.numpyro.priors import Spline2D
 from cntmosaic.analysis import ModelSummariserBRC
 
@@ -62,7 +62,7 @@ def sample_dataloader():
     part_data = ParticipantData(df_part, id_col="id", age_col="age")
     cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
     pop_data = PopulationData(df_age_dist, age_col="age", size_col="P")
-    dataloader = DataLoader(part_data, cnt_data, pop_data)
+    dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
     return dataloader
 
 
@@ -70,7 +70,7 @@ def sample_dataloader():
 def brc_mcmc_model(sample_dataloader):
     """Create BRC model fitted with MCMC."""
     priors = {"rate": Spline2D(prior_type="global")}
-    model = BRCfine(sample_dataloader, priors, likelihood="poisson")
+    model = AgeMixFF(sample_dataloader, priors, likelihood="poisson")
 
     # Run short MCMC for testing
     model.run_inference_mcmc(PRNGKey(0), num_warmup=10, num_samples=20, num_chains=1)
@@ -82,7 +82,7 @@ def brc_mcmc_model(sample_dataloader):
 def brc_svi_model(sample_dataloader):
     """Create BRC model fitted with SVI."""
     priors = {"rate": Spline2D(prior_type="global")}
-    model = BRCfine(sample_dataloader, priors, likelihood="poisson")
+    model = AgeMixFF(sample_dataloader, priors, likelihood="poisson")
 
     # Run short SVI for testing
     guide = AutoNormal(model.model)
@@ -123,7 +123,7 @@ class TestModelSummariserBRCInitialization:
     def test_init_without_inference_raises_error(self, sample_dataloader):
         """Test that initialization without inference raises ValueError."""
         priors = {"rate": Spline2D(prior_type="global")}
-        model = BRCfine(sample_dataloader, priors)
+        model = AgeMixFF(sample_dataloader, priors)
 
         with pytest.raises(ValueError, match="Neither MCMC nor SVI"):
             ModelSummariserBRC(model)

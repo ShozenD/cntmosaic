@@ -3,10 +3,10 @@ import pytest
 from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
 
-from ...dataloader import DataLoader
+from ...dataloader import ContactSurveyLoader
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator
-from .._BRCfine import BRCfine
+from .._AgeMixFF import AgeMixFF
 from ..numpyro.priors import Spline2D
 from .fixtures import (
     single_large_sample,
@@ -22,9 +22,9 @@ class TestInit:
 
     def test_single(self, single_large_sample):
         part_data, cnt_data, pop_data = single_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": Spline2D(prior_type="global")}
-        model = BRCfine(dataloader, priors, likelihood="poisson")
+        model = AgeMixFF(dataloader, priors, likelihood="poisson")
 
         assert len(model.y) > 0
         assert len(model.aid) == len(model.y)
@@ -33,13 +33,13 @@ class TestInit:
         assert model.log_P.shape[1] == model.A
         assert model.log_V.shape[0] == len(model.y)
 
-        model = BRCfine(dataloader, priors, likelihood="negbin", inv_odist=2.0)
+        model = AgeMixFF(dataloader, priors, likelihood="negbin", inv_odist=2.0)
 
     def test_single_small(self, single_small_sample):
         part_data, cnt_data, pop_data = single_small_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": Spline2D(prior_type="global")}
-        model = BRCfine(dataloader, priors, likelihood="poisson")
+        model = AgeMixFF(dataloader, priors, likelihood="poisson")
 
         assert len(model.y) > 0
         assert len(model.aid) == len(model.y)
@@ -50,9 +50,9 @@ class TestInit:
 
     def test_init_with_rid(self, single_large_sample_with_repeats):
         part_data, cnt_data, pop_data = single_large_sample_with_repeats
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": Spline2D(prior_type="global")}
-        model = BRCfine(dataloader, priors, likelihood="poisson")
+        model = AgeMixFF(dataloader, priors, likelihood="poisson")
 
         assert hasattr(model, "rid")
         assert len(model.rid) == len(model.y)
@@ -66,9 +66,9 @@ class TestModel:
         from numpyro.handlers import seed
 
         part_data, cnt_data, pop_data = single_small_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": Spline2D(prior_type="global")}
-        model = BRCfine(dataloader, priors, likelihood="poisson")
+        model = AgeMixFF(dataloader, priors, likelihood="poisson")
 
         try:
             with seed(rng_seed=0):
@@ -79,9 +79,9 @@ class TestModel:
     def test_print_model_shape(self, single_small_sample):
         """Test print_model_shape method."""
         part_data, cnt_data, pop_data = single_small_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": Spline2D(prior_type="global")}
-        model = BRCfine(dataloader, priors, likelihood="poisson")
+        model = AgeMixFF(dataloader, priors, likelihood="poisson")
 
         try:
             model.print_model_shape()
@@ -94,9 +94,9 @@ class TestInference:
 
     def test_svi_inference(self, single_small_sample):
         part_data, cnt_data, pop_data = single_small_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": Spline2D(prior_type="global")}
-        model = BRCfine(dataloader, priors, likelihood="poisson")
+        model = AgeMixFF(dataloader, priors, likelihood="poisson")
 
         prng_key = PRNGKey(0)
         guide = AutoNormal(model.model)
@@ -107,9 +107,9 @@ class TestInference:
     # Test MCMC inference
     def test_mcmc_inference(self, single_small_sample):
         part_data, cnt_data, pop_data = single_small_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": Spline2D(prior_type="global")}
-        model = BRCfine(dataloader, priors, likelihood="poisson")
+        model = AgeMixFF(dataloader, priors, likelihood="poisson")
 
         prng_key = PRNGKey(1)
         model.run_inference_mcmc(prng_key, num_warmup=10, num_samples=10, num_chains=1)

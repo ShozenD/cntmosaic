@@ -4,8 +4,8 @@ import pytest
 from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
 
-from ...dataloader import DataLoader
-from .._BRCrefine import BRCrefine
+from ...dataloader import ContactSurveyLoader
+from .._AgeMixFC import AgeMixFC
 from ..numpyro.priors import PSpline2D
 from .fixtures import (
     single_coarse_large_sample,
@@ -19,8 +19,8 @@ class TestInit:
 
     def test_single_coarse(self, single_coarse_large_sample):
         part_data, cnt_data, pop_data = single_coarse_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
-        model = BRCrefine(dataloader, likelihood="poisson")
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
+        model = AgeMixFC(dataloader, likelihood="poisson")
 
         assert len(model.y) > 0
         assert len(model.aid) == len(model.y)
@@ -29,12 +29,12 @@ class TestInit:
         assert model.log_P.shape[1] == model.A
         assert model.log_V.shape[0] == len(model.y)
 
-        model = BRCrefine(dataloader, likelihood="negbin")
+        model = AgeMixFC(dataloader, likelihood="negbin")
 
     def test_single_coarse_repeats(self, single_coarse_large_sample_with_repeats):
         part_data, cnt_data, pop_data = single_coarse_large_sample_with_repeats
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
-        model = BRCrefine(dataloader, likelihood="poisson")
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
+        model = AgeMixFC(dataloader, likelihood="poisson")
 
         assert hasattr(model, "rid")
         assert len(model.rid) == len(model.y)
@@ -48,9 +48,9 @@ class TestModel:
         from numpyro.handlers import seed
 
         part_data, cnt_data, pop_data = single_coarse_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": PSpline2D(prior_type="global", M=5)}
-        model = BRCrefine(dataloader, priors, likelihood="negbin")
+        model = AgeMixFC(dataloader, priors, likelihood="negbin")
 
         try:
             with seed(rng_seed=0):
@@ -61,9 +61,9 @@ class TestModel:
     def test_print_model_shape(self, single_coarse_large_sample):
         """Test print_model_shape method."""
         part_data, cnt_data, pop_data = single_coarse_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": PSpline2D(prior_type="global", M=5)}
-        model = BRCrefine(dataloader, priors, likelihood="negbin")
+        model = AgeMixFC(dataloader, priors, likelihood="negbin")
 
         try:
             model.print_model_shape()
@@ -76,9 +76,9 @@ class TestInference:
 
     def test_svi_inference(self, single_coarse_large_sample):
         part_data, cnt_data, pop_data = single_coarse_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": PSpline2D(prior_type="global")}
-        model = BRCrefine(dataloader, priors, likelihood="negbin")
+        model = AgeMixFC(dataloader, priors, likelihood="negbin")
 
         prng_key = PRNGKey(0)
         guide = AutoNormal(model.model)
@@ -89,9 +89,9 @@ class TestInference:
     # Test MCMC inference
     def test_mcmc_inference(self, single_coarse_large_sample):
         part_data, cnt_data, pop_data = single_coarse_large_sample
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
         priors = {"rate": PSpline2D(prior_type="global")}
-        model = BRCrefine(dataloader, priors, likelihood="negbin")
+        model = AgeMixFC(dataloader, priors, likelihood="negbin")
 
         prng_key = PRNGKey(1)
         model.run_inference_mcmc(prng_key, num_warmup=10, num_samples=10, num_chains=1)

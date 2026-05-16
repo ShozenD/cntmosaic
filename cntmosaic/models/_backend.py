@@ -28,7 +28,7 @@ class InferenceBackend(Protocol):
        is required; structural compatibility is checked at runtime via
        ``isinstance(backend, InferenceBackend)``.
     3. Pass an instance to any model constructor:
-       ``BRCfine(loader, priors, backend=PyMCBackend())``
+       ``AgeMixFF(loader, priors, backend=PyMCBackend())``
 
     Notes
     -----

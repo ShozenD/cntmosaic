@@ -17,6 +17,8 @@ def preprocess_participant_data(
     df_part: pd.DataFrame,
     id_col: str,
     age_col: Optional[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
     repeat_col: Optional[str],
@@ -33,6 +35,10 @@ def preprocess_participant_data(
         Column containing unique participant identifiers.
     age_col : Optional[str]
         Column containing exact participant ages.
+    age_min_col : Optional[str]
+        Column containing minimum age of participants (for age ranges).
+    age_max_col : Optional[str]
+        Column containing maximum age of participants (for age ranges).
     age_grp_col : Optional[str]
         Column containing participant age groups (IntervalIndex).
     strat_var_cols : List[str]
@@ -56,10 +62,26 @@ def preprocess_participant_data(
         If df_part is empty after NaN removal.
     """
     required_cols = _check_columns(
-        df_part, id_col, age_col, age_grp_col, strat_var_cols, repeat_col, amb_cnt_col
+        df_part,
+        id_col,
+        age_col,
+        age_min_col,
+        age_max_col,
+        age_grp_col,
+        strat_var_cols,
+        repeat_col,
+        amb_cnt_col,
     )
     return _preprocess(
-        df_part, id_col, age_col, age_grp_col, strat_var_cols, repeat_col, required_cols
+        df_part,
+        id_col,
+        age_col,
+        age_min_col,
+        age_max_col,
+        age_grp_col,
+        strat_var_cols,
+        repeat_col,
+        required_cols,
     )
 
 
@@ -72,6 +94,8 @@ def _check_columns(
     df: pd.DataFrame,
     id_col: str,
     age_col: Optional[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
     repeat_col: Optional[str],
@@ -88,7 +112,13 @@ def _check_columns(
         cols = list(columns)
         return cols[:8] + (["..."] if len(cols) > 8 else [])
 
-    age_column = age_col if age_col else age_grp_col
+    age_column = list[str]()
+    if age_col:
+        age_column = [age_col]
+    elif age_min_col and age_max_col:
+        age_column = [age_min_col, age_max_col]
+    elif age_grp_col:
+        age_column = [age_grp_col]
 
     if id_col not in df.columns:
         raise KeyError(
@@ -96,12 +126,13 @@ def _check_columns(
             f"  Available columns: {_cols_display(df.columns)}"
         )
 
-    if age_column not in df.columns:
-        col_type = "age" if age_col else "age group"
-        raise KeyError(
-            f"Missing participant {col_type} column '{age_column}' in DataFrame.\n"
-            f"  Available columns: {_cols_display(df.columns)}"
-        )
+    if isinstance(age_column, list):
+        missing_age_cols = [col for col in age_column if col not in df.columns]
+        if missing_age_cols:
+            raise KeyError(
+                f"Missing participant age column(s) '{', '.join(missing_age_cols)}' in DataFrame.\n"
+                f"  Available columns: {_cols_display(df.columns)}"
+            )
 
     if strat_var_cols:
         missing_vars = [v for v in strat_var_cols if v not in df.columns]
@@ -123,7 +154,9 @@ def _check_columns(
             f"  Available columns: {_cols_display(df.columns)}"
         )
 
-    required_cols = [id_col, age_column]
+    required_cols = [id_col]
+    required_cols.extend(age_column)
+
     if strat_var_cols:
         required_cols.extend(strat_var_cols)
     if repeat_col:
@@ -137,6 +170,8 @@ def _preprocess(
     df_part: pd.DataFrame,
     id_col: str,
     age_col: Optional[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
     repeat_col: Optional[str],
@@ -197,6 +232,12 @@ def _preprocess(
 
     if age_col and not age_col.endswith("_part"):
         rename_map[age_col] = "age_part"
+
+    if age_min_col and not age_min_col.endswith("_part"):
+        rename_map[age_min_col] = "age_min_part"
+
+    if age_max_col and not age_max_col.endswith("_part"):
+        rename_map[age_max_col] = "age_max_part"
 
     if age_grp_col and not age_grp_col.endswith("_part"):
         rename_map[age_grp_col] = "age_grp_part"

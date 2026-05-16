@@ -183,8 +183,10 @@ class PopulationData:
     """
 
     data: pd.DataFrame
-    age_col: str
     size_col: str
+    age_col: Optional[str] = None
+    age_min_col: Optional[str] = None
+    age_max_col: Optional[str] = None
     age_grp_col: Optional[str] = None
     strat_var_cols: Optional[Union[List[str], str]] = None
 
@@ -213,18 +215,38 @@ class PopulationData:
                 f"data must be a pandas DataFrame, got {type(self.data).__name__}"
             )
 
-        # age_col is required
-        if self.age_col is None:
-            raise ValueError(
-                "Must specify 'age_col' containing population ages.\n"
-                "This is required for matching population data with survey age ranges."
-            )
-
         # Normalize strat_var_cols to list format for consistent handling
         if isinstance(self.strat_var_cols, str):
             object.__setattr__(self, "strat_var_cols", [self.strat_var_cols])
         elif self.strat_var_cols is None:
             object.__setattr__(self, "strat_var_cols", [])
+
+        # Validate mutual exclusivity of age specifications.
+        # Exactly one of the three forms must be used:
+        #   (a) age_col only
+        #   (b) age_grp_col alongside age_col  (age_grp_col is optional, not a standalone form)
+        #   (c) age_min_col + age_max_col (both required together)
+        _has_exact = self.age_col is not None
+        _has_range = self.age_min_col is not None or self.age_max_col is not None
+
+        if not _has_exact and not _has_range:
+            raise ValueError(
+                "Must specify an age representation:\n"
+                "  'age_col' for exact integer ages (e.g., 0, 1, 2, ...),\n"
+                "  or both 'age_min_col' and 'age_max_col' for age ranges."
+            )
+        if _has_exact and _has_range:
+            raise ValueError(
+                "Age specification forms are mutually exclusive — provide exactly one:\n"
+                "  'age_col', or 'age_min_col'/'age_max_col'.\n"
+                f"  Got: age_col={self.age_col!r}, "
+                f"age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
+            )
+        if _has_range and (self.age_min_col is None or self.age_max_col is None):
+            raise ValueError(
+                "Both 'age_min_col' and 'age_max_col' must be specified together.\n"
+                f"  Got: age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
+            )
 
         # Delegate column validation, NaN removal, dtype coercion, aggregation, and renaming
         object.__setattr__(
@@ -236,6 +258,8 @@ class PopulationData:
                 self.size_col,
                 self.age_grp_col,
                 self.strat_var_cols,  # type: ignore
+                self.age_min_col,
+                self.age_max_col,
             ),
         )
 
@@ -274,6 +298,8 @@ class PopulationData:
             self.age_col,
             self.size_col,
             self.strat_var_cols,  # type: ignore
+            self.age_min_col,
+            self.age_max_col,
         )
 
     @property
@@ -295,7 +321,9 @@ class PopulationData:
         >>> pop_data.n_ages
         86  # Ages 0-85
         """
-        return self.data["age"].nunique()
+        if self.age_col:
+            return self.data["age"].nunique()
+        return len(self.data[["age_min", "age_max"]].drop_duplicates())
 
     @property
     def total(self) -> float:
@@ -334,8 +362,10 @@ class PopulationData:
         >>> pop_data.age_range
         (0, 85)
         """
-        ages = self.data["age"]
-        return (int(ages.min()), int(ages.max()))
+        if self.age_col:
+            ages = self.data["age"]
+            return (int(ages.min()), int(ages.max()))
+        return (int(self.data["age_min"].min()), int(self.data["age_max"].max()))
 
     @property
     def strat_vars(self) -> List[str]:

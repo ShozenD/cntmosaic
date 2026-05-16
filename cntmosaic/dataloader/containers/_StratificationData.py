@@ -108,9 +108,11 @@ class StratificationData:
     """
 
     data: pd.DataFrame
-    age_col: str
+    age_col: Optional[str] = None
     strat_var_cols: Optional[Union[str, List[str]]] = None
     prop_col: str = "prop"
+    age_min_col: Optional[str] = None
+    age_max_col: Optional[str] = None
 
     # Internal working attribute (set in __post_init__)
     strat_col: str = None
@@ -121,9 +123,37 @@ class StratificationData:
         if isinstance(self.strat_var_cols, str):
             self.strat_var_cols = [self.strat_var_cols]
 
+        # Validate mutual exclusivity of age specifications.
+        _has_exact = self.age_col is not None
+        _has_range = self.age_min_col is not None or self.age_max_col is not None
+
+        if not _has_exact and not _has_range:
+            raise ValueError(
+                "Must specify an age representation:\n"
+                "  'age_col' for exact ages,\n"
+                "  or both 'age_min_col' and 'age_max_col' for age ranges."
+            )
+        if _has_exact and _has_range:
+            raise ValueError(
+                "Age specification forms are mutually exclusive — provide exactly one:\n"
+                "  'age_col', or 'age_min_col'/'age_max_col'.\n"
+                f"  Got: age_col={self.age_col!r}, "
+                f"age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
+            )
+        if _has_range and (self.age_min_col is None or self.age_max_col is None):
+            raise ValueError(
+                "Both 'age_min_col' and 'age_max_col' must be specified together.\n"
+                f"  Got: age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
+            )
+
         # Delegate column validation and categorical conversion
         self.data = preprocess_stratification_data(
-            self.data, self.age_col, self.strat_var_cols, self.prop_col
+            self.data,
+            self.age_col,
+            self.strat_var_cols,
+            self.prop_col,
+            self.age_min_col,
+            self.age_max_col,
         )
 
         self.validate()
@@ -149,16 +179,30 @@ class StratificationData:
         >>> pop_prop.validate()
         """
         validate_stratification_data(
-            self.data, self.age_col, self.strat_var_cols, self.prop_col
+            self.data,
+            self.age_col,
+            self.strat_var_cols,
+            self.prop_col,
+            self.age_min_col,
+            self.age_max_col,
         )
+
+    @property
+    def _age_groupby_cols(self) -> List[str]:
+        """Return the list of column(s) used as the age groupby key."""
+        if self.age_col:
+            return [self.age_col]
+        return [self.age_min_col, self.age_max_col]
 
     @classmethod
     def from_counts(
         cls,
         data: pd.DataFrame,
-        age_col: str,
+        age_col: Optional[str] = None,
         strat_var_cols: Optional[Union[str, List[str]]] = None,
         count_col: str = "count",
+        age_min_col: Optional[str] = None,
+        age_max_col: Optional[str] = None,
     ) -> "StratificationData":
         """
         Create StratificationData from population counts (automatically computes proportions).
@@ -215,7 +259,6 @@ class StratificationData:
         ... )
         >>> pop_prop.var_name  # 'gender_region'
         """
-        # Auto-detect strat_var_cols if not provided
         if strat_var_cols is None:
             raise ValueError("strat_var_cols must be specified.")
 
@@ -223,8 +266,20 @@ class StratificationData:
         if isinstance(strat_var_cols, str):
             strat_var_cols = [strat_var_cols]
 
+        # Resolve age columns
+        _has_exact = age_col is not None
+        _has_range = age_min_col is not None or age_max_col is not None
+        if not _has_exact and not _has_range:
+            raise ValueError("Must specify 'age_col' or both 'age_min_col' and 'age_max_col'.")
+        if _has_exact and _has_range:
+            raise ValueError("Provide exactly one of 'age_col' or 'age_min_col'/'age_max_col'.")
+        if _has_range and (age_min_col is None or age_max_col is None):
+            raise ValueError("Both 'age_min_col' and 'age_max_col' must be specified together.")
+
+        age_groupby_cols = [age_col] if age_col else [age_min_col, age_max_col]
+
         # Validate required columns
-        required_cols = [age_col, count_col] + strat_var_cols
+        required_cols = age_groupby_cols + [count_col] + strat_var_cols
         missing = [col for col in required_cols if col not in data.columns]
         if missing:
             raise ValueError(
@@ -234,13 +289,15 @@ class StratificationData:
 
         # Compute proportions within each age group
         df_with_props = data.copy()
-        df_with_props["prop"] = df_with_props.groupby(age_col, observed=False)[
+        df_with_props["prop"] = df_with_props.groupby(age_groupby_cols, observed=False)[
             count_col
         ].transform(lambda x: x / x.sum())
 
         return cls(
             data=df_with_props,
             age_col=age_col,
+            age_min_col=age_min_col,
+            age_max_col=age_max_col,
             strat_var_cols=strat_var_cols,
         )
 
@@ -305,17 +362,28 @@ class StratificationData:
         labels : List
             Ordered list of stratum labels corresponding to rows of Q.
         """
-        df_Q_source = self.data[[self.age_col] + vars_list + [self.prop_col]]
-        sort_vars = [self.age_col] + vars_list
+        age_groupby = self._age_groupby_cols
+        # When using age ranges, create a composite age key for pivoting
+        df_Q_source = self.data[age_groupby + vars_list + [self.prop_col]].copy()
+
+        if len(age_groupby) > 1:
+            df_Q_source["_age_key"] = list(
+                zip(df_Q_source[age_groupby[0]], df_Q_source[age_groupby[1]])
+            )
+            age_key = "_age_key"
+        else:
+            age_key = age_groupby[0]
+
+        sort_vars = [age_key] + vars_list
         df_Q_source = df_Q_source.sort_values(by=sort_vars)
 
         if len(vars_list) == 1:
             var = vars_list[0]
             df_pivot = (
-                df_Q_source.groupby([self.age_col, var], observed=False)[self.prop_col]
+                df_Q_source.groupby([age_key, var], observed=False)[self.prop_col]
                 .sum()
                 .reset_index()
-                .pivot(index=var, columns=self.age_col, values=self.prop_col)
+                .pivot(index=var, columns=age_key, values=self.prop_col)
             )
             if strat_labels_for_vars is not None:
                 # If caller passed full cross-product labels like 'A->B',
@@ -334,13 +402,13 @@ class StratificationData:
                 lambda row: "_".join(row.astype(str)), axis=1
             )
             df_pivot = (
-                df_Q_source.groupby([self.age_col, "strat_combined"], observed=False)[
+                df_Q_source.groupby([age_key, "strat_combined"], observed=False)[
                     self.prop_col
                 ]
                 .sum()
                 .reset_index()
                 .pivot(
-                    index="strat_combined", columns=self.age_col, values=self.prop_col
+                    index="strat_combined", columns=age_key, values=self.prop_col
                 )
             )
             if strat_labels_for_vars is not None:

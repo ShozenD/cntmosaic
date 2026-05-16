@@ -8,7 +8,7 @@ Keeping this logic here separates the validation concern from the
 data-container and query API defined in StratificationData.
 """
 
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -16,9 +16,11 @@ import pandas as pd
 
 def validate_stratification_data(
     data: pd.DataFrame,
-    age_col: str,
+    age_col: Optional[str],
     strat_var_cols: List[str],
     prop_col: str,
+    age_min_col: Optional[str] = None,
+    age_max_col: Optional[str] = None,
 ) -> None:
     """
     Run all domain validation checks on a preprocessed stratification DataFrame.
@@ -27,12 +29,16 @@ def validate_stratification_data(
     ----------
     data : pd.DataFrame
         Preprocessed stratification DataFrame.
-    age_col : str
-        Column containing age values.
+    age_col : Optional[str]
+        Column containing age values. Mutually exclusive with age_min_col/age_max_col.
     strat_var_cols : List[str]
         Stratification variable column names.
     prop_col : str
         Column containing population proportions.
+    age_min_col : Optional[str]
+        Column containing minimum ages (for age range representation).
+    age_max_col : Optional[str]
+        Column containing maximum ages (for age range representation).
 
     Raises
     ------
@@ -41,9 +47,11 @@ def validate_stratification_data(
         If proportion values are outside [0, 1].
         If proportions do not sum to 1.0 within each age group (tolerance 1e-6).
     """
-    _validate_required_columns(data, age_col, strat_var_cols, prop_col)
+    _validate_required_columns(
+        data, age_col, strat_var_cols, prop_col, age_min_col, age_max_col
+    )
     _validate_prop_range(data, prop_col)
-    _validate_prop_sums(data, age_col, prop_col)
+    _validate_prop_sums(data, age_col, prop_col, age_min_col, age_max_col)
 
 
 # ---------------------------------------------------------------------------
@@ -53,12 +61,20 @@ def validate_stratification_data(
 
 def _validate_required_columns(
     data: pd.DataFrame,
-    age_col: str,
+    age_col: Optional[str],
     strat_var_cols: List[str],
     prop_col: str,
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
 ) -> None:
     """Raise ValueError if any required column is absent from data."""
-    required_cols = [age_col] + strat_var_cols + [prop_col]
+    age_cols = []
+    if age_col:
+        age_cols = [age_col]
+    elif age_min_col and age_max_col:
+        age_cols = [age_min_col, age_max_col]
+
+    required_cols = age_cols + strat_var_cols + [prop_col]
     missing = [col for col in required_cols if col not in data.columns]
     if missing:
         raise ValueError(
@@ -85,17 +101,29 @@ def _validate_prop_range(
 
 def _validate_prop_sums(
     data: pd.DataFrame,
-    age_col: str,
+    age_col: Optional[str],
     prop_col: str,
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
 ) -> None:
     """Raise ValueError if proportions do not sum to 1.0 within each age group."""
-    group_sums = data.groupby(age_col, observed=False)[prop_col].sum()
-    bad_groups = group_sums[np.abs(group_sums - 1.0) > 1e-6]
-
-    if not bad_groups.empty:
-        raise ValueError(
-            f"Population proportions must sum to 1.0 within each age group (tolerance: 1e-6).\n"
-            f"  Ages with invalid sums: {list(bad_groups.index)}\n"
-            f"  Actual sums: {bad_groups.to_dict()}\n"
-            f"  Hint: Use StratificationData.from_counts() to automatically compute proportions from counts."
-        )
+    if age_col:
+        group_sums = data.groupby(age_col, observed=False)[prop_col].sum()
+        bad_groups = group_sums[np.abs(group_sums - 1.0) > 1e-6]
+        if not bad_groups.empty:
+            raise ValueError(
+                f"Population proportions must sum to 1.0 within each age group (tolerance: 1e-6).\n"
+                f"  Ages with invalid sums: {list(bad_groups.index)}\n"
+                f"  Actual sums: {bad_groups.to_dict()}\n"
+                f"  Hint: Use StratificationData.from_counts() to automatically compute proportions from counts."
+            )
+    elif age_min_col and age_max_col:
+        group_sums = data.groupby([age_min_col, age_max_col], observed=False)[prop_col].sum()
+        bad_groups = group_sums[np.abs(group_sums - 1.0) > 1e-6]
+        if not bad_groups.empty:
+            raise ValueError(
+                f"Population proportions must sum to 1.0 within each age range (tolerance: 1e-6).\n"
+                f"  Age ranges with invalid sums: {list(bad_groups.index)}\n"
+                f"  Actual sums: {bad_groups.to_dict()}\n"
+                f"  Hint: Use StratificationData.from_counts() to automatically compute proportions from counts."
+            )

@@ -40,7 +40,7 @@ from ...sim import (
     Stratification,
 )
 from .._BRC import BRC
-from ..priors import HSGP2D, PSpline2D, Spline2D
+from ..numpyro.priors import HSGP2D, PSpline2D, Spline2D
 
 # ============================================================================
 # Mock BRC Implementation for Testing
@@ -94,7 +94,11 @@ def sample_dataloader():
     templates = load_template_patterns("United_States")
 
     strat = Stratification(
-        name="general", n_strata=1, ref_age_dist=df_age_dist.P.values, labels=["All"], seed=42
+        name="general",
+        n_strata=1,
+        ref_age_dist=df_age_dist.P.values,
+        labels=["All"],
+        seed=42,
     )
     popcon = PopulationConstructor(strats=strat)
 

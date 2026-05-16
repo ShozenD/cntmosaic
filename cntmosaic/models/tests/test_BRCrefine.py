@@ -6,7 +6,7 @@ from numpyro.infer.autoguide import AutoNormal
 
 from ...dataloader import DataLoader
 from .._BRCrefine import BRCrefine
-from ..priors import PSpline2D
+from ..numpyro.priors import PSpline2D
 from .fixtures import (
     single_coarse_large_sample,
     single_coarse_large_sample_with_repeats,

@@ -7,7 +7,7 @@ from ...dataloader import DataLoader
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator
 from .._BRCfine import BRCfine
-from ..priors import Spline2D
+from ..numpyro.priors import Spline2D
 from .fixtures import (
     single_large_sample,
     single_large_sample_with_repeats,

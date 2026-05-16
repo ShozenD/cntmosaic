@@ -7,7 +7,7 @@ from ...dataloader import DataLoader
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator
 from .._vdKassteele import vdKassteele
-from ..priors import Spline2D
+from ..numpyro.priors import Spline2D
 from .fixtures import (
     full_large_sample,
     full_multi_strat_large_sample,

@@ -6,7 +6,7 @@ from numpyro.infer.autoguide import AutoNormal
 from ...dataloader import DataLoader, StratificationData
 from ...datasets import load_age_distribution, load_template_patterns
 from .._HiBRCfine import HiBRCfine
-from ..priors import PSpline2D
+from ..numpyro.priors import PSpline2D
 from .fixtures import (
     full_large_sample,
     full_multi_strat_large_sample,
@@ -119,7 +119,9 @@ class TestModel:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data=strat_data)
+        dataloader = DataLoader(
+            part_data, cnt_data, pop_data, strat_prop_data=strat_data
+        )
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
         for var in strat_vars:
             priors[var] = PSpline2D(prior_type="partial", M=10)
@@ -139,7 +141,9 @@ class TestModel:
             df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data=strat_data)
+        dataloader = DataLoader(
+            part_data, cnt_data, pop_data, strat_prop_data=strat_data
+        )
         priors = {"rate": PSpline2D(prior_type="global", M=10)}
         for var in strat_vars:
             priors[var] = PSpline2D(prior_type="partial", M=10)

@@ -4,7 +4,7 @@ from numpyro.infer.autoguide import AutoNormal
 
 from ...dataloader import DataLoader, StratificationData
 from .._HiBRCrefine import HiBRCrefine
-from ..priors import PSpline2D
+from ..numpyro.priors import PSpline2D
 from .fixtures import (
     full_coarse_large_sample,
     full_coarse_multi_strat_large_sample,

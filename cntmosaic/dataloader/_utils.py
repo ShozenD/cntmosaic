@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from typing import Optional, Tuple, Dict
 from numpy.typing import ArrayLike, NDArray
 
 
@@ -54,7 +55,9 @@ def fine_coarse_matrix(x: pd.Series) -> NDArray:
     return indicator_matrix
 
 
-def make_idarrs_for_intervals(data: pd.DataFrame, interval_col: str, aid: np.ndarray):
+def make_idarrs_for_intervals(
+    data: pd.DataFrame, interval_col: str, aid: NDArray
+) -> Tuple[NDArray, NDArray]:
     """
     Prepares index arrays for 3D interval-based operations from DataFrame interval data.
 

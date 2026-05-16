@@ -297,6 +297,8 @@ class ParticipantData:
         validate_participant_data(
             self.data,
             self.age_col,
+            self.age_min_col,
+            self.age_max_col,
             self.age_grp_col,
             self.repeat_col,
             self.amb_cnt_col,

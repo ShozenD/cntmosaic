@@ -41,14 +41,20 @@ class TestCoreContracts:
         assert part_data.data.columns.tolist() == ["id", "age_grp_part"]
 
     def test_column_renaming_with_age_min_max_cols(self, df_part_age_min_max):
-        """Columns are renamed: id_col→'id', age_min_col→'age_min_part', age_max_col→'age_max_part'."""
+        """age_min/max_col are renamed and age_grp_part is synthesised as ordered categorical."""
         part_data = ParticipantData(
             df_part_age_min_max,
             id_col="id",
             age_min_col="age_min",
             age_max_col="age_max",
         )
-        assert part_data.data.columns.tolist() == ["id", "age_min_part", "age_max_part"]
+        assert "id" in part_data.data.columns
+        assert "age_min_part" in part_data.data.columns
+        assert "age_max_part" in part_data.data.columns
+        assert "age_grp_part" in part_data.data.columns
+        import pandas as pd
+        assert isinstance(part_data.data["age_grp_part"].dtype, pd.CategoricalDtype)
+        assert part_data.data["age_grp_part"].cat.ordered
 
     def test_column_renaming_single_strat_var(self, df_part_one_year):
         """A string strat_var_col is normalised to a list and renamed with '_part' suffix."""

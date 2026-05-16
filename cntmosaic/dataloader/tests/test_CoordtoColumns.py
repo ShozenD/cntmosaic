@@ -1,6 +1,6 @@
 import pytest
 
-from .._CoordToColumns import CoordToColumns
+from .._ColumnSpec import ColumnSpec
 
 # language: python
 
@@ -12,8 +12,8 @@ from .._CoordToColumns import CoordToColumns
 class TestSingle:
 
     def test_basic(self):
-        """Test CoordToColumns with single subgroup data."""
-        colmap = CoordToColumns(
+        """Test ColumnSpec with single subgroup data."""
+        colmap = ColumnSpec(
             age_part="age_group",
             age_cnt="age_cnt",
             age_pop="age",
@@ -28,8 +28,8 @@ class TestSingle:
         assert colmap.age_vars == ["age_cnt", "age_group"]
 
     def test_with_repeat(self):
-        """Test CoordToColumns with repeat column."""
-        colmap = CoordToColumns(
+        """Test ColumnSpec with repeat column."""
+        colmap = ColumnSpec(
             age_part="age_group",
             age_cnt="age_cnt",
             age_pop="age",
@@ -49,8 +49,8 @@ class TestSingle:
 class TestPartial:
 
     def test_single_strat(self):
-        """Test CoordToColumns with partial subgroup data."""
-        colmap = CoordToColumns(
+        """Test ColumnSpec with partial subgroup data."""
+        colmap = ColumnSpec(
             age_part="age_group",
             age_cnt="age_cnt",
             age_pop="age",
@@ -67,8 +67,8 @@ class TestPartial:
         assert colmap.age_vars == ["age_cnt", "age_group"]
 
     def test_multiple_strat(self):
-        """Test CoordToColumns with multiple subgroup data."""
-        colmap = CoordToColumns(
+        """Test ColumnSpec with multiple subgroup data."""
+        colmap = ColumnSpec(
             age_part="age_group",
             age_cnt="age_cnt",
             age_pop="age",
@@ -79,8 +79,8 @@ class TestPartial:
         assert colmap.strat_vars_part == ["subgroup1_part", "subgroup2_part"]
 
     def test_single_strat_with_repeat(self):
-        """Test CoordToColumns with partial subgroup data and repeat column."""
-        colmap = CoordToColumns(
+        """Test ColumnSpec with partial subgroup data and repeat column."""
+        colmap = ColumnSpec(
             age_part="age_group",
             age_cnt="age_cnt",
             age_pop="age",
@@ -100,8 +100,8 @@ class TestPartial:
 
 
 def test_coord_to_columns_full():
-    """Test CoordToColumns with full subgroup data."""
-    colmap = CoordToColumns(
+    """Test ColumnSpec with full subgroup data."""
+    colmap = ColumnSpec(
         age_part="age_group",
         age_cnt="age_cnt",
         age_pop="age",
@@ -124,7 +124,7 @@ def test_coord_to_columns_full():
 
 def test_coord_to_columns_empty_strat_vars_match():
     """Test that empty contact and population grouping variables are considered matching."""
-    colmap = CoordToColumns(
+    colmap = ColumnSpec(
         age_part="age_group",
         age_cnt="age_cnt",
         age_pop="age",
@@ -138,7 +138,7 @@ def test_coord_to_columns_empty_strat_vars_match():
 
 def test_coord_to_columns_strat_vars_different_order():
     """Test that strat_vars_cnt and strat_vars_pop can be in different order (set comparison)."""
-    colmap = CoordToColumns(
+    colmap = ColumnSpec(
         age_part="age_group",
         age_cnt="age_cnt",
         age_pop="age",
@@ -158,7 +158,7 @@ def test_coord_to_columns_strat_vars_different_order():
 def test_coord_to_columns_cnt_suffix_validation():
     """Test that _cnt suffix is automatically stripped for validation."""
     # This should work: strat_vars_cnt has _cnt suffix, strat_vars_pop doesn't
-    colmap = CoordToColumns(
+    colmap = ColumnSpec(
         age_part="age_group",
         age_cnt="age_cnt",
         age_pop="age",

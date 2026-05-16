@@ -13,11 +13,11 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from .._types import StratMode
-from ._CoordToColumns import CoordToColumns
+from ._ColumnSpec import ColumnSpec
 from .containers._StratificationData import StratificationData
 
 
-def infer_strat_modes(col_spec: CoordToColumns) -> Dict[str, StratMode]:
+def infer_strat_modes(col_spec: ColumnSpec) -> Dict[str, StratMode]:
     """
     Infer stratification modes (PARTIAL vs FULL) for each stratification variable.
 
@@ -151,9 +151,7 @@ def infer_strat_pixs(
     return flat_pixs
 
 
-def make_flat_ix(
-    strat_ixs: Dict[str, NDArray], strat_dims: Dict[str, int]
-) -> NDArray:
+def make_flat_ix(strat_ixs: Dict[str, NDArray], strat_dims: Dict[str, int]) -> NDArray:
     """Create flat index combining all stratification variable indices."""
     n_obs = len(next(iter(strat_ixs.values())))
     flat_ix = np.zeros(n_obs, dtype=int)
@@ -168,7 +166,7 @@ def make_flat_ix(
 
 def assemble_strat_kwargs(
     df_full: pd.DataFrame,
-    col_spec: CoordToColumns,
+    col_spec: ColumnSpec,
     strat_data: Optional[StratificationData],
 ) -> Dict:
     """

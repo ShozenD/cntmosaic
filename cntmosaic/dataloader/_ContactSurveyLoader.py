@@ -9,13 +9,14 @@ to the free functions in ``_observation`` and ``_stratification``.
 
 from __future__ import annotations
 
+import warnings
 from typing import Dict, Optional, Union
 
 import numpy as np
 import pandas as pd
 
 from .._types import StratMode
-from ._CoordToColumns import ColumnSpec
+from ._ColumnSpec import ColumnSpec
 from ._DataFrameSurveySource import DataFrameSurveySource
 from ._observation import (
     align_age_range,
@@ -118,7 +119,9 @@ class ContactSurveyLoader:
     def _build_df_full(self) -> pd.DataFrame:
         """Build the full Cartesian observation grid from scratch."""
         df_n = build_participant_counts(self.data, self.col_map)
-        df_V = build_contact_offsets(self.data, self.col_map, self.smooth_amb_cnt_offsets)
+        df_V = build_contact_offsets(
+            self.data, self.col_map, self.smooth_amb_cnt_offsets
+        )
         df_y = build_contact_counts(self.data, self.col_map)
         return build_observation_grid(
             self.data, self.col_map, self.min_age, self.max_age, df_n, df_y, df_V
@@ -139,7 +142,20 @@ class ContactSurveyLoader:
         df_full = self._df_full_cache
 
         # Build required observation arrays
-        aid = df_full[self.col_map.age_part].to_numpy()
+        if self.col_map.age_grp_part:
+            aid = None
+        else:
+            aid = df_full[self.col_map.age_part].to_numpy()
+
+        # cid: coarse participant age group index
+        cid = None
+        if self.col_map.age_grp_part:
+            cid = df_full[self.col_map.age_part].cat.codes.to_numpy()
+
+        # did: coarse contact age group index
+        did = None
+        if self.col_map.age_grp_cnt:
+            did = df_full[self.col_map.age_grp_cnt].cat.codes.to_numpy()
 
         bid = None
         aid_exp = None
@@ -147,8 +163,19 @@ class ContactSurveyLoader:
         if self.col_map.age_cnt:
             bid = df_full[self.col_map.age_cnt].to_numpy()
         elif self.col_map.age_grp_cnt:
+            # aid_exp uses aid for fine-participant case; cid for coarse-participant case
+            _aid_for_exp: np.ndarray = cid if self.col_map.age_grp_part else aid  # type: ignore[assignment]
             aid_exp, bid_pad = make_idarrs_for_intervals(
-                df_full, self.col_map.age_grp_cnt, aid
+                df_full, self.col_map.age_grp_cnt, _aid_for_exp
+            )
+
+        if self.col_map.age_grp_part and self.col_map.age_cnt:
+            warnings.warn(
+                "Coarse participant age groups combined with fine-resolution contact ages "
+                "is not currently supported by any model. Consider binning contact ages "
+                "to match the participant age groups.",
+                UserWarning,
+                stacklevel=2,
             )
 
         rid = None
@@ -166,13 +193,15 @@ class ContactSurveyLoader:
 
         self.model_data = ModelData(
             y=df_full["y"].to_numpy(),
-            aid=aid,
             log_N=np.log(df_full["N"].to_numpy()),
-            log_V=df_full["log_V"].to_numpy(),
             log_P=construct_log_P(self.pop_data, self.col_map),
             age_min=self.min_age,
             age_max=self.max_age,
+            aid=aid,
+            cid=cid,
+            did=did,
             bid=bid,
+            log_V=df_full["log_V"].to_numpy(),
             aid_exp=aid_exp,
             bid_pad=bid_pad,
             rid=rid,

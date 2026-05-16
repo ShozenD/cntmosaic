@@ -54,6 +54,7 @@ def validate_contact_data(
 
     if age_min_col and age_max_col:
         _validate_age_min_max(data)
+        _validate_age_groups(data, "age_grp_cnt")
 
     if age_grp_col:
         _validate_age_groups(data, age_grp_col)

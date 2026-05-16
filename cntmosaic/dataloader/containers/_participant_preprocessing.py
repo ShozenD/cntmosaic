@@ -249,4 +249,49 @@ def _preprocess(
     if repeat_col and not repeat_col.endswith("_part"):
         rename_map[repeat_col] = "repeat_part"
 
-    return df.rename(columns=rename_map)
+    df = df.rename(columns=rename_map)
+
+    # --- synthesise age_grp_part from age_min_part / age_max_part -----------
+    if age_min_col and age_max_col:
+        df["age_grp_part"] = _build_age_grp_from_min_max(df, "age_min_part", "age_max_part")
+        _warn_if_overlapping(df["age_grp_part"].cat.categories)
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Age-group helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_age_grp_from_min_max(
+    df: pd.DataFrame, min_col: str, max_col: str
+) -> "pd.Categorical":
+    """Return an ordered Categorical of left-closed intervals [min, max)."""
+    unique = (
+        df[[min_col, max_col]]
+        .drop_duplicates()
+        .sort_values([min_col, max_col])
+    )
+    cats = pd.IntervalIndex.from_arrays(
+        unique[min_col], unique[max_col], closed="left"
+    )
+    raw = pd.arrays.IntervalArray.from_arrays(
+        df[min_col], df[max_col], closed="left"
+    )
+    return pd.Categorical(raw, categories=cats, ordered=True)
+
+
+def _warn_if_overlapping(categories: "pd.IntervalIndex") -> None:
+    """Warn if any two intervals in an IntervalIndex overlap."""
+    pairs = sorted(categories, key=lambda iv: (iv.left, iv.right))
+    for i in range(1, len(pairs)):
+        if pairs[i].left < pairs[i - 1].right:
+            warnings.warn(
+                f"Age intervals overlap (e.g. {pairs[i - 1]} and {pairs[i]}). "
+                "Current models do not handle overlapping age ranges — "
+                "consider rebinning to non-overlapping intervals.",
+                UserWarning,
+                stacklevel=6,
+            )
+            break

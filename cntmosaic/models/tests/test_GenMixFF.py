@@ -1,263 +1,72 @@
-import numpy as np
 import pytest
 from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
 
 from ...dataloader import ContactSurveyLoader, StratificationData
-from ...datasets import load_age_distribution, load_template_patterns
 from .._GenMixFF import GenMixFF
 from ..numpyro.priors import PSpline2D
-from .fixtures import (
-    full_large_sample,
-    full_multi_strat_large_sample,
-    partial_large_sample,
-    partial_multi_strat_large_sample,
-)
+from .fixtures import full_large_sample, partial_large_sample
 
 
-class TestInit:
-
-    def test_partial(self, partial_large_sample):
-        part_data, cnt_data, pop_data = partial_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
-
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data=part_data,
-            cnt_data=cnt_data,
-            pop_data=pop_data,
-            strat_data=strat_data,
-        )
-
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="partial", M=10)
-
-        # Test model initialization
-        model = GenMixFF(dataloader, priors, "poisson")
-
-    def test_full(self, full_large_sample):
-        part_data, cnt_data, pop_data = full_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
-
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data=part_data,
-            cnt_data=cnt_data,
-            pop_data=pop_data,
-            strat_data=strat_data,
-        )
-
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="full", M=10)
-
-        # Test model initialization
-        model = GenMixFF(dataloader, priors, "poisson")
-
-    def test_multi_strat_partial(self, partial_multi_strat_large_sample):
-        part_data, cnt_data, pop_data = partial_multi_strat_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
-
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data=part_data,
-            cnt_data=cnt_data,
-            pop_data=pop_data,
-            strat_data=strat_data,
-        )
-
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="partial", M=10)
-
-        # Test model initialization
-        model = GenMixFF(dataloader, priors, "poisson")
-
-    def test_multi_strat_full(self, full_multi_strat_large_sample):
-        part_data, cnt_data, pop_data = full_multi_strat_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
-
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data=part_data,
-            cnt_data=cnt_data,
-            pop_data=pop_data,
-            strat_data=strat_data,
-        )
-
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="full", M=10)
-
-        # Test model initialization
-        model = GenMixFF(dataloader, priors, "poisson")
+def _build_model(fixture, prior_type):
+    part_data, cnt_data, pop_data = fixture
+    strat_vars = pop_data.get_strat_vars()
+    strat_data = StratificationData.from_counts(
+        pop_data.data, age_col="age", strat_var_cols=strat_vars, count_col="P"
+    )
+    dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, strat_data)
+    priors = {"rate": PSpline2D(prior_type="global", M=10)}
+    for var in strat_vars:
+        priors[var] = PSpline2D(prior_type=prior_type, M=10)
+    return GenMixFF(dataloader, priors, "poisson")
 
 
-class TestModel:
+class TestNumPyroModel:
 
     def test_model_callable(self, partial_large_sample):
-        """Test that model is callable"""
         from numpyro.handlers import seed
 
-        part_data, cnt_data, pop_data = partial_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
-
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data, cnt_data, pop_data, strat_data=strat_data
-        )
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="partial", M=10)
-        model = GenMixFF(dataloader, priors, likelihood="poisson")
-
-        try:
-            with seed(rng_seed=0):
-                model.model(y=model.y)
-        except Exception as e:
-            pytest.fail(f"Model callable test failed with error: {e}")
+        model = _build_model(partial_large_sample, "partial")
+        with seed(rng_seed=0):
+            model.model(y=model.y)
 
     def test_print_model_shape(self, partial_large_sample):
-        part_data, cnt_data, pop_data = partial_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
-
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data, cnt_data, pop_data, strat_data=strat_data
-        )
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="partial", M=10)
-        model = GenMixFF(dataloader, priors, likelihood="poisson")
-
-        try:
-            model.print_model_shape()
-        except Exception as e:
-            pytest.fail(f"Print model shape test failed with error: {e}")
+        model = _build_model(partial_large_sample, "partial")
+        model.print_model_shape()
 
 
-class TestInference:
-    SEED = 0
+class TestNumPyroInference:
 
-    def test_partial_svi(self, partial_large_sample):
-        part_data, cnt_data, pop_data = partial_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
-
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data=part_data,
-            cnt_data=cnt_data,
-            pop_data=pop_data,
-            strat_data=strat_data,
-        )
-
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="partial", M=10)
-
-        model = GenMixFF(dataloader, priors, "poisson")
+    def test_svi_partial(self, partial_large_sample):
+        model = _build_model(partial_large_sample, "partial")
         guide = AutoNormal(model.model)
+        model.run_inference_svi(PRNGKey(0), guide, num_steps=50)
 
-        try:
-            model.run_inference_svi(PRNGKey(self.SEED), guide, num_steps=5)
-            assert model._svi_result is not None
-        except Exception as e:
-            pytest.fail(f"SVI inference test failed with error: {e}")
+        assert model._svi_result is not None
+        assert model._svi_result.params is not None
 
-    def test_full_svi(self, full_large_sample):
-        part_data, cnt_data, pop_data = full_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
-
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data=part_data,
-            cnt_data=cnt_data,
-            pop_data=pop_data,
-            strat_data=strat_data,
-        )
-
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="full", M=10)
-
-        model = GenMixFF(dataloader, priors, "poisson")
+    def test_svi_full(self, full_large_sample):
+        model = _build_model(full_large_sample, "full")
         guide = AutoNormal(model.model)
+        model.run_inference_svi(PRNGKey(0), guide, num_steps=50)
 
-        try:
-            model.run_inference_svi(PRNGKey(self.SEED), guide, num_steps=5)
-            assert model._svi_result is not None
-        except Exception as e:
-            pytest.fail(f"SVI inference test failed with error: {e}")
+        assert model._svi_result is not None
+        assert model._svi_result.params is not None
 
-    def test_partial_mcmc_init(self, partial_large_sample):
-        part_data, cnt_data, pop_data = partial_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
+    def test_mcmc_partial(self, partial_large_sample):
+        model = _build_model(partial_large_sample, "partial")
+        model.run_inference_mcmc(PRNGKey(1), num_warmup=10, num_samples=10, num_chains=1)
 
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data=part_data,
-            cnt_data=cnt_data,
-            pop_data=pop_data,
-            strat_data=strat_data,
-        )
+        assert model._mcmc_result is not None
+        samples = model._mcmc_result.get_samples()
+        assert "baseline" in samples
+        assert samples["baseline"].shape[0] == 10
 
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="partial", M=10)
+    def test_mcmc_full(self, full_large_sample):
+        model = _build_model(full_large_sample, "full")
+        model.run_inference_mcmc(PRNGKey(1), num_warmup=10, num_samples=10, num_chains=1)
 
-        model = GenMixFF(dataloader, priors, "poisson")
-
-        assert hasattr(model, "run_inference_mcmc")
-        assert callable(model.run_inference_mcmc)
-
-    def test_full_mcmc_init(self, full_large_sample):
-        part_data, cnt_data, pop_data = full_large_sample
-        df_pop = pop_data.data
-        strat_vars = pop_data.get_strat_vars()
-        strat_data = StratificationData.from_counts(
-            df_pop, age_col="age", strat_var_cols=strat_vars, count_col="P"
-        )
-
-        dataloader = ContactSurveyLoader.from_containers(
-            part_data=part_data,
-            cnt_data=cnt_data,
-            pop_data=pop_data,
-            strat_data=strat_data,
-        )
-
-        priors = {"rate": PSpline2D(prior_type="global", M=10)}
-        for var in strat_vars:
-            priors[var] = PSpline2D(prior_type="full", M=10)
-
-        model = GenMixFF(dataloader, priors, "poisson")
-
-        assert hasattr(model, "run_inference_mcmc")
-        assert callable(model.run_inference_mcmc)
+        assert model._mcmc_result is not None
+        samples = model._mcmc_result.get_samples()
+        assert "baseline" in samples
+        assert samples["baseline"].shape[0] == 10

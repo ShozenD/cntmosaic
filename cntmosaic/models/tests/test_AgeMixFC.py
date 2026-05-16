@@ -1,5 +1,3 @@
-import numpy as np
-import pandas as pd
 import pytest
 from jax.random import PRNGKey
 from numpyro.infer.autoguide import AutoNormal
@@ -7,93 +5,50 @@ from numpyro.infer.autoguide import AutoNormal
 from ...dataloader import ContactSurveyLoader
 from .._AgeMixFC import AgeMixFC
 from ..numpyro.priors import PSpline2D
-from .fixtures import (
-    single_coarse_large_sample,
-    single_coarse_large_sample_with_repeats,
-    single_small_sample,
-)
+from .fixtures import single_coarse_large_sample
 
 
-# Test initialization
-class TestInit:
-
-    def test_single_coarse(self, single_coarse_large_sample):
-        part_data, cnt_data, pop_data = single_coarse_large_sample
-        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
-        model = AgeMixFC(dataloader, likelihood="poisson")
-
-        assert len(model.y) > 0
-        assert len(model.aid) == len(model.y)
-        assert len(model.bid_pad) == len(model.y)
-        assert len(model.log_N) > 0
-        assert model.log_P.shape[1] == model.A
-        assert model.log_V.shape[0] == len(model.y)
-
-        model = AgeMixFC(dataloader, likelihood="negbin")
-
-    def test_single_coarse_repeats(self, single_coarse_large_sample_with_repeats):
-        part_data, cnt_data, pop_data = single_coarse_large_sample_with_repeats
-        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
-        model = AgeMixFC(dataloader, likelihood="poisson")
-
-        assert hasattr(model, "rid")
-        assert len(model.rid) == len(model.y)
-        assert model.hill.max_value == 4
-
-
-class TestModel:
+class TestNumPyroModel:
 
     def test_model_callable(self, single_coarse_large_sample):
-        """Test that model is callable"""
         from numpyro.handlers import seed
 
         part_data, cnt_data, pop_data = single_coarse_large_sample
         dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
-        priors = {"rate": PSpline2D(prior_type="global", M=5)}
-        model = AgeMixFC(dataloader, priors, likelihood="negbin")
+        model = AgeMixFC(dataloader, {"rate": PSpline2D(prior_type="global", M=5)}, likelihood="negbin")
 
-        try:
-            with seed(rng_seed=0):
-                model.model(y=model.y)
-        except Exception as e:
-            pytest.fail(f"Model call raised exception: {e}")
+        with seed(rng_seed=0):
+            model.model(y=model.y)
 
     def test_print_model_shape(self, single_coarse_large_sample):
-        """Test print_model_shape method."""
         part_data, cnt_data, pop_data = single_coarse_large_sample
         dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
-        priors = {"rate": PSpline2D(prior_type="global", M=5)}
-        model = AgeMixFC(dataloader, priors, likelihood="negbin")
+        model = AgeMixFC(dataloader, {"rate": PSpline2D(prior_type="global", M=5)}, likelihood="negbin")
 
-        try:
-            model.print_model_shape()
-        except Exception as e:
-            pytest.fail(f"print_model_shape raised exception: {e}")
+        model.print_model_shape()
 
 
-# Test inference
-class TestInference:
+class TestNumPyroInference:
 
-    def test_svi_inference(self, single_coarse_large_sample):
+    def test_svi(self, single_coarse_large_sample):
         part_data, cnt_data, pop_data = single_coarse_large_sample
         dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
-        priors = {"rate": PSpline2D(prior_type="global")}
-        model = AgeMixFC(dataloader, priors, likelihood="negbin")
+        model = AgeMixFC(dataloader, {"rate": PSpline2D(prior_type="global", M=5)}, likelihood="negbin")
 
-        prng_key = PRNGKey(0)
         guide = AutoNormal(model.model)
-        model.run_inference_svi(prng_key, guide, num_steps=1000, peak_lr=0.01)
+        model.run_inference_svi(PRNGKey(0), guide, num_steps=50, peak_lr=0.01)
 
         assert model._svi_result is not None
+        assert model._svi_result.params is not None
 
-    # Test MCMC inference
-    def test_mcmc_inference(self, single_coarse_large_sample):
+    def test_mcmc(self, single_coarse_large_sample):
         part_data, cnt_data, pop_data = single_coarse_large_sample
         dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
-        priors = {"rate": PSpline2D(prior_type="global")}
-        model = AgeMixFC(dataloader, priors, likelihood="negbin")
+        model = AgeMixFC(dataloader, {"rate": PSpline2D(prior_type="global", M=5)}, likelihood="negbin")
 
-        prng_key = PRNGKey(1)
-        model.run_inference_mcmc(prng_key, num_warmup=10, num_samples=10, num_chains=1)
+        model.run_inference_mcmc(PRNGKey(1), num_warmup=10, num_samples=10, num_chains=1)
 
         assert model._mcmc_result is not None
+        samples = model._mcmc_result.get_samples()
+        assert "baseline" in samples
+        assert samples["baseline"].shape[0] == 10

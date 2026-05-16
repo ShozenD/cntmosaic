@@ -1,5 +1,6 @@
 from ._base import ContactModel
 from ._GenMix import GenMix
+from ._AgeMixCC import AgeMixCC
 from ._AgeMixFF import AgeMixFF
 from ._AgeMixFC import AgeMixFC
 from ._GenMixFF import GenMixFF
@@ -15,6 +16,7 @@ def __getattr__(name: str):
         return to_inference_data
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
+
 # ---------------------------------------------------------------------------
 # Backward-compatibility re-exports
 # SocialMix and related classes have moved to cntmosaic.models.classical.
@@ -29,6 +31,7 @@ __all__ = [
     "ContactModel",
     # GenMix model family
     "GenMix",
+    "AgeMixCC",
     "AgeMixFF",
     "AgeMixFC",
     "GenMixFF",

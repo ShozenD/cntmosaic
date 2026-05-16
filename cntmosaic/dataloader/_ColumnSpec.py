@@ -318,7 +318,8 @@ class ColumnSpec:
             strat_vars_part=strat_vars_part,
             strat_vars_cnt=strat_vars_cnt,
             repeat_part="repeat_part" if part_data.repeat_col else None,
-            age_pop="age",
+            age_pop="age" if pop_data.age_col else None,
+            age_grp_pop="age_grp_pop" if pop_data.age_grp_col else None,
             P="P",
             strat_vars_pop=pop_data.strat_var_cols if pop_data.strat_var_cols else None,
         )

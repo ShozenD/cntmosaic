@@ -254,6 +254,8 @@ def _preprocess(
         groupby_cols = [age_col]
         if age_grp_col:
             groupby_cols.append(age_grp_col)
+    elif age_grp_col:
+        groupby_cols = [age_grp_col]
     else:
         groupby_cols = [age_min_col, age_max_col]
 
@@ -290,6 +292,8 @@ def _preprocess(
     # --- sort by age (and strat vars) ----------------------------------------
     if age_col:
         sort_cols = ["age"]
+    elif age_grp_col:
+        sort_cols = ["age_grp_pop"]
     else:
         sort_cols = ["age_min", "age_max"]
 

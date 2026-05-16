@@ -218,8 +218,13 @@ def align_age_range(
         cnt_min_age = int(data[col_spec.age_grp_cnt].min().left)
         cnt_max_age = int(data[col_spec.age_grp_cnt].max().right - 1)
 
-    pop_min_age = int(pop_df[col_spec.age_pop].min())
-    pop_max_age = int(pop_df[col_spec.age_pop].max())
+    if col_spec.age_pop:
+        pop_min_age = int(pop_df[col_spec.age_pop].min())
+        pop_max_age = int(pop_df[col_spec.age_pop].max())
+    elif col_spec.age_grp_pop:
+        grp_cats = pop_df[col_spec.age_grp_pop].cat.categories
+        pop_min_age = int(grp_cats.left.min())
+        pop_max_age = int(grp_cats.right.max()) - 1
 
     sample_min_age = min(part_min_age, cnt_min_age)
     sample_max_age = max(part_max_age, cnt_max_age)

@@ -40,6 +40,7 @@ does not trigger a NumPyro import at module load time.
 """
 
 from ._backend import NumPyroBackend
+from ._AgeMixCC import AgeMixCCNumPyroMixin
 from ._AgeMixFF import AgeMixFFNumPyroMixin
 from ._AgeMixFC import AgeMixFCNumPyroMixin
 from ._GenMixFF import GenMixFFNumPyroMixin
@@ -49,6 +50,7 @@ from ._vdKassteele import vdKassteeleNumPyroMixin
 
 __all__ = [
     "NumPyroBackend",
+    "AgeMixCCNumPyroMixin",
     "AgeMixFFNumPyroMixin",
     "AgeMixFCNumPyroMixin",
     "GenMixFFNumPyroMixin",

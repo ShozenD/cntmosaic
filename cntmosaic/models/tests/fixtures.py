@@ -121,6 +121,60 @@ def single_small_sample():
 
 
 @pytest.fixture
+def single_coarse_coarse_small():
+    """Generate a small sample with single stratification (no stratification)."""
+    # Define stratification
+    strat = Stratification(
+        name="general", n_strata=1, labels=["All"], ref_age_dist=df_age_dist.P.values
+    )
+
+    # Construct population
+    popcon = PopulationConstructor(strat)
+    df_pop = popcon.df_P
+    df_pop.drop(columns="general", inplace=True)
+    df_pop["age_grp_pop"] = pd.cut(
+        df_pop["age"],
+        bins=[0, 10, 20, 30, 40, 50, 60, 70, 80],
+        right=False,
+    )
+    df_pop.dropna(subset=["age_grp_pop"], inplace=True)
+    df_pop = df_pop.groupby("age_grp_pop", observed=False)["P"].sum().reset_index()
+
+    # Generate contact matrix
+    cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
+
+    # Generate participants
+    df_part = ParticipantGenerator(popcon, n_part=50).generate(seed=42)
+
+    df_part["age_grp_part"] = pd.cut(
+        df_part["age"],
+        bins=[0, 10, 20, 30, 40, 50, 60, 70, 80],
+        right=False,
+    )
+    df_part.dropna(subset=["age_grp_part"], inplace=True)
+
+    # Generate contacts
+    df_cnt = ContactGenerator(
+        df_part, cint_matrices=cnt_matrix, model="poisson"
+    ).generate(seed=42)
+
+    # Simulate coarse age group reporting
+    df_cnt["age_grp_cnt"] = pd.cut(
+        df_cnt["age_cnt"],
+        bins=[0, 10, 20, 30, 40, 50, 60, 70, 80],
+        right=False,
+    )
+    df_cnt.drop(columns="age_cnt", inplace=True)
+    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+
+    part_data = ParticipantData(df_part, id_col="id", age_grp_col="age_grp_part")
+    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+    pop_data = PopulationData(df_pop, age_grp_col="age_grp_pop", size_col="P")
+
+    return part_data, cnt_data, pop_data
+
+
+@pytest.fixture
 def single_coarse_large_sample_with_repeats():
     """Generate a large sample with single stratification (no stratification)."""
     # Define stratification

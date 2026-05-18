@@ -221,28 +221,36 @@ class PopulationData:
         elif self.strat_var_cols is None:
             object.__setattr__(self, "strat_var_cols", [])
 
-        # Validate mutual exclusivity of age specifications.
-        # Exactly one of the three forms must be used:
-        #   (a) age_col only
-        #   (b) age_grp_col alongside age_col  (age_grp_col is optional, not a standalone form)
+        # Validate age specification.
+        # Valid forms:
+        #   (a) age_col alone, or age_col + age_grp_col (age_grp_col is an optional annotation)
+        #   (b) age_grp_col alone (standalone grouped representation)
         #   (c) age_min_col + age_max_col (both required together)
+        # age_col and age_min/max are mutually exclusive.
+        # age_grp_col and age_min/max are mutually exclusive.
         _has_exact = self.age_col is not None
         _has_grp = self.age_grp_col is not None
         _has_range = self.age_min_col is not None or self.age_max_col is not None
 
-        _n_forms = sum([_has_exact, _has_grp, _has_range])
-        if _n_forms == 0:
+        if not _has_exact and not _has_grp and not _has_range:
             raise ValueError(
-                "Must specify exactly one age representation:\n"
+                "Must specify an age representation:\n"
                 "  'age_col' for exact integer ages (e.g., 25, 34, 45),\n"
                 "  'age_grp_col' for age groups (e.g., pd.IntervalIndex or categorical),\n"
                 "  or both 'age_min_col' and 'age_max_col' for age ranges."
             )
-        if _n_forms > 1:
+        if _has_exact and _has_range:
             raise ValueError(
                 "Age specification forms are mutually exclusive — provide exactly one:\n"
-                "  'age_col', 'age_grp_col', or 'age_min_col'/'age_max_col'.\n"
-                f"  Got: age_col={self.age_col!r}, age_grp_col={self.age_grp_col!r}, "
+                "  'age_col' or 'age_min_col'/'age_max_col'.\n"
+                f"  Got: age_col={self.age_col!r}, "
+                f"age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
+            )
+        if _has_grp and _has_range:
+            raise ValueError(
+                "Age specification forms are mutually exclusive — provide exactly one:\n"
+                "  'age_grp_col' or 'age_min_col'/'age_max_col'.\n"
+                f"  Got: age_grp_col={self.age_grp_col!r}, "
                 f"age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
             )
         if _has_range and (self.age_min_col is None or self.age_max_col is None):

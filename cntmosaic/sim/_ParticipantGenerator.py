@@ -152,7 +152,12 @@ class ParticipantGenerator:
     structure defined by the PopulationConstructor.
     """
 
-    def __init__(self, popcon: PopulationConstructor, n_part: int) -> None:
+    def __init__(
+        self,
+        popcon: PopulationConstructor,
+        n_part: Optional[int] = None,
+        n_participants: Optional[int] = None,
+    ) -> None:
         """
         Initialize ParticipantGenerator with population structure.
 
@@ -160,18 +165,27 @@ class ParticipantGenerator:
         ----------
         popcon : PopulationConstructor
             Population structure defining stratifications and age distributions.
-        n_part : int
+        n_part : int, optional
             Total number of participants to generate. Must be positive.
+        n_participants : int, optional
+            Alias for n_part. Provide exactly one of n_part or n_participants.
 
         Raises
         ------
         ValueError
-            If n_part is not positive.
+            If n_part is not positive, or if neither/both aliases are provided.
         TypeError
             If popcon is not a PopulationConstructor instance.
         """
         if not isinstance(popcon, PopulationConstructor):
             raise TypeError(f"popcon must be PopulationConstructor, got {type(popcon)}")
+
+        if n_part is None and n_participants is None:
+            raise TypeError("Must provide one of 'n_part' or 'n_participants'")
+        if n_part is not None and n_participants is not None:
+            raise TypeError("Provide only one of 'n_part' or 'n_participants', not both")
+
+        n_part = n_part if n_part is not None else n_participants
 
         if n_part <= 0:
             raise ValueError(f"n_part must be positive, got {n_part}")

@@ -2,21 +2,21 @@ from typing import Any, Dict, Optional
 
 import jax.numpy as jnp
 
-from ..dataloader import DataLoader
-from ._BRC import BRC
-from .numpyro import BRCrefineNumPyroMixin
+from ..dataloader import ContactSurveyLoader
+from ._GenMix import GenMix
+from .numpyro import AgeMixFCNumPyroMixin
 from .numpyro.priors import Hill, PSpline2D
 
 
-class BRCrefine(BRCrefineNumPyroMixin, BRC):
+class AgeMixFC(AgeMixFCNumPyroMixin, GenMix):
     """
-    Bayesian Rate Consistency model for coarse-age contact data.
+    Age-only mixing model with fine participant age and coarse contact age resolution.
 
-    This model estimates contact matrices at single-year age resolution from contact
-    survey data where participant ages are fine-grained (single-year) but contact ages
-    are reported in coarse age groups (e.g., 0-4, 5-9, etc.). The model uses smooth
-    priors and an age aggregation mechanism to "refine" the coarse contact age data
-    back to single-year resolution.
+    AgeMixFC (Age Mixing, Fine-Coarse) estimates social contact matrices at
+    single-year age resolution from contact survey data where participant ages are
+    at 1-year resolution but contact ages are reported in coarse age groups
+    (e.g., 0-4, 5-9, etc.). The model uses smooth priors and an age aggregation
+    mechanism to recover fine-age contact rates from the coarse contact age data.
 
     The model assumes:
     1. Contact rates are smooth functions of participant and contact ages
@@ -43,16 +43,16 @@ class BRCrefine(BRCrefineNumPyroMixin, BRC):
     - φ: overdispersion parameter (negative binomial only)
     - logsumexp: numerically stable log-sum-exp over age group
 
-    The key difference from BRCfine is the age aggregation step: instead of using
+    The key difference from AgeMixFF is the age aggregation step: instead of using
     a single contact age index bid, we sum over all fine ages within the coarse
     age group using the index_mask_logsumexp function with aid_exp and bid_pad arrays.
 
     Parameters
     ----------
-    dataloader : DataLoader
-        DataLoader object containing processed contact data with columns:
+    dataloader : ContactSurveyLoader
+        ContactSurveyLoader object containing processed contact data with columns:
         - y: observed contact counts
-        - aid: participant age indices (fine resolution)
+        - aid: participant age indices (1-year resolution)
         - aid_exp: expanded participant age indices for aggregation
         - bid_pad: padded contact age indices for coarse age groups
         - cid: coarse contact age group codes (categorical)
@@ -73,11 +73,11 @@ class BRCrefine(BRCrefineNumPyroMixin, BRC):
     Attributes
     ----------
     default_priors : dict
-        Class-level default prior specifications using HSGP2D with difference-age grid.
+        Class-level default prior specifications using PSpline2D with difference-age grid.
     y : jax.Array
         Observed contact counts, shape (n_obs,)
     aid : jax.Array
-        Participant age indices (fine resolution), shape (n_obs,)
+        Participant age indices (1-year resolution), shape (n_obs,)
     aid_exp : jax.Array
         Expanded participant age indices for aggregation, shape (n_obs, max_int_length)
     bid_pad : jax.Array
@@ -114,8 +114,8 @@ class BRCrefine(BRCrefineNumPyroMixin, BRC):
 
     Examples
     --------
-    >>> from cntmosaic.dataloader import DataLoader, CoordToColumns
-    >>> from cntmosaic.models import BRCrefine
+    >>> from cntmosaic.dataloader import ContactSurveyLoader, CoordToColumns
+    >>> from cntmosaic.models import AgeMixFC
     >>> from cntmosaic.models.numpyro.priors import HSGP2D
     >>> from jax.random import PRNGKey
     >>> import pandas as pd
@@ -127,7 +127,7 @@ class BRCrefine(BRCrefineNumPyroMixin, BRC):
     ...     age_pop="age",
     ...     P="P"
     ... )
-    >>> dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
+    >>> dataloader = ContactSurveyLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
     >>>
     >>> # Use default priors or specify custom ones
     >>> priors = {
@@ -140,7 +140,7 @@ class BRCrefine(BRCrefineNumPyroMixin, BRC):
     ... }
     >>>
     >>> # Initialize model
-    >>> model = BRCrefine(dataloader, priors, likelihood="negbin")
+    >>> model = AgeMixFC(dataloader, priors, likelihood="negbin")
     >>>
     >>> # Run MCMC inference
     >>> model.run_inference_mcmc(
@@ -157,10 +157,10 @@ class BRCrefine(BRCrefineNumPyroMixin, BRC):
 
     See Also
     --------
-    BRCfine : Fine-grained age resolution model (both participant and contact ages fine)
-    HiBRCrefine : Hierarchical BRC for multiple populations with coarse contact ages
-    DataLoader : Data preprocessing utilities
-    HSGP2D : Hilbert Space Gaussian Process prior (default for BRCrefine)
+    AgeMixFF : Age-only mixing model with fine-age resolution for both ages
+    GenMixFC : Generalised mixing model with fine participant age and coarse contact age
+    ContactSurveyLoader : Data preprocessing utilities
+    HSGP2D : Hilbert Space Gaussian Process prior
     """
 
     # Default priors
@@ -170,18 +170,18 @@ class BRCrefine(BRCrefineNumPyroMixin, BRC):
 
     def __init__(
         self,
-        dataloader: DataLoader,
+        dataloader: ContactSurveyLoader,
         priors: Optional[Dict[str, Any]] = None,
         likelihood: str = "negbin",
         backend: Optional[Any] = None,
     ) -> None:
         """
-        Initialize BRCrefine model.
+        Initialize AgeMixFC model with fine participant age and coarse contact age.
 
         Parameters
         ----------
-        dataloader : DataLoader
-            Preprocessed contact data with coarse contact age groups.
+        dataloader : ContactSurveyLoader
+            Preprocessed contact data with 1-year participant age and coarse contact age groups.
         priors : Optional[Dict[str, Any]], default=None
             Prior specifications. If None, uses default_priors.
             Must contain 'rate' key with a Prior2D object.

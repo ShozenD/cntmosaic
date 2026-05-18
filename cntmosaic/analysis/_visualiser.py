@@ -1,14 +1,14 @@
 """Visualization utilities for Bayesian contact matrix models.
 
 This module provides visualization tools for analyzing and presenting
-contact matrix estimation results from BRC model family.
+contact matrix estimation results from the GenMix model family.
 """
 
 import altair as alt
 import numpy as np
 import pandas as pd
 
-from ..models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine
+from ..models import AgeMixFF, AgeMixFC, GenMixFF, GenMixFC
 from ..vis._visuals import plot_mosaic
 from .evaluator._ModelEvaluatorBRC import ModelEvaluatorBRC
 from .summariser._ModelSummariserBRC import ModelSummariserBRC
@@ -159,7 +159,7 @@ class ModelVisualiser:
     Examples
     --------
     >>> from cntmosaic.analysis import ModelSummariserBRC, ModelVisualiser
-    >>> from cntmosaic.models import BRCfine
+    >>> from cntmosaic.models import AgeMixFF
     >>>
     >>> # After fitting a model
     >>> summariser = ModelSummariserBRC(model)
@@ -251,7 +251,7 @@ class ModelVisualiser:
         """Plot posterior median contact intensity matrix as a heatmap.
 
         Visualizes the estimated contact intensity matrix (rate adjusted for
-        population structure). For hierarchical models (HiBRCfine, HiBRCrefine),
+        population structure). For hierarchical models (GenMixFF, GenMixFC),
         returns separate plots for each stratification level.
 
         Parameters
@@ -271,8 +271,8 @@ class ModelVisualiser:
         Returns
         -------
         altair.Chart or dict of altair.Chart
-            For BRCfine/BRCrefine: Single Altair chart object.
-            For HiBRCfine/HiBRCrefine: Dictionary mapping stratification
+            For AgeMixFF/AgeMixFC: Single Altair chart object.
+            For GenMixFF/GenMixFC: Dictionary mapping stratification
             levels to their respective chart objects.
 
         Examples
@@ -299,7 +299,7 @@ class ModelVisualiser:
         tick_values = np.arange(0, 100, 10)
         sum_cint = self.summariser.summarise_cint()
 
-        if type(self.summariser.model) in (BRCfine, BRCrefine):
+        if type(self.summariser.model) in (AgeMixFF, AgeMixFC):
             return (
                 alt.Chart(df_from_dict(sum_cint))
                 .mark_rect()
@@ -340,7 +340,7 @@ class ModelVisualiser:
                 )
             )
 
-        elif type(self.model) in (HiBRCfine, HiBRCrefine):
+        elif type(self.model) in (GenMixFF, GenMixFC):
             return {
                 k: alt.Chart(df_from_dict(v))
                 .mark_rect()
@@ -414,8 +414,8 @@ class ModelVisualiser:
         Returns
         -------
         altair.Chart or dict of altair.Chart
-            For BRCfine/BRCrefine: Single Altair chart with line + error band.
-            For HiBRCfine/HiBRCrefine: Dictionary mapping stratification
+            For AgeMixFF/AgeMixFC: Single Altair chart with line + error band.
+            For GenMixFF/GenMixFC: Dictionary mapping stratification
             levels to faceted chart objects.
 
         Examples
@@ -455,7 +455,7 @@ class ModelVisualiser:
             title="Contact intensity", grid=True, **self.default_config["y_axis"]
         )
 
-        if type(self.summariser.model) in (BRCfine, BRCrefine):
+        if type(self.summariser.model) in (AgeMixFF, AgeMixFC):
             # For BRC models, we assume mcint is a single matrix
             source = df_from_dict(sum_mcint)
             if evaluator is not None:
@@ -494,7 +494,7 @@ class ModelVisualiser:
             chart = base + band + line if evaluator is not None else base + band
             return chart.properties(width=width, height=height)
 
-        elif type(self.summariser.model) in (HiBRCfine, HiBRCrefine):
+        elif type(self.summariser.model) in (GenMixFF, GenMixFC):
             charts = {}
             for key, val in sum_mcint.items():
                 source = df_from_dict(val)

@@ -3,13 +3,13 @@ Abstract base class for all Bayesian contact models in cntmosaic.
 
 This module defines `ContactModel`, the common interface that every
 Bayesian model must satisfy.  Concrete implementations live in the
-sibling modules (_BRC, _Prem, _vdKassteele, …) and must not be
+sibling modules (_GenMix, _Prem, _vdKassteele, …) and must not be
 imported here to avoid circular imports.
 """
 
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Literal, Optional
 
 from jax.random import PRNGKey
 
@@ -24,14 +24,14 @@ class ContactModel(ABC):
 
     The inheritance hierarchy for the built-in models is::
 
-        ContactModel          ← this class (ABC)
-        └── BRC (ABC)         ← Bayesian Rate Consistency base
-            ├── BRCfine
-            ├── BRCrefine
-            ├── HiBRCfine
-            └── HiBRCrefine
-        └── Prem              ← Prem et al. (2017) model
-        └── vdKassteele       ← van de Kassteele model
+        ContactModel            ← this class (ABC)
+        └── GenMix (ABC)        ← Generalised Contact Mixing base
+            ├── AgeMixFF        ← Age-only, fine participant + fine contact age
+            ├── AgeMixFC        ← Age-only, fine participant + coarse contact age
+            ├── GenMixFF        ← Generalised, fine participant + fine contact age
+            └── GenMixFC        ← Generalised, fine participant + coarse contact age
+        └── Prem                ← Prem et al. (2017) model
+        └── vdKassteele         ← van de Kassteele model
 
     Parameters
     ----------
@@ -70,6 +70,54 @@ class ContactModel(ABC):
         if guide is None:
             return self._get_backend()._build_default_guide(self.model)
         return guide
+
+    # ------------------------------------------------------------------
+    # Inference state helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def inference_method(self) -> Optional[Literal["mcmc", "svi"]]:
+        """Return ``"mcmc"``, ``"svi"``, or ``None`` depending on which inference was run."""
+        if self._mcmc_result is not None:
+            return "mcmc"
+        if self._svi_result is not None:
+            return "svi"
+        return None
+
+    def draw_posterior_samples(
+        self, prng_key: PRNGKey, num_samples: int = 1_000
+    ) -> Dict[str, Any]:
+        """Extract raw posterior sample dict, routing through the active backend.
+
+        For MCMC delegates to ``backend.get_mcmc_samples``; for SVI delegates
+        to ``posterior_predictive_svi`` (which in turn calls the backend).
+
+        Parameters
+        ----------
+        prng_key : jax.random.PRNGKey
+            Random key (used only for the SVI path).
+        num_samples : int, default=1_000
+            Number of samples to draw (used only for the SVI path).
+
+        Returns
+        -------
+        Dict[str, Any]
+            Raw posterior sample dict keyed by sample-site name.
+
+        Raises
+        ------
+        ValueError
+            If no inference has been run yet.
+        """
+        method = self.inference_method
+        if method == "mcmc":
+            return self._get_backend().get_mcmc_samples(self._mcmc_result)
+        if method == "svi":
+            return self.posterior_predictive_svi(prng_key, num_samples=num_samples)
+        raise ValueError(
+            "No inference has been run. "
+            "Call run_inference_mcmc() or run_inference_svi() first."
+        )
 
     # ------------------------------------------------------------------
     # Abstract interface

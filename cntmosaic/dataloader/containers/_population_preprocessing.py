@@ -15,10 +15,12 @@ import pandas as pd
 
 def preprocess_population_data(
     df_pop: pd.DataFrame,
-    age_col: str,
+    age_col: Optional[str],
     size_col: str,
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
+    age_min_col: Optional[str] = None,
+    age_max_col: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Validate, clean, aggregate, and standardise a raw population DataFrame.
@@ -27,8 +29,9 @@ def preprocess_population_data(
     ----------
     df_pop : pd.DataFrame
         Raw population DataFrame (not yet validated or renamed).
-    age_col : str
-        Column containing population ages as integers.
+    age_col : Optional[str]
+        Column containing population ages as integers. Mutually exclusive with
+        age_min_col/age_max_col.
     size_col : str
         Column containing population sizes (counts or proportions).
     age_grp_col : Optional[str]
@@ -36,12 +39,17 @@ def preprocess_population_data(
         is preserved in the output.
     strat_var_cols : List[str]
         Stratification variable column names (already normalised to a list).
+    age_min_col : Optional[str]
+        Column containing minimum ages (for age range representation).
+    age_max_col : Optional[str]
+        Column containing maximum ages (for age range representation).
 
     Returns
     -------
     pd.DataFrame
-        Cleaned and aggregated DataFrame with standardised column names
-        (age_col → "age", size_col → "P", age_grp_col → "age_grp_pop").
+        Cleaned and aggregated DataFrame with standardised column names:
+        - age_col → "age", size_col → "P", age_grp_col → "age_grp_pop"
+        - age_min_col → "age_min", age_max_col → "age_max"
 
     Raises
     ------
@@ -51,8 +59,19 @@ def preprocess_population_data(
         If df_pop is empty after NaN removal.
         If age or size values are negative or non-numeric.
     """
-    required_cols = _check_columns(df_pop, age_col, size_col, age_grp_col, strat_var_cols)
-    return _preprocess(df_pop, age_col, size_col, age_grp_col, strat_var_cols, required_cols)
+    required_cols = _check_columns(
+        df_pop, age_col, size_col, age_grp_col, strat_var_cols, age_min_col, age_max_col
+    )
+    return _preprocess(
+        df_pop,
+        age_col,
+        size_col,
+        age_grp_col,
+        strat_var_cols,
+        required_cols,
+        age_min_col,
+        age_max_col,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -62,22 +81,29 @@ def preprocess_population_data(
 
 def _check_columns(
     df: pd.DataFrame,
-    age_col: str,
+    age_col: Optional[str],
     size_col: str,
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
 ) -> List[str]:
     """
     Assert required columns exist. Return the list of required column names.
-
-    Returning the list (rather than storing it as instance state) makes the
-    dependency on this check explicit and testable.
     """
-    if age_col not in df.columns:
+    if age_col and age_col not in df.columns:
         raise KeyError(
             f"Missing population age column '{age_col}' in DataFrame.\n"
             f"  Available columns: {list(df.columns)}"
         )
+
+    if age_min_col or age_max_col:
+        for col in [c for c in [age_min_col, age_max_col] if c]:
+            if col not in df.columns:
+                raise KeyError(
+                    f"Missing population age column '{col}' in DataFrame.\n"
+                    f"  Available columns: {list(df.columns)}"
+                )
 
     if size_col not in df.columns:
         raise KeyError(
@@ -99,7 +125,14 @@ def _check_columns(
                 f"  Available columns: {list(df.columns)}"
             )
 
-    required_cols = [age_col, size_col]
+    required_cols = []
+    if age_col:
+        required_cols.append(age_col)
+    if age_min_col:
+        required_cols.append(age_min_col)
+    if age_max_col:
+        required_cols.append(age_max_col)
+    required_cols.append(size_col)
     if age_grp_col:
         required_cols.append(age_grp_col)
     if strat_var_cols:
@@ -109,11 +142,13 @@ def _check_columns(
 
 def _preprocess(
     df_pop: pd.DataFrame,
-    age_col: str,
+    age_col: Optional[str],
     size_col: str,
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
     required_cols: List[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
 ) -> pd.DataFrame:
     """
     Copy, coerce dtypes, clean, validate, aggregate, rename, and sort.
@@ -160,21 +195,43 @@ def _preprocess(
         )
 
     # --- validate age and size values are non-negative -----------------------
-    ages = df[age_col]
-    if not pd.api.types.is_numeric_dtype(ages):
-        raise ValueError(
-            f"Population age column '{age_col}' must contain numeric values.\n"
-            f"  Current dtype: {ages.dtype}\n"
-            f"  Hint: Convert age to integer or float type."
-        )
+    if age_col:
+        ages = df[age_col]
+        if not pd.api.types.is_numeric_dtype(ages):
+            raise ValueError(
+                f"Population age column '{age_col}' must contain numeric values.\n"
+                f"  Current dtype: {ages.dtype}\n"
+                f"  Hint: Convert age to integer or float type."
+            )
+        if (ages < 0).any():
+            negative_indices = df[ages < 0].index[:5].tolist()
+            raise ValueError(
+                f"Population age column '{age_col}' contains negative values.\n"
+                f"  Ages must be non-negative. Rows with negative ages: {negative_indices}\n"
+                f"  Values: {ages[ages < 0].head().tolist()}"
+            )
 
-    if (ages < 0).any():
-        negative_indices = df[ages < 0].index[:5].tolist()
-        raise ValueError(
-            f"Population age column '{age_col}' contains negative values.\n"
-            f"  Ages must be non-negative. Rows with negative ages: {negative_indices}\n"
-            f"  Values: {ages[ages < 0].head().tolist()}"
-        )
+    if age_min_col and age_max_col:
+        for col in (age_min_col, age_max_col):
+            vals = df[col]
+            if not pd.api.types.is_numeric_dtype(vals):
+                raise ValueError(
+                    f"Population age column '{col}' must contain numeric values.\n"
+                    f"  Current dtype: {vals.dtype}\n"
+                    f"  Hint: Convert age to integer or float type."
+                )
+            if (vals < 0).any():
+                negative_indices = df[vals < 0].index[:5].tolist()
+                raise ValueError(
+                    f"Population age column '{col}' contains negative values.\n"
+                    f"  Ages must be non-negative. Rows with negative ages: {negative_indices}\n"
+                    f"  Values: {vals[vals < 0].head().tolist()}"
+                )
+        if (df[age_min_col] > df[age_max_col]).any():
+            raise ValueError(
+                f"Population age_min_col '{age_min_col}' must be <= age_max_col '{age_max_col}'.\n"
+                "  Found rows where age_min > age_max."
+            )
 
     sizes = df[size_col]
     if not pd.api.types.is_numeric_dtype(sizes):
@@ -193,9 +250,15 @@ def _preprocess(
         )
 
     # --- aggregate population sizes by age (and strat vars) ------------------
-    groupby_cols = [age_col]
-    if age_grp_col:
-        groupby_cols.append(age_grp_col)
+    if age_col:
+        groupby_cols = [age_col]
+        if age_grp_col:
+            groupby_cols.append(age_grp_col)
+    elif age_grp_col:
+        groupby_cols = [age_grp_col]
+    else:
+        groupby_cols = [age_min_col, age_max_col]
+
     if strat_var_cols:
         groupby_cols.extend(strat_var_cols)
 
@@ -214,14 +277,26 @@ def _preprocess(
     df = df.groupby(groupby_cols, as_index=False, observed=False)[size_col].sum()
 
     # --- column renaming -----------------------------------------------------
-    rename_map = {age_col: "age", size_col: "P"}
+    rename_map = {size_col: "P"}
+    if age_col:
+        rename_map[age_col] = "age"
+    if age_min_col:
+        rename_map[age_min_col] = "age_min"
+    if age_max_col:
+        rename_map[age_max_col] = "age_max"
     if age_grp_col:
         rename_map[age_grp_col] = "age_grp_pop"
 
     df = df.rename(columns=rename_map)
 
     # --- sort by age (and strat vars) ----------------------------------------
-    sort_cols = ["age"]
+    if age_col:
+        sort_cols = ["age"]
+    elif age_grp_col:
+        sort_cols = ["age_grp_pop"]
+    else:
+        sort_cols = ["age_min", "age_max"]
+
     if strat_var_cols:
         sort_cols.extend(strat_var_cols)
 

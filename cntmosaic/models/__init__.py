@@ -1,9 +1,10 @@
 from ._base import ContactModel
-from ._BRC import BRC
-from ._BRCfine import BRCfine
-from ._BRCrefine import BRCrefine
-from ._HiBRCfine import HiBRCfine
-from ._HiBRCrefine import HiBRCrefine
+from ._GenMix import GenMix
+from ._AgeMixCC import AgeMixCC
+from ._AgeMixFF import AgeMixFF
+from ._AgeMixFC import AgeMixFC
+from ._GenMixFF import GenMixFF
+from ._GenMixFC import GenMixFC
 from ._Prem import Prem
 from ._vdKassteele import vdKassteele
 
@@ -14,6 +15,7 @@ def __getattr__(name: str):
 
         return to_inference_data
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # ---------------------------------------------------------------------------
 # Backward-compatibility re-exports
@@ -27,12 +29,13 @@ from .classical import BootstrapResults, SocialMix, SocialMixBootstrap
 __all__ = [
     # Abstract base
     "ContactModel",
-    # Bayesian Rate Consistency models
-    "BRC",
-    "BRCfine",
-    "BRCrefine",
-    "HiBRCfine",
-    "HiBRCrefine",
+    # GenMix model family
+    "GenMix",
+    "AgeMixCC",
+    "AgeMixFF",
+    "AgeMixFC",
+    "GenMixFF",
+    "GenMixFC",
     # Other Bayesian models
     "Prem",
     "vdKassteele",

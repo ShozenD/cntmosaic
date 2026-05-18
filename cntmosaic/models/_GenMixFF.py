@@ -1,9 +1,9 @@
 """
-Hierarchical Bayesian Rate Consistency model with fine age resolution.
+Generalised mixing model with fine-age resolution for both participant and contact ages.
 
-This module implements the HiBRCfine model, which extends BRCfine to support
+This module implements the GenMixFF model, which extends AgeMixFF to support
 stratified populations (e.g., by gender, setting) using hierarchical priors
-with fine-grained age resolution for both participants and contacts.
+with 1-year age resolution for both participants and contacts.
 """
 
 from typing import Any, Dict, Optional
@@ -12,28 +12,28 @@ import jax.numpy as jnp
 import numpy as np
 
 from .._types import StratMode
-from ..dataloader import DataLoader
-from ._BRCfine import BRCfine
+from ..dataloader import ContactSurveyLoader
+from ._AgeMixFF import AgeMixFF
 from ._math import clr
-from .numpyro import HiBRCfineNumPyroMixin
+from .numpyro import GenMixFFNumPyroMixin
 from .numpyro.priors import Hill, Prior2D
 
 
-class HiBRCfine(HiBRCfineNumPyroMixin, BRCfine):
+class GenMixFF(GenMixFFNumPyroMixin, AgeMixFF):
     """
-    High-resolution Bayesian Rate Consistency model with fine age resolution.
+    Generalised mixing model with fine-age resolution for both participant and contact ages.
 
-    This model extends BRCfine to handle stratified contact data (e.g., by gender,
-    setting, region) using hierarchical priors. Unlike HiBRCrefine, both participant
-    ages AND contact ages are at fine (single-year) resolution.
+    GenMixFF (Generalised Mixing, Fine-Fine) extends AgeMixFF to handle stratified
+    contact data (e.g., by gender, setting, region) using hierarchical priors. Both
+    participant ages and contact ages are at 1-year resolution.
 
     The model combines:
-    1. Fine age resolution: Both participant and contact ages are single-year
+    1. Fine age resolution: Both participant and contact ages are 1-year resolution
     2. Hierarchical structure: Models population subgroups with shared smooth patterns
     3. Rate consistency: Ensures bidirectional contact balance via population weights
 
     The model is useful for:
-    - Estimating generalized contact matrices
+    - Estimating generalised contact matrices stratified by features beyond age
     - High-resolution contact data where both ages are precisely recorded
 
     Mathematical Model
@@ -61,11 +61,11 @@ class HiBRCfine(HiBRCfineNumPyroMixin, BRCfine):
 
     Parameters
     ----------
-    dataloader : DataLoader
-        DataLoader object containing stratified contact data with columns:
+    dataloader : ContactSurveyLoader
+        ContactSurveyLoader object containing stratified contact data with columns:
         - y: observed contact counts
-        - aid: participant age indices (fine resolution)
-        - bid: contact age indices (fine resolution)
+        - aid: participant age indices (1-year resolution)
+        - bid: contact age indices (1-year resolution)
         - log_N: log of survey sample sizes
         - log_P: log of overall population age distribution
         - log_V: log of setting-specific offsets (optional)
@@ -85,20 +85,20 @@ class HiBRCfine(HiBRCfineNumPyroMixin, BRCfine):
 
     Examples
     --------
-    >>> from cntmosaic.dataloader import DataLoader, CoordToColumns
-    >>> from cntmosaic.models import HiBRCfine
+    >>> from cntmosaic.dataloader import ContactSurveyLoader, CoordToColumns
+    >>> from cntmosaic.models import GenMixFF
     >>> from cntmosaic.models.numpyro.priors import HSGP2D
     >>> from jax.random import PRNGKey
     >>>
     >>> # Set up stratified dataloader with fine contact ages
     >>> col_map = CoordToColumns(
     ...     age_part="age_part",
-    ...     age_cnt="age_cnt",  # Fine contact ages
+    ...     age_cnt="age_cnt",  # Fine contact ages (1-year resolution)
     ...     age_pop="age",
     ...     P="P",
     ...     strat_vars_part=["gender"]  # Stratification variable
     ... )
-    >>> dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
+    >>> dataloader = ContactSurveyLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
     >>>
     >>> # Specify priors for baseline and stratification
     >>> priors = {
@@ -107,7 +107,7 @@ class HiBRCfine(HiBRCfineNumPyroMixin, BRCfine):
     ... }
     >>>
     >>> # Initialize and run inference
-    >>> model = HiBRCfine(dataloader, priors, likelihood="negbin")
+    >>> model = GenMixFF(dataloader, priors, likelihood="negbin")
     >>> model.run_inference_mcmc(
     ...     PRNGKey(42),
     ...     num_samples=1000,
@@ -123,10 +123,9 @@ class HiBRCfine(HiBRCfineNumPyroMixin, BRCfine):
 
     See Also
     --------
-    BRC: Base class for rate consistency models
-    BRCfine : Base class for fine-grained age resolution (no stratification)
-    BRCrefine: Base class for coarse age resolution (no stratification)
-    HiBRCrefine : Hierarchical model with coarse contact ages (requires refinement)
+    GenMix : Base class for the generalised mixing model family
+    AgeMixFF : Age-only mixing model with fine-age resolution (no stratification)
+    GenMixFC : Generalised mixing model with coarse contact age resolution
     """
 
     # Default priors matching parent class
@@ -134,18 +133,18 @@ class HiBRCfine(HiBRCfineNumPyroMixin, BRCfine):
 
     def __init__(
         self,
-        dataloader: DataLoader,
+        dataloader: ContactSurveyLoader,
         priors: Dict[str, Prior2D],
         likelihood: str = "negbin",
         backend: Optional[Any] = None,
     ) -> None:
         """
-        Initialize HiBRCfine model with hierarchical structure and fine age resolution.
+        Initialize GenMixFF model with hierarchical structure and fine-age resolution.
 
         Parameters
         ----------
-        dataloader : DataLoader
-            Preprocessed stratified contact data with fine contact ages.
+        dataloader : ContactSurveyLoader
+            Preprocessed stratified contact data with 1-year resolution for both ages.
         priors : Dict[str, Prior2D]
             Prior specifications. Must contain 'rate' for baseline and one prior
             per stratification variable.
@@ -154,7 +153,7 @@ class HiBRCfine(HiBRCfineNumPyroMixin, BRCfine):
         backend : InferenceBackend, optional
             Pluggable inference engine (default: NumPyroBackend).
         """
-        # Initialize parent class (BRCfine) - this calls BRC.__init__ internally
+        # Initialize parent class (AgeMixFF) - this calls GenMix.__init__ internally
         super().__init__(dataloader, priors, likelihood, backend=backend)
 
         # Override log_P for stratified case (already has shape (K, A), no need for newaxis)

@@ -27,8 +27,6 @@ class ModelData:
     ---------------
     y : NDArray
         Contact counts, shape (n_obs,).
-    aid : NDArray
-        Participant age indices, shape (n_obs,).
     log_N : NDArray
         Log sample sizes, shape (n_obs,).
     log_P : NDArray
@@ -40,12 +38,21 @@ class ModelData:
 
     Optional Observation Fields
     ---------------------------
+    aid : NDArray or None
+        Fine-resolution participant age indices, shape (n_obs,).
+        None when participant data uses coarse age groups (see cid).
+    cid : NDArray or None
+        Coarse participant age group indices, shape (n_obs,).
+        Set when participant data uses age_grp_col or age_min/max_col.
+    did : NDArray or None
+        Coarse contact age group indices, shape (n_obs,).
+        Set when contact data uses age_grp_col or age_min/max_col.
+    bid : NDArray or None
+        Contact age indices (fine resolution), shape (n_obs,).
     log_V : NDArray or None
         Log ambiguous-contact offsets, shape (n_obs,).
     rid : NDArray or None
         Repeat interview indicators, shape (n_obs,).
-    bid : NDArray or None
-        Contact age indices (fine resolution), shape (n_obs,).
     aid_exp : NDArray or None
         Expanded participant age indices (coarse contact ages), shape (n_obs, B).
     bid_pad : NDArray or None
@@ -77,16 +84,18 @@ class ModelData:
 
     # Required observation fields
     y: NDArray
-    aid: NDArray
     log_N: NDArray
     log_P: NDArray
     age_min: int
     age_max: int
 
     # Optional observation fields
+    aid: Optional[NDArray] = None
+    cid: Optional[NDArray] = None
+    did: Optional[NDArray] = None
+    bid: Optional[NDArray] = None
     log_V: Optional[NDArray] = None
     rid: Optional[NDArray] = None
-    bid: Optional[NDArray] = None
     aid_exp: Optional[NDArray] = None
     bid_pad: Optional[NDArray] = None
     log_S: Optional[NDArray] = None
@@ -104,12 +113,16 @@ class ModelData:
 
     def __post_init__(self) -> None:
         n_obs = len(self.y)
-        for field in ["aid", "log_N"]:
+        for field in ["log_N"]:
             arr = getattr(self, field)
             if len(arr) != n_obs:
                 raise ValueError(
                     f"Shape mismatch: {field} has length {len(arr)}, expected {n_obs}"
                 )
+        if self.aid is not None and len(self.aid) != n_obs:
+            raise ValueError(
+                f"Shape mismatch: aid has length {len(self.aid)}, expected {n_obs}"
+            )
 
     @property
     def age_range(self) -> Tuple[int, int]:

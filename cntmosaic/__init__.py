@@ -1,10 +1,10 @@
 from . import dataloader, datasets, models, preprocess, sim, vis
-from .dataloader import DataLoader
+from .dataloader import ContactSurveyLoader
 from ._types import StratMode
 
 __all__ = [
     # Primary entry points
-    "DataLoader",
+    "ContactSurveyLoader",
     "StratMode",
     # Submodules
     "dataloader",

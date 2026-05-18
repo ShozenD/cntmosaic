@@ -16,6 +16,8 @@ import pandas as pd
 def validate_participant_data(
     data: pd.DataFrame,
     age_col: Optional[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
     age_grp_col: Optional[str],
     repeat_col: Optional[str],
     amb_cnt_col: Optional[str],
@@ -32,6 +34,10 @@ def validate_participant_data(
         Preprocessed participant DataFrame with standardised column names.
     age_col : Optional[str]
         Original age column name; truthy when exact ages are in use.
+    age_min_col : Optional[str]
+        Original age_min column name; truthy when age ranges are in use.
+    age_max_col : Optional[str]
+        Original age_max column name; truthy when age ranges are in use.
     age_grp_col : Optional[str]
         Original age-group column name; truthy when age groups are in use.
     repeat_col : Optional[str]
@@ -52,6 +58,9 @@ def validate_participant_data(
 
     if age_col:
         _validate_ages(data)
+
+    if age_min_col and age_max_col:
+        _validate_age_groups(data, "age_grp_part")
 
     if age_grp_col:
         _validate_age_groups(data, age_grp_col)

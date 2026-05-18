@@ -11,7 +11,7 @@ from ...sim import (
     PopulationConstructor,
     Stratification,
 )
-from .._DataLoader import DataLoader
+from .._ContactSurveyLoader import ContactSurveyLoader
 from ..containers import (
     ContactData,
     ParticipantData,
@@ -185,7 +185,7 @@ class TestSingle:
         part_data = ParticipantData(data=df_part, id_col="id", age_col="age")
         cnt_data = ContactData(data=df_cnt, id_col="id", age_col="age_cnt")
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model_data = dataloader.load()
 
@@ -217,7 +217,7 @@ class TestSingle:
         part_data = ParticipantData(df_part, "id", "age", repeat_col="repeat")
         cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model_data = dataloader.load()
 
@@ -239,7 +239,7 @@ class TestSingle:
         part_data = ParticipantData(df_part, "id", "age")
         cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
-        dataloader = DataLoader(part_data, cnt_data, pop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
         model_data = dataloader.load()
 
@@ -286,7 +286,7 @@ class TestPartial:
             prop_col="Q",
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, strat_prop_data)
 
         model_data = dataloader.load()
 
@@ -329,7 +329,7 @@ class TestPartial:
             prop_col="Q",
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, pop_prop)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, pop_prop)
 
         model_data = dataloader.load()
 
@@ -375,7 +375,7 @@ class TestPartial:
             strat_var_cols=["sex", "hhsize"],
             prop_col="Q",
         )
-        dataloader = DataLoader(part_data, cnt_data, pop_data, pop_prop)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, pop_prop)
 
         model_data = dataloader.load()
 
@@ -411,7 +411,7 @@ class TestPartial:
             prop_col="Q",
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, strat_prop_data)
         model_data = dataloader.load()
         assert model_data.is_stratified
         assert model_data.strat_modes.keys() == {"sex", "hhsize"}
@@ -458,7 +458,7 @@ class TestFull:
             prop_col="Q",
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, strat_prop_data)
 
         model_data = dataloader.load()
 
@@ -509,7 +509,7 @@ class TestMethods:
             prop_col="Q",
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, strat_prop_data)
         dataloader.load()
 
         # Test strat modes
@@ -625,7 +625,7 @@ class TestStratificationOrdering:
             data=df_strat, age_col="age", strat_var_cols=["sex"], prop_col="Q"
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, strat_prop_data)
         dataloader.load()
 
         full_labels = dataloader.model_data.full_labels
@@ -664,7 +664,7 @@ class TestStratificationOrdering:
             prop_col="Q",
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, strat_prop_data)
         dataloader.load()
 
         # Get full labels
@@ -745,7 +745,7 @@ class TestStratificationOrdering:
             data=df_strat, age_col="age", strat_var_cols=["sex"], prop_col="Q"
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, strat_prop_data)
         dataloader.load()
 
         flat_ix = dataloader.model_data.flat_ix
@@ -789,7 +789,7 @@ class TestStratificationOrdering:
             prop_col="Q",
         )
 
-        dataloader = DataLoader(part_data, cnt_data, pop_data, strat_prop_data)
+        dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data, strat_prop_data)
         dataloader.load()
 
         flat_ix = dataloader.model_data.flat_ix

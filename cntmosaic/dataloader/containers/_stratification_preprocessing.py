@@ -8,16 +8,18 @@ data-container and query API defined in StratificationData.
 """
 
 import warnings
-from typing import List
+from typing import List, Optional
 
 import pandas as pd
 
 
 def preprocess_stratification_data(
     data: pd.DataFrame,
-    age_col: str,
+    age_col: Optional[str],
     strat_var_cols: List[str],
     prop_col: str,
+    age_min_col: Optional[str] = None,
+    age_max_col: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Validate and clean a raw stratification DataFrame.
@@ -26,12 +28,16 @@ def preprocess_stratification_data(
     ----------
     data : pd.DataFrame
         Raw stratification DataFrame (not yet validated or converted).
-    age_col : str
-        Column containing age values.
+    age_col : Optional[str]
+        Column containing age values. Mutually exclusive with age_min_col/age_max_col.
     strat_var_cols : List[str]
         Stratification variable column names (already normalised to a list).
     prop_col : str
         Column containing population proportions.
+    age_min_col : Optional[str]
+        Column containing minimum ages (for age range representation).
+    age_max_col : Optional[str]
+        Column containing maximum ages (for age range representation).
 
     Returns
     -------
@@ -43,7 +49,7 @@ def preprocess_stratification_data(
     ValueError
         If any required stratification column is absent from data.
     """
-    _check_columns(data, strat_var_cols)
+    _check_columns(data, age_col, strat_var_cols, age_min_col, age_max_col)
     return _preprocess(data, strat_var_cols)
 
 
@@ -54,13 +60,29 @@ def preprocess_stratification_data(
 
 def _check_columns(
     df: pd.DataFrame,
+    age_col: Optional[str],
     strat_var_cols: List[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
 ) -> None:
     """
-    Assert required stratification columns exist in df.
+    Assert required columns exist in df.
 
-    Raises ValueError if any column in strat_var_cols is missing.
+    Raises ValueError if any required column is missing.
     """
+    if age_col and age_col not in df.columns:
+        raise ValueError(
+            f"Age column '{age_col}' not found in data.\n"
+            f"  Available columns: {list(df.columns)}"
+        )
+
+    for col in [c for c in [age_min_col, age_max_col] if c]:
+        if col not in df.columns:
+            raise ValueError(
+                f"Age column '{col}' not found in data.\n"
+                f"  Available columns: {list(df.columns)}"
+            )
+
     missing = [col for col in strat_var_cols if col not in df.columns]
     if missing:
         raise ValueError(

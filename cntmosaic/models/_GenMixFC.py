@@ -1,7 +1,7 @@
 """
-Hierarchical Bayesian Rate Consistency model with coarse-to-fine age refinement.
+Generalised mixing model with fine participant age and coarse contact age resolution.
 
-This module implements the HiBRCrefine model, which extends BRCrefine to support
+This module implements the GenMixFC model, which extends AgeMixFC to support
 stratified populations (e.g., by gender, setting) using hierarchical priors.
 """
 
@@ -11,19 +11,19 @@ import jax.numpy as jnp
 import numpy as np
 
 from .._types import StratMode
-from ..dataloader import DataLoader
-from ._BRCrefine import BRCrefine
+from ..dataloader import ContactSurveyLoader
+from ._AgeMixFC import AgeMixFC
 from ._math import clr
-from .numpyro import HiBRCrefineNumPyroMixin
+from .numpyro import GenMixFCNumPyroMixin
 from .numpyro.priors import Hill, Prior2D, PSpline2D
 
 
-class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
+class GenMixFC(GenMixFCNumPyroMixin, AgeMixFC):
     """
-    Hierarchical Bayesian Rate Consistency model with coarse-to-fine age refinement.
+    Generalised mixing model with fine participant age and coarse contact age resolution.
 
-    This model extends BRCrefine to handle stratified contact data (e.g., by gender,
-    setting, region) using hierarchical priors. It combines:
+    GenMixFC (Generalised Mixing, Fine-Coarse) extends AgeMixFC to handle stratified
+    contact data (e.g., by gender, setting, region) using hierarchical priors. It combines:
     1. Age refinement: Estimates fine-age contact rates from coarse contact age data
     2. Hierarchical structure: Models population subgroups with shared smooth patterns
     3. Rate consistency: Ensures bidirectional contact balance via population weights
@@ -57,25 +57,25 @@ class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
     - φ: overdispersion parameter
     - logsumexp: age aggregation over coarse groups
 
-    Key Differences from BRCrefine
-    -------------------------------
+    Key Differences from AgeMixFC
+    ------------------------------
     - Adds hierarchical priors for stratification variables (gender, setting, etc.)
     - Requires population age distributions for each stratum
     - Uses stratum-specific deviations centered on population proportions
     - Aggregates contributions from multiple strata during age refinement
 
-    Key Differences from HiBRCfine
-    -------------------------------
-    - Uses coarse contact age data (age groups) instead of fine ages
+    Key Differences from GenMixFF
+    ------------------------------
+    - Uses coarse contact age data (age groups) instead of 1-year ages
     - Employs age aggregation mechanism (index_mask_logsumexp)
     - Requires aid_exp and bid_pad arrays for refinement
 
     Parameters
     ----------
-    dataloader : DataLoader
-        DataLoader object containing stratified contact data with columns:
+    dataloader : ContactSurveyLoader
+        ContactSurveyLoader object containing stratified contact data with columns:
         - y: observed contact counts
-        - aid: participant age indices (fine resolution)
+        - aid: participant age indices (1-year resolution)
         - aid_exp: expanded participant ages for age aggregation
         - bid_pad: padded contact age indices for coarse groups
         - log_N: log of survey sample sizes
@@ -116,7 +116,7 @@ class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
     Notes
     -----
     Data Preparation Requirements:
-    1. DataLoader must include stratification via strat_vars_part in CoordToColumns
+    1. ContactSurveyLoader must include stratification via strat_vars_part in CoordToColumns
     2. Must use age_grp_cnt (not age_cnt) for coarse contact ages
     3. Population data must include proportions for each stratum combination
 
@@ -131,8 +131,8 @@ class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
 
     Examples
     --------
-    >>> from cntmosaic.dataloader import DataLoader, CoordToColumns
-    >>> from cntmosaic.models import HiBRCrefine
+    >>> from cntmosaic.dataloader import ContactSurveyLoader, CoordToColumns
+    >>> from cntmosaic.models import GenMixFC
     >>> from cntmosaic.models.numpyro.priors import HSGP2D
     >>> from jax.random import PRNGKey
     >>>
@@ -144,7 +144,7 @@ class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
     ...     P="P",
     ...     strat_vars_part=["gender"]  # Stratification variable
     ... )
-    >>> dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
+    >>> dataloader = ContactSurveyLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
     >>>
     >>> # Specify priors for baseline and stratification
     >>> priors = {
@@ -153,7 +153,7 @@ class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
     ... }
     >>>
     >>> # Initialize and run inference
-    >>> model = HiBRCrefine(dataloader, priors, likelihood="negbin")
+    >>> model = GenMixFC(dataloader, priors, likelihood="negbin")
     >>> model.run_inference_mcmc(
     ...     PRNGKey(42),
     ...     num_samples=1000,
@@ -169,10 +169,10 @@ class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
 
     See Also
     --------
-    BRCrefine : Base class for coarse-to-fine age refinement
-    HiBRCfine : Hierarchical model with fine contact ages (no refinement)
+    AgeMixFC : Base class for fine participant / coarse contact age mixing
+    GenMixFF : Generalised mixing model with fine-age resolution for both ages
     HSGP2D : Hilbert Space Gaussian Process prior for smooth functions
-    DataLoader : Data preprocessing with stratification support
+    ContactSurveyLoader : Data preprocessing with stratification support
     """
 
     # Default priors matching parent class
@@ -180,18 +180,18 @@ class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
 
     def __init__(
         self,
-        dataloader: DataLoader,
+        dataloader: ContactSurveyLoader,
         priors: Dict[str, Prior2D],
         likelihood: str = "negbin",
         backend: Optional[Any] = None,
     ) -> None:
         """
-        Initialize HiBRCrefine model with hierarchical structure and age refinement.
+        Initialize GenMixFC model with hierarchical structure and coarse contact age.
 
         Parameters
         ----------
-        dataloader : DataLoader
-            Preprocessed stratified contact data with coarse contact age groups.
+        dataloader : ContactSurveyLoader
+            Preprocessed stratified contact data with 1-year participant age and coarse contact age groups.
         priors : Dict[str, Prior2D]
             Prior specifications. Must contain 'rate' for baseline and one prior
             per stratification variable.
@@ -204,7 +204,7 @@ class HiBRCrefine(HiBRCrefineNumPyroMixin, BRCrefine):
         effective_priors = self.default_priors.copy()
         effective_priors.update(priors)
 
-        # Initialize parent class (BRCrefine) - this calls BRC.__init__ internally
+        # Initialize parent class (AgeMixFC) - this calls GenMix.__init__ internally
         super().__init__(dataloader, effective_priors, likelihood, backend=backend)
 
         # Override log_P for stratified case

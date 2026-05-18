@@ -1,15 +1,14 @@
-"""NumPyro model mixin for HiBRCrefine."""
+"""NumPyro model mixin for GenMixFF."""
 from typing import Optional
 
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from .._math import inverse_clr, kron_sum_mode_1
-from .._utils import index_mask_logsumexp
 
 
-class HiBRCrefineNumPyroMixin:
-    """Carries ``sample_log_delta()`` and ``model()`` for HiBRCrefine."""
+class GenMixFFNumPyroMixin:
+    """Carries ``sample_log_delta()`` and ``model()`` for GenMixFF."""
 
     def sample_log_delta(self) -> ArrayLike:
         import numpyro
@@ -33,24 +32,26 @@ class HiBRCrefineNumPyroMixin:
     def model(
         self,
         y: Optional[ArrayLike] = None,
-        aid_exp: Optional[ArrayLike] = None,
-        bid_pad: Optional[ArrayLike] = None,
-        flat_ix_exp: Optional[ArrayLike] = None,
+        aid: Optional[ArrayLike] = None,
+        bid: Optional[ArrayLike] = None,
+        rid: Optional[ArrayLike] = None,
+        flat_ix: Optional[ArrayLike] = None,
+        flat_pixs: Optional[ArrayLike] = None,
         log_N: Optional[ArrayLike] = None,
         log_V: Optional[ArrayLike] = None,
-        rid: Optional[ArrayLike] = None,
     ) -> None:
         import numpyro
         from numpyro import distributions as dist
         from numpyro.handlers import plate, scope
 
-        len_y = len(self.y) if y is None else len(y)
-        aid_exp = self.data.aid_exp if aid_exp is None else aid_exp
-        bid_pad = self.data.bid_pad if bid_pad is None else bid_pad
-        flat_ix_exp = self.data.flat_ix_exp if flat_ix_exp is None else flat_ix_exp
+        aid = self.aid if aid is None else aid
+        bid = self.bid if bid is None else bid
+        rid = getattr(self, "rid", None) if rid is None else rid
+        flat_ix = self.data.flat_ix if flat_ix is None else flat_ix
+        flat_pixs = self.data.flat_pixs if flat_pixs is None else flat_pixs
         log_N = self.log_N if log_N is None else log_N
         log_V = self.log_V if log_V is None else log_V
-        rid = self.rid if hasattr(self, "rid") and rid is None else rid
+        len_y = len(self.y) if y is None else len(y)
 
         beta0 = numpyro.sample("baseline", dist.Normal(-self.log_P.mean(), 2.5))
 
@@ -59,14 +60,9 @@ class HiBRCrefineNumPyroMixin:
 
         log_rate = numpyro.deterministic("log_rate", beta0 + f)
 
-        log_delta = self.sample_log_delta()
-        log_cint_tensor = (
-            log_rate[jnp.newaxis, :, :]
-            + self.log_P[:, jnp.newaxis, :]
-            + log_delta
-        )
-
-        log_cint = index_mask_logsumexp(log_cint_tensor, aid_exp, bid_pad, flat_ix_exp)
+        log_cint = log_rate[aid, bid]
+        log_cint += self.sample_log_delta()[flat_ix, aid, bid]
+        log_cint += self.log_P[flat_pixs, bid]
 
         repeat_effect = self.hill.sample()[rid] if hasattr(self, "rid") else 0.0
 

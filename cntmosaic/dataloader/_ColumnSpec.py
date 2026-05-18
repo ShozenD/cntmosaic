@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class CoordToColumns:
+class ColumnSpec:
     """
     This dataclass helps manage the id, age, stratification, contact counts, group conntact counts,
     repeated interview counts, and population count column names for participant, contact, and population dataframes.
@@ -91,7 +91,7 @@ class CoordToColumns:
     Examples
     --------
     >>> # Basic usage with individual contact ages
-    >>> col_map = CoordToColumns(
+    >>> col_map = ColumnSpec(
     ...     age_part="participant_age",
     ...     age_cnt="contact_age",
     ...     id_col="participant_id",
@@ -100,7 +100,7 @@ class CoordToColumns:
     ... )
     >>>
     >>> # With age groups and stratification
-    >>> col_map = CoordToColumns(
+    >>> col_map = ColumnSpec(
     ...     age_part="age_participant",
     ...     age_grp_cnt="age_group_contact",
     ...     strat_vars_part=["gender", "location"],
@@ -110,7 +110,7 @@ class CoordToColumns:
     ... )
     >>>
     >>> # With repeat interview effects
-    >>> col_map = CoordToColumns(
+    >>> col_map = ColumnSpec(
     ...     age_part="age",
     ...     age_cnt="contact_age",
     ...     repeat_part="interview_round",
@@ -160,7 +160,7 @@ class CoordToColumns:
 
         Examples
         --------
-        >>> col_map = CoordToColumns(age_part="age_p", age_cnt="age_c")
+        >>> col_map = ColumnSpec(age_part="age_p", age_cnt="age_c")
         >>> col_map.age_vars()
         ['age_c', 'age_p']
         """
@@ -277,9 +277,9 @@ class CoordToColumns:
         part_data: ParticipantData,
         cnt_data: ContactData,
         pop_data: PopulationData,
-    ) -> CoordToColumns:
+    ) -> ColumnSpec:
         """
-        Build a CoordToColumns from validated container objects.
+        Build a ColumnSpec from validated container objects.
 
         This is the canonical factory used by DataFrameSurveySource and
         ContactSurveyLoader to avoid manually constructing column specs.
@@ -300,21 +300,26 @@ class CoordToColumns:
         else:
             strat_vars_cnt = None
 
+        _part_has_coarse = bool(
+            part_data.age_grp_col or (part_data.age_min_col and part_data.age_max_col)
+        )
+        _cnt_has_coarse = bool(
+            cnt_data.age_grp_col or (cnt_data.age_min_col and cnt_data.age_max_col)
+        )
+
         return cls(
-            age_part="age_part" if cnt_data.age_col or part_data.age_col else "age_grp_part",
+            age_part="age_part" if part_data.age_col else "age_grp_part",
+            age_grp_part="age_grp_part" if _part_has_coarse else None,
             age_cnt="age_cnt" if cnt_data.age_col else None,
-            age_grp_cnt="age_grp_cnt" if cnt_data.age_grp_col else None,
+            age_grp_cnt="age_grp_cnt" if _cnt_has_coarse else None,
             id_col="id",
             y="y",
             z=part_data.amb_cnt_col,
             strat_vars_part=strat_vars_part,
             strat_vars_cnt=strat_vars_cnt,
             repeat_part="repeat_part" if part_data.repeat_col else None,
-            age_pop="age",
+            age_pop="age" if pop_data.age_col else None,
+            age_grp_pop="age_grp_pop" if pop_data.age_grp_col else None,
             P="P",
             strat_vars_pop=pop_data.strat_var_cols if pop_data.strat_var_cols else None,
         )
-
-
-# Alias: ColumnSpec is the new preferred name; CoordToColumns is kept for backward compatibility.
-ColumnSpec = CoordToColumns

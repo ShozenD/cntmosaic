@@ -9,26 +9,26 @@ from jax.random import PRNGKey
 from jax.typing import ArrayLike
 from numpy.typing import NDArray
 
-from ..dataloader import DataLoader
+from ..dataloader import ContactSurveyLoader
 from ..dataloader.containers._ModelData import ModelData
 from ._base import ContactModel
 from .numpyro.priors import Prior2D
 
 
-class BRC(ContactModel, ABC):
+class GenMix(ContactModel, ABC):
     """
-    Base class for the Bayesian Rate Consistency model.
+    Base class for the Generalised Contact Mixing model family.
 
-    The BRC model provides a Bayesian framework for estimating social contact matrices
+    GenMix provides a Bayesian framework for estimating social contact matrices
     from contact survey data. It ensures consistency between forward and reciprocal
     contact rates by incorporating population age distribution constraints.
 
     Parameters
     ----------
-    dataloader : DataLoader
-        DataLoader object containing the processed participant and contact data.
+    dataloader : ContactSurveyLoader
+        ContactSurveyLoader object containing the processed participant and contact data.
         Must be properly initialized with participant data, contact data, and
-        population age distribution. See `DataLoader` for more details.
+        population age distribution. See `ContactSurveyLoader` for more details.
     priors : dict
         Dictionary containing prior specifications for model parameters.
         Must contain at least a 'rate' key specifying the prior for contact rates.
@@ -73,18 +73,18 @@ class BRC(ContactModel, ABC):
 
     Examples
     --------
-    >>> from cntmosaic.dataloader import DataLoader
+    >>> from cntmosaic.dataloader import ContactSurveyLoader
     >>> from cntmosaic.models.numpyro.priors import Spline2D
-    >>> from cntmosaic.models import BRCfine
+    >>> from cntmosaic.models import AgeMixFF
     >>>
     >>> # Create dataloader with contact data
-    >>> dataloader = DataLoader(df_part, df_cnt, df_age_dist)
+    >>> dataloader = ContactSurveyLoader(df_part, df_cnt, df_age_dist)
     >>>
     >>> # Specify priors
     >>> priors = {"rate": Spline2D(prior_type="global", M=30, degree=3)}
     >>>
     >>> # Initialize model
-    >>> model = BRCfine(dataloader, priors, likelihood="negbin")
+    >>> model = AgeMixFF(dataloader, priors, likelihood="negbin")
     >>>
     >>> # Run inference
     >>> from jax.random import PRNGKey
@@ -92,16 +92,16 @@ class BRC(ContactModel, ABC):
 
     See Also
     --------
-    BRCfine : Fine-grained age resolution BRC model
-    BRCrefine : Coarse-to-fine age refinement BRC model
-    DataLoader : Data preprocessing and loading utilities
+    AgeMixFF : Age-only mixing model, both participant and contact age at 1-year resolution
+    AgeMixFC : Age-only mixing model, participant age at 1-year resolution, contact age coarse
+    ContactSurveyLoader : Data preprocessing and loading utilities
     """
 
     ALLOWED_LIKELIHOODS = ["negbin", "poisson"]
 
     def __init__(
         self,
-        dataloader: DataLoader,
+        dataloader: ContactSurveyLoader,
         priors: Dict[str, Any],
         likelihood: str = "negbin",
         backend: Optional[Any] = None,
@@ -122,10 +122,10 @@ class BRC(ContactModel, ABC):
         self.set_age_dims(self.data.age_min, self.data.age_max)
 
     def _validate_common_inputs(
-        self, dataloader: DataLoader, priors: Dict[str, Any], likelihood: str
+        self, dataloader: ContactSurveyLoader, priors: Dict[str, Any], likelihood: str
     ) -> None:
         """
-        Validate inputs common to all BRC model variants.
+        Validate inputs common to all GenMix model variants.
 
         This method performs essential validation checks on the core model inputs:
         1. Ensures the likelihood function is supported
@@ -134,8 +134,8 @@ class BRC(ContactModel, ABC):
 
         Parameters
         ----------
-        dataloader : DataLoader
-            DataLoader object to validate.
+        dataloader : ContactSurveyLoader
+            ContactSurveyLoader object to validate.
         priors : dict
             Dictionary of prior specifications to validate.
         likelihood : str
@@ -151,7 +151,7 @@ class BRC(ContactModel, ABC):
         Notes
         -----
         Subclasses may implement additional validation via their own
-        `_validate_inputs()` method for model-specific requirements.
+        `_validate_inputs()` method for GenMix-family model-specific requirements.
         """
         if likelihood not in self.ALLOWED_LIKELIHOODS:
             raise ValueError(
@@ -166,10 +166,10 @@ class BRC(ContactModel, ABC):
             raise ValueError("priors must contain the specifications for 'rate'")
 
     def _make_guide(self, guide: Optional[Callable]) -> Callable:
-        """BRC-family models require an explicit guide."""
+        """GenMix-family models require an explicit guide."""
         if guide is None:
             raise ValueError(
-                "BRC-family models require an explicit guide. "
+                "GenMix-family models require an explicit guide. "
                 "Pass a guide to run_inference_svi(), e.g. AutoNormal(model.model)."
             )
         return guide
@@ -205,7 +205,7 @@ class BRC(ContactModel, ABC):
 
         Examples
         --------
-        >>> model = BRCfine(dataloader, priors)
+        >>> model = AgeMixFF(dataloader, priors)
         >>> model.set_age_dims(0, 80)  # 81 age groups (0-80)
         >>> print(model.A)
         81
@@ -378,7 +378,7 @@ class BRC(ContactModel, ABC):
         --------
         >>> from cntmosaic.models.numpyro.priors import Spline2D
         >>> priors = {"rate": Spline2D(prior_type="global", M=30, degree=3)}
-        >>> model = BRCfine(dataloader, priors)
+        >>> model = AgeMixFF(dataloader, priors)
         >>>
         >>> # Sample from the rate prior
         >>> rate_samples = model.prior_sampler("rate", num_samples=100, seed=42)

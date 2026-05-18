@@ -1,32 +1,29 @@
-"""NumPyro model mixin for BRCfine."""
+"""NumPyro model mixin for AgeMixCC."""
+
 from typing import Optional
 
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 
-class BRCfineNumPyroMixin:
-    """Carries the NumPyro ``model()`` for BRCfine.
-
-    Mixed in before ``BRC`` in the MRO so that the abstract ``model()``
-    on ``ContactModel`` / ``BRC`` is satisfied without touching those classes.
-    """
+class AgeMixCCNumPyroMixin:
+    """Carries the NumPyro ``model()`` for AgeMixCC."""
 
     def model(
         self,
-        y: Optional[ArrayLike] = None,
-        aid: Optional[ArrayLike] = None,
-        bid: Optional[ArrayLike] = None,
+        cid: Optional[ArrayLike] = None,
+        did: Optional[ArrayLike] = None,
         rid: Optional[ArrayLike] = None,
         log_N: Optional[ArrayLike] = None,
         log_V: Optional[ArrayLike] = None,
+        y: Optional[ArrayLike] = None,
     ) -> None:
         import numpyro
         from numpyro import distributions as dist
-        from numpyro.handlers import scope
+        from numpyro.handlers import plate, scope
 
-        aid = self.aid if aid is None else aid
-        bid = self.bid if bid is None else bid
+        cid = self.cid if cid is None else cid
+        did = self.did if did is None else did
         log_N = self.log_N if log_N is None else log_N
         log_V = self.log_V if log_V is None else log_V
         rid = getattr(self, "rid", None) if rid is None else rid
@@ -40,20 +37,19 @@ class BRCfineNumPyroMixin:
         log_rate = numpyro.deterministic("log_rate", beta0 + f)
         log_cint = numpyro.deterministic("log_cint", log_rate + self.log_P)
 
-        repeat_effect = self.hill.sample()[rid] if rid is not None else 0.0
+        repeat_effect = self.hill.sample()[rid] if hasattr(self, "rid") else 0.0
 
-        mu = numpyro.deterministic(
-            "mu",
-            jnp.exp(log_cint[aid, bid] + log_N + log_V + repeat_effect),
-        )
+        aggregated_log_cint = log_cint[cid, did]
+
+        mu = jnp.exp(aggregated_log_cint + repeat_effect + log_N + log_V)
 
         if self.likelihood == "poisson":
-            with numpyro.plate("data", len_y):
+            with plate("data", len_y):
                 numpyro.sample("obs", dist.Poisson(rate=mu), obs=y)
 
-        elif self.likelihood == "negbin":
+        if self.likelihood == "negbin":
             inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
-            with numpyro.plate("data", len_y):
+            with plate("data", len_y):
                 numpyro.sample(
                     "obs",
                     dist.NegativeBinomial2(mean=mu, concentration=1.0 / inv_disp),

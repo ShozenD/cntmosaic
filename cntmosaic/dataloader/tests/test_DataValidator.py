@@ -90,7 +90,7 @@ def data_no_strat():
 
     part_data = ParticipantData(df_part, "id", "age")
     cnt_data = ContactData(df_cnt, "id", "age_cnt", cnt_col="y")
-    pop_data = PopulationData(df_pop, "age", "P")
+    pop_data = PopulationData(df_pop, "P", "age")
 
     return part_data, cnt_data, pop_data
 
@@ -130,7 +130,7 @@ def data_partial_single():
 
     part_data = ParticipantData(df_part, "id", "age", strat_var_cols="sex")
     cnt_data = ContactData(df_cnt, "id", "age_cnt", cnt_col="y")
-    pop_data = PopulationData(df_pop, "age", "P")
+    pop_data = PopulationData(df_pop, "P", "age")
     strat_data = StratificationData(df_strat, "age", "sex", "prop")
 
     return part_data, cnt_data, pop_data, strat_data
@@ -171,7 +171,7 @@ def data_partial_single_inconsistent_coding():
 
     part_data = ParticipantData(df_part, "id", "age", strat_var_cols="sex")
     cnt_data = ContactData(df_cnt, "id", "age_cnt", cnt_col="y")
-    pop_data = PopulationData(df_pop, "age", "P")
+    pop_data = PopulationData(df_pop, "P", "age")
     strat_data = StratificationData(df_strat, "age", "sex", "prop")
 
     return part_data, cnt_data, pop_data, strat_data
@@ -216,7 +216,7 @@ def data_partial_multi():
 
     part_data = ParticipantData(df_part, "id", "age", strat_var_cols=["sex", "hhsize"])
     cnt_data = ContactData(df_cnt, "id", "age_cnt", cnt_col="y")
-    pop_data = PopulationData(df_pop, "age", "P")
+    pop_data = PopulationData(df_pop, "P", "age")
     strat_data = StratificationData(df_strat, "age", ["sex", "hhsize"], "prop")
 
     return part_data, cnt_data, pop_data, strat_data
@@ -265,7 +265,7 @@ def data_full_single():
     cnt_data = ContactData(
         df_cnt, "id", "age_cnt", strat_var_cols="sex_cnt", cnt_col="y"
     )
-    pop_data = PopulationData(df_pop, "age", "P", strat_var_cols="sex")
+    pop_data = PopulationData(df_pop, "P", "age", strat_var_cols="sex")
     strat_data = StratificationData(df_strat, "age", "sex", "prop")
 
     return part_data, cnt_data, pop_data, strat_data
@@ -314,7 +314,7 @@ def data_full_single_inconsistent_coding():
     cnt_data = ContactData(
         df_cnt, "id", "age_cnt", strat_var_cols="sex_cnt", cnt_col="y"
     )
-    pop_data = PopulationData(df_pop, "age", "P", strat_var_cols="sex")
+    pop_data = PopulationData(df_pop, "P", "age", strat_var_cols="sex")
     strat_data = StratificationData(df_strat, "age", "sex", "prop")
 
     return part_data, cnt_data, pop_data, strat_data

@@ -141,9 +141,7 @@ class ModelSummariserPrem:
             If model has not been properly initialized.
         """
         # Validate that either MCMC or SVI has been run
-        has_mcmc = prem._mcmc_result is not None
-        has_svi = prem._svi_result is not None
-        if not (has_mcmc or has_svi):
+        if prem.inference_method is None:
             raise ValueError(
                 "Either MCMC or SVI must have been run on the model. "
                 "Call prem.run_inference_mcmc() or prem.run_inference_svi() first."
@@ -353,15 +351,10 @@ class ModelSummariserPrem:
                 UserWarning,
             )
 
-        # Load posterior samples
-        if self.prem._mcmc_result is not None:
-            self.post_samples = self.prem._mcmc_result.get_samples()
-        elif self.prem._svi_result is not None:
-            # For SVI, use posterior_predictive to get deterministic variables (log_cint)
-            # This samples from guide and runs model forward to compute log_cint
-            self.post_samples = self.prem.posterior_predictive_svi(
-                PRNGKey(0), num_samples=self.num_samples
-            )
+        # Load posterior samples, routing through the model's inference backend
+        self.post_samples = self.prem.draw_posterior_samples(
+            PRNGKey(0), num_samples=self.num_samples
+        )
 
         # Compute contact intensity samples
         self.post_cint_samples = self._compute_contact_intensities()

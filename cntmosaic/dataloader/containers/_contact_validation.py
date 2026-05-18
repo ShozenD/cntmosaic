@@ -15,6 +15,8 @@ import pandas as pd
 def validate_contact_data(
     data: pd.DataFrame,
     age_col: Optional[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
 ) -> None:
@@ -30,6 +32,10 @@ def validate_contact_data(
         Preprocessed contact DataFrame with standardised column names.
     age_col : Optional[str]
         Original age column name; truthy when exact ages are in use.
+    age_min_col : Optional[str]
+        Original age_min column name; truthy when age ranges are in use.
+    age_max_col : Optional[str]
+        Original age_max column name; truthy when age ranges are in use.
     age_grp_col : Optional[str]
         Original age-group column name; truthy when age groups are in use.
     strat_var_cols : List[str]
@@ -45,6 +51,10 @@ def validate_contact_data(
     """
     if age_col:
         _validate_ages(data)
+
+    if age_min_col and age_max_col:
+        _validate_age_min_max(data)
+        _validate_age_groups(data, "age_grp_cnt")
 
     if age_grp_col:
         _validate_age_groups(data, age_grp_col)
@@ -74,6 +84,26 @@ def _validate_ages(data: pd.DataFrame) -> None:
             f"  Rows with negative ages: {negative_indices}\n"
             f"  Values: {ages[ages < 0].head().tolist()}"
         )
+
+
+def _validate_age_min_max(data: pd.DataFrame) -> None:
+    """Raise ValueError if 'age_min_cnt'/'age_max_cnt' are non-numeric or contain negative values."""
+    for col in ("age_min_cnt", "age_max_cnt"):
+        vals = data[col]
+        if not pd.api.types.is_numeric_dtype(vals):
+            raise ValueError(
+                f"Contact age column '{col}' must contain numeric values.\n"
+                f"  Current dtype: {vals.dtype}\n"
+                f"  Hint: convert contact age to integer or float type."
+            )
+        if (vals < 0).any():
+            negative_indices = data[vals < 0].index[:5].tolist()
+            raise ValueError(
+                f"Contact age column '{col}' contains negative values.\n"
+                f"  Contact ages must be non-negative.\n"
+                f"  Rows with negative values: {negative_indices}\n"
+                f"  Values: {vals[vals < 0].head().tolist()}"
+            )
 
 
 def _validate_age_groups(data: pd.DataFrame, age_grp_col: str) -> None:

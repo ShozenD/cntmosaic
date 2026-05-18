@@ -29,6 +29,14 @@ class ParticipantData:
         Name of the column containing participant ages as numeric values.
         Use this OR age_grp_col, not both. Ages should be non-negative.
         Renamed to 'age_part' internally.
+    age_min_col : Optional[str], default=None
+        Name of the column containing minimum age of participants (for age ranges).
+        Use this with age_max_col for age range representation. Both are required together.
+        Renamed to 'age_min_part' internally.
+    age_max_col : Optional[str], default=None
+        Name of the column containing maximum age of participants (for age ranges).
+        Use this with age_min_col for age range representation. Both are required together.
+        Renamed to 'age_max_part' internally.
     age_grp_col : Optional[str], default=None
         Name of the column containing participant age groups as pd.IntervalIndex.
         Use this OR age_col, not both. Must be categorical with IntervalIndex categories.
@@ -169,6 +177,8 @@ class ParticipantData:
     data: pd.DataFrame
     id_col: str
     age_col: Optional[str] = None
+    age_min_col: Optional[str] = None
+    age_max_col: Optional[str] = None
     age_grp_col: Optional[str] = None
     strat_var_cols: Optional[Union[List[str], str]] = None
     repeat_col: Optional[str] = None
@@ -205,19 +215,35 @@ class ParticipantData:
         elif self.strat_var_cols is None:
             object.__setattr__(self, "strat_var_cols", [])
 
-        # Validate mutual exclusivity of age specifications
-        if self.age_col is None and self.age_grp_col is None:
-            raise ValueError(
-                "Must specify exactly one of 'age_col' or 'age_grp_col'.\n"
-                "  Use 'age_col' for exact integer ages (e.g., 25, 34, 45),\n"
-                "  or 'age_grp_col' for age groups (e.g., pd.IntervalIndex or categorical)."
-            )
+        # Validate mutual exclusivity of age specifications.
+        # Exactly one of the three forms must be used:
+        #   (a) age_col only
+        #   (b) age_grp_col only
+        #   (c) age_min_col + age_max_col (both required together)
+        _has_exact = self.age_col is not None
+        _has_grp = self.age_grp_col is not None
+        _has_range = self.age_min_col is not None or self.age_max_col is not None
 
-        if self.age_col is not None and self.age_grp_col is not None:
+        _n_forms = sum([_has_exact, _has_grp, _has_range])
+
+        if _n_forms == 0:
             raise ValueError(
-                "Cannot specify both 'age_col' and 'age_grp_col' simultaneously.\n"
-                f"  age_col='{self.age_col}', age_grp_col='{self.age_grp_col}'\n"
-                "  Hint: specify only one age representation."
+                "Must specify exactly one age representation:\n"
+                "  'age_col' for exact integer ages (e.g., 25, 34, 45),\n"
+                "  'age_grp_col' for age groups (e.g., pd.IntervalIndex or categorical),\n"
+                "  or both 'age_min_col' and 'age_max_col' for age ranges."
+            )
+        if _n_forms > 1:
+            raise ValueError(
+                "Age specification forms are mutually exclusive — provide exactly one:\n"
+                "  'age_col', 'age_grp_col', or 'age_min_col'/'age_max_col'.\n"
+                f"  Got: age_col={self.age_col!r}, age_grp_col={self.age_grp_col!r}, "
+                f"age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
+            )
+        if _has_range and (self.age_min_col is None or self.age_max_col is None):
+            raise ValueError(
+                "Both 'age_min_col' and 'age_max_col' must be specified together.\n"
+                f"  Got: age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
             )
 
         # Delegate column validation, NaN removal, dtype coercion, and renaming
@@ -228,6 +254,8 @@ class ParticipantData:
                 self.data,
                 self.id_col,
                 self.age_col,
+                self.age_min_col,
+                self.age_max_col,
                 self.age_grp_col,
                 self.strat_var_cols,
                 self.repeat_col,
@@ -269,6 +297,8 @@ class ParticipantData:
         validate_participant_data(
             self.data,
             self.age_col,
+            self.age_min_col,
+            self.age_max_col,
             self.age_grp_col,
             self.repeat_col,
             self.amb_cnt_col,

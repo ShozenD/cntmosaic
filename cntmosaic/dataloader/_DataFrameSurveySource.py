@@ -13,7 +13,7 @@ from typing import Optional, Union
 
 import pandas as pd
 
-from ._CoordToColumns import ColumnSpec
+from ._ColumnSpec import ColumnSpec
 from ._DataValidator import DataValidator
 from .containers._ContactData import ContactData
 from .containers._ParticipantData import ParticipantData
@@ -86,14 +86,14 @@ class DataFrameSurveySource:
 
         for col in data.columns:
             if col in self.part_data.data.columns:
-                if pd.api.types.is_categorical_dtype(self.part_data.data[col]):
+                if isinstance(data[col].dtype, pd.CategoricalDtype):
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.part_data.data[col].cat.categories,
                         ordered=self.part_data.data[col].cat.ordered,
                     )
             elif col in self.cnt_data.data.columns:
-                if pd.api.types.is_categorical_dtype(self.cnt_data.data[col]):
+                if isinstance(data[col].dtype, pd.CategoricalDtype):
                     data[col] = pd.Categorical(
                         data[col],
                         categories=self.cnt_data.data[col].cat.categories,

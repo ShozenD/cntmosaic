@@ -4,12 +4,12 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from cntmosaic.analysis.summariser._ModelSummariserBRC import ModelSummariserBRC
-from cntmosaic.dataloader._DataLoader import DataLoader
+from cntmosaic.dataloader import ContactSurveyLoader
 
 
 def spectral_radius(
     matrices: Dict[str, ArrayLike],
-    dataloader: Optional[DataLoader] = None,
+    dataloader: Optional[ContactSurveyLoader] = None,
     method: Optional[str] = "generalised",
 ) -> float | ArrayLike:
     """Compute the spectral radius of the generalised or age-stratified matrix.
@@ -21,8 +21,8 @@ def spectral_radius(
     ----------
     matrices : dict
         A dictionary mapping "source->target" to a 2D or 3D array
-    dataloader : DataLoader, optional
-        An instantiated DataLoader. Required if method="age". Used to extract
+    dataloader : ContactSurveyLoader, optional
+        An instantiated ContactSurveyLoader. Required if method="age". Used to extract
         stratified population sizes via StratificationData proportions and
         PopulationData totals.
     method : str, optional
@@ -70,17 +70,17 @@ def spectral_radius(
         return np.max(np.abs(eigenvalues))
 
 
-def _compute_P_sa(dataloader: DataLoader) -> Dict[str, np.ndarray]:
+def _compute_P_sa(dataloader: ContactSurveyLoader) -> Dict[str, np.ndarray]:
     """
-    Compute stratified population sizes P^{s}_{a} from a DataLoader.
+    Compute stratified population sizes P^{s}_{a} from a ContactSurveyLoader.
 
     Combines marginal population sizes P_a from PopulationData with stratum
     proportions Q_{s,a} from StratificationData to produce P^{s}_{a} = Q_{s,a} * P_a.
 
     Parameters
     ----------
-    dataloader : DataLoader
-        An instantiated DataLoader with population and stratification data.
+    dataloader : ContactSurveyLoader
+        An instantiated ContactSurveyLoader with population and stratification data.
 
     Returns
     -------
@@ -96,7 +96,7 @@ def _compute_P_sa(dataloader: DataLoader) -> Dict[str, np.ndarray]:
 
 def z_marginals(
     summariser: ModelSummariserBRC,
-    dataloader: DataLoader,
+    dataloader: ContactSurveyLoader,
 ) -> Dict[str, ArrayLike]:
     """
     Compute the expected partially stratified total contact counts z^s_ab.
@@ -107,8 +107,8 @@ def z_marginals(
     ----------
     summariser : ModelSummariserBRC
         Model summariser
-    dataloader : DataLoader
-        An instantiated DataLoader. Used to extract stratified source population sizes
+    dataloader : ContactSurveyLoader
+        An instantiated ContactSurveyLoader. Used to extract stratified source population sizes
         by combining PopulationData (total counts) with StratificationData (proportions).
     """
 
@@ -335,7 +335,7 @@ def sample_eta(
     z_marginals: Dict[str, np.ndarray],
     eta_lb: Dict[str, np.ndarray],
     eta_ub: Dict[str, np.ndarray],
-    dataloader: DataLoader,
+    dataloader: ContactSurveyLoader,
     alpha: float = 1.0,
     external_eta: Dict[str, np.ndarray] | None = None,
     external_counts: Dict[str, np.ndarray] | None = None,
@@ -362,8 +362,8 @@ def sample_eta(
     eta_ub : Dict[str, np.ndarray]
         Upper Frechet bounds for each ``"source->target"`` pair,
         shape ``(S, A, A)``.
-    dataloader : DataLoader
-        An instantiated DataLoader.  Used to extract stratified population
+    dataloader : ContactSurveyLoader
+        An instantiated ContactSurveyLoader.  Used to extract stratified population
         sizes via ``_compute_P_sa`` for the Dirichlet concentration.
     alpha : float, optional
         Scalar multiplier for the Dirichlet concentration (default 1.0).
@@ -454,7 +454,7 @@ def sample_eta(
 
 def predict_full_matrices(
     summariser: ModelSummariserBRC,
-    dataloader: DataLoader,
+    dataloader: ContactSurveyLoader,
     rng: np.random.Generator = None,
 ) -> Dict[str, ArrayLike]:
     """
@@ -464,8 +464,8 @@ def predict_full_matrices(
     ----------
     summariser : ModelSummariserBRC
         A fitted partially stratified model summariser containing posterior samples of the contact intensities.
-    dataloader : DataLoader
-        The DataLoader used to prepare the data for the model, required to extract population sizes for each stratum.
+    dataloader : ContactSurveyLoader
+        The ContactSurveyLoader used to prepare the data for the model, required to extract population sizes for each stratum.
     rng : np.random.Generator, optional
         A random number generator for sampling associativity fractions. If None, a new generator will be created.
 

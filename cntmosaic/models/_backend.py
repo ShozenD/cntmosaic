@@ -28,7 +28,7 @@ class InferenceBackend(Protocol):
        is required; structural compatibility is checked at runtime via
        ``isinstance(backend, InferenceBackend)``.
     3. Pass an instance to any model constructor:
-       ``BRCfine(loader, priors, backend=PyMCBackend())``
+       ``AgeMixFF(loader, priors, backend=PyMCBackend())``
 
     Notes
     -----
@@ -111,4 +111,8 @@ class InferenceBackend(Protocol):
         **model_kwargs: Any,
     ) -> Dict[str, Any]:
         """Generate posterior predictive samples using the variational posterior."""
+        ...
+
+    def backend_name(self) -> str:
+        """Identifier string for this backend (e.g. ``"numpyro"``)."""
         ...

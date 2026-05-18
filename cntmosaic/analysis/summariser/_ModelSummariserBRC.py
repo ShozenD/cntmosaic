@@ -8,7 +8,7 @@ from jax.random import PRNGKey
 from numpy.typing import NDArray
 
 from ...dataloader.containers import PopulationData
-from ...models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine
+from ...models import AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC
 from ...models._vdKassteele import vdKassteele
 
 
@@ -63,13 +63,13 @@ class ModelSummariserBRC:
     """
     Statistical summariser for BRC model inference results (MCMC or SVI).
 
-    Unified summariser for BRCfine, BRCrefine, HiBRCfine, HiBRCrefine, and vdKassteele models.
+    Unified summariser for AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, and vdKassteele models.
     Computes quantiles and credible intervals for contact matrices from MCMC or SVI
     posterior samples, with automatic detection of inference method and model type.
 
     Parameters
     ----------
-    model : BRCfine | BRCrefine | HiBRCfine | HiBRCrefine | vdKassteele
+    model : AgeMixCC | AgeMixFF | AgeMixFC | GenMixFF | GenMixFC | vdKassteele
         Fitted BRC or vdKassteele model with MCMC or SVI results.
     num_samples : int, default=3000
         Number of posterior samples to draw if using SVI.
@@ -81,7 +81,7 @@ class ModelSummariserBRC:
     inference_method : Literal["mcmc", "svi"]
         Detected inference method ("mcmc" or "svi").
     model_type : Literal["brc", "hibrc"]
-        Detected model type ("brc" for BRCfine/BRCrefine, "hibrc" for HiBRCfine/HiBRCrefine).
+        Detected model type ("brc" for AgeMixFF/AgeMixFC, "hibrc" for GenMixFF/GenMixFC).
     num_samples : int
         Number of samples for SVI posterior.
     post_samples : Dict[str, NDArray]
@@ -98,16 +98,16 @@ class ModelSummariserBRC:
         If neither MCMC nor SVI has been run on the model.
         If model type is not supported.
     TypeError
-        If model is not a BRC-family model.
+        If model is not a GenMix-family model.
 
     Examples
     --------
-    >>> from cntmosaic.models import BRCfine
+    >>> from cntmosaic.models import AgeMixFF
     >>> from cntmosaic.models.numpyro.priors import Spline2D
     >>> from cntmosaic.analysis import ModelSummariserBRC
     >>>
-    >>> # Fit BRC model with MCMC
-    >>> model = BRCfine(dataloader, priors={"rate": Spline2D()})
+    >>> # Fit model with MCMC
+    >>> model = AgeMixFF(dataloader, priors={"rate": Spline2D()})
     >>> model.run_inference_mcmc(PRNGKey(0), num_samples=1000)
     >>>
     >>> # Create summariser (auto-detects MCMC)
@@ -118,21 +118,21 @@ class ModelSummariserBRC:
     >>> lower, median, upper = summary['lower'], summary['median'], summary['upper']
     >>>
     >>> # Also works with SVI
-    >>> model_svi = BRCfine(dataloader, priors={"rate": Spline2D()})
+    >>> model_svi = AgeMixFF(dataloader, priors={"rate": Spline2D()})
     >>> model_svi.run_inference_svi(PRNGKey(0), guide, num_steps=10000)
     >>> summariser_svi = ModelSummariserBRC(model_svi, num_samples=3000)
     >>>
     >>> # Works with hierarchical models too
-    >>> hibrc = HiBRCfine(dataloader, priors)
-    >>> hibrc.run_inference_mcmc(PRNGKey(0), num_samples=1000)
-    >>> summariser_hibrc = ModelSummariserBRC(hibrc)
-    >>> summary_by_group = summariser_hibrc.summarise_cint(alpha=0.05)
+    >>> gen_mix_ff = GenMixFF(dataloader, priors)
+    >>> gen_mix_ff.run_inference_mcmc(PRNGKey(0), num_samples=1000)
+    >>> summariser_hi = ModelSummariserBRC(gen_mix_ff)
+    >>> summary_by_group = summariser_hi.summarise_cint(alpha=0.05)
 
     Notes
     -----
     - Automatically detects inference method (MCMC vs SVI)
-    - Automatically detects model type (BRC vs HiBRC)
-    - Unified API across all BRC-family models
+    - Automatically detects model type (AgeMix vs GenMix)
+    - Unified API across all GenMix-family models
     - Efficient memory management for large posterior samples
     - Results are cached to avoid redundant computation
 
@@ -144,7 +144,7 @@ class ModelSummariserBRC:
 
     def __init__(
         self,
-        model: "BRCfine | BRCrefine | HiBRCfine | HiBRCrefine",
+        model: "AgeMixCC | AgeMixFF | AgeMixFC | GenMixFF | GenMixFC",
         num_samples: int = 3000,
     ) -> None:
         """
@@ -152,8 +152,8 @@ class ModelSummariserBRC:
 
         Parameters
         ----------
-        model : BRCfine | BRCrefine | HiBRCfine | HiBRCrefine | vdKassteele
-            BRC or vdKassteele model with completed MCMC or SVI inference.
+        model : AgeMixFF | AgeMixFC | GenMixFF | GenMixFC | vdKassteele
+            GenMix-family or vdKassteele model with completed MCMC or SVI inference.
         num_samples : int, default=3000
             Number of posterior samples to draw if using SVI.
 
@@ -165,22 +165,27 @@ class ModelSummariserBRC:
             If model is not a BRC-family model.
         """
         # Validate model type
-        from ...models import BRCfine, BRCrefine, HiBRCfine, HiBRCrefine, vdKassteele
+        from ...models import (
+            AgeMixCC,
+            AgeMixFF,
+            AgeMixFC,
+            GenMixFF,
+            GenMixFC,
+            vdKassteele,
+        )
 
         if not isinstance(
-            model, (BRCfine, BRCrefine, HiBRCfine, HiBRCrefine, vdKassteele)
+            model, (AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, vdKassteele)
         ):
             raise TypeError(
-                f"Model must be a BRC-family model (BRCfine, BRCrefine, HiBRCfine, HiBRCrefine) or"
+                f"Model must be a GenMix-family model (AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC) or "
                 "vdKassteele, "
                 f"got {type(model).__name__}"
             )
 
-        # Detect inference method
-        has_mcmc = hasattr(model, "_mcmc_result") and model._mcmc_result is not None
-        has_svi = hasattr(model, "_svi_result") and model._svi_result is not None
-
-        if not (has_mcmc or has_svi):
+        # Detect inference method via ContactModel property
+        _method = model.inference_method
+        if _method is None:
             raise ValueError(
                 "Neither MCMC nor SVI has been run on the model. "
                 "Call model.run_inference_mcmc() or model.run_inference_svi() first."
@@ -188,8 +193,10 @@ class ModelSummariserBRC:
 
         # Store configuration
         self.model = model
-        self.inference_method: Literal["mcmc", "svi"] = "mcmc" if has_mcmc else "svi"
+        self.inference_method: Literal["mcmc", "svi"] = _method
         self.num_samples = num_samples
+        # Backend name for dispatch (e.g. "numpyro")
+        self._backend_name: str = model._get_backend().backend_name()
 
         # Detect model type
         # vdKassteele can be either BRC or HIBRC depending on prior_type
@@ -198,7 +205,7 @@ class ModelSummariserBRC:
                 self.model_type: Literal["brc", "hibrc"] = "brc"
             else:
                 self.model_type: Literal["brc", "hibrc"] = "hibrc"
-        elif isinstance(model, (HiBRCfine, HiBRCrefine)):
+        elif isinstance(model, (GenMixFF, GenMixFC)):
             self.model_type: Literal["brc", "hibrc"] = "hibrc"
         else:
             self.model_type: Literal["brc", "hibrc"] = "brc"
@@ -211,14 +218,10 @@ class ModelSummariserBRC:
         self._compute_contact_intensities()
 
     def _load_posterior(self) -> None:
-        """Load posterior samples from MCMC or SVI."""
-        if self.inference_method == "mcmc":
-            self.post_samples = self.model._mcmc_result.get_samples()
-        else:  # svi
-            # Generate samples from variational posterior
-            self.post_samples = self.model.posterior_predictive_svi(
-                PRNGKey(0), self.model._guide, num_samples=self.num_samples
-            )
+        """Load posterior samples, routing through the model's inference backend."""
+        self.post_samples = self.model.draw_posterior_samples(
+            PRNGKey(0), num_samples=self.num_samples
+        )
 
     def _compute_contact_intensities(self) -> None:
         """

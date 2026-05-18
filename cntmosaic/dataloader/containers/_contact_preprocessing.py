@@ -18,6 +18,8 @@ def preprocess_contact_data(
     df_cnt: pd.DataFrame,
     id_col: str,
     age_col: Optional[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
     cnt_col: str,
@@ -33,6 +35,10 @@ def preprocess_contact_data(
         Column containing participant identifiers.
     age_col : Optional[str]
         Column containing exact contact ages.
+    age_min_col : Optional[str]
+        Column containing minimum contact ages (for age ranges).
+    age_max_col : Optional[str]
+        Column containing maximum contact ages (for age ranges).
     age_grp_col : Optional[str]
         Column containing contact age groups (IntervalIndex).
     strat_var_cols : List[str]
@@ -54,9 +60,19 @@ def preprocess_contact_data(
     ValueError
         If df_cnt is empty after NaN removal.
     """
-    required_cols = _check_columns(df_cnt, id_col, age_col, age_grp_col, strat_var_cols)
+    required_cols = _check_columns(
+        df_cnt, id_col, age_col, age_min_col, age_max_col, age_grp_col, strat_var_cols
+    )
     return _preprocess(
-        df_cnt, id_col, age_col, age_grp_col, strat_var_cols, cnt_col, required_cols
+        df_cnt,
+        id_col,
+        age_col,
+        age_min_col,
+        age_max_col,
+        age_grp_col,
+        strat_var_cols,
+        cnt_col,
+        required_cols,
     )
 
 
@@ -69,21 +85,18 @@ def _check_columns(
     df: pd.DataFrame,
     id_col: str,
     age_col: Optional[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
 ) -> List[str]:
     """
     Assert required columns exist.  Return the list of required column names.
-
-    Returning the list (rather than storing it as instance state) makes the
-    dependency on this check explicit and testable.
     """
 
     def _cols_display(columns):
         cols = list(columns)
         return cols[:8] + (["..."] if len(cols) > 8 else [])
-
-    age_column = age_col if age_col else age_grp_col
 
     if id_col not in df.columns:
         raise KeyError(
@@ -91,12 +104,25 @@ def _check_columns(
             f"  Available columns: {_cols_display(df.columns)}"
         )
 
-    if age_column not in df.columns:
-        col_type = "contact age" if age_col else "contact age group"
-        raise KeyError(
-            f"Missing {col_type} column '{age_column}' in contacts DataFrame.\n"
-            f"  Available columns: {_cols_display(df.columns)}"
-        )
+    if age_col:
+        if age_col not in df.columns:
+            raise KeyError(
+                f"Missing contact age column '{age_col}' in contacts DataFrame.\n"
+                f"  Available columns: {_cols_display(df.columns)}"
+            )
+    elif age_min_col and age_max_col:
+        missing_age_cols = [c for c in [age_min_col, age_max_col] if c not in df.columns]
+        if missing_age_cols:
+            raise KeyError(
+                f"Missing contact age column(s) '{', '.join(missing_age_cols)}' in contacts DataFrame.\n"
+                f"  Available columns: {_cols_display(df.columns)}"
+            )
+    elif age_grp_col:
+        if age_grp_col not in df.columns:
+            raise KeyError(
+                f"Missing contact age group column '{age_grp_col}' in contacts DataFrame.\n"
+                f"  Available columns: {_cols_display(df.columns)}"
+            )
 
     if strat_var_cols:
         missing_vars = [v for v in strat_var_cols if v not in df.columns]
@@ -106,7 +132,14 @@ def _check_columns(
                 f"  Available columns: {_cols_display(df.columns)}"
             )
 
-    required_cols = [id_col, age_column]
+    required_cols = [id_col]
+    if age_col:
+        required_cols.append(age_col)
+    elif age_min_col and age_max_col:
+        required_cols.extend([age_min_col, age_max_col])
+    elif age_grp_col:
+        required_cols.append(age_grp_col)
+
     if strat_var_cols:
         required_cols.extend(strat_var_cols)
     return required_cols
@@ -116,6 +149,8 @@ def _preprocess(
     df_cnt: pd.DataFrame,
     id_col: str,
     age_col: Optional[str],
+    age_min_col: Optional[str],
+    age_max_col: Optional[str],
     age_grp_col: Optional[str],
     strat_var_cols: List[str],
     cnt_col: str,
@@ -174,6 +209,12 @@ def _preprocess(
     if age_col and not age_col.endswith("_cnt"):
         rename_map[age_col] = "age_cnt"
 
+    if age_min_col and not age_min_col.endswith("_cnt"):
+        rename_map[age_min_col] = "age_min_cnt"
+
+    if age_max_col and not age_max_col.endswith("_cnt"):
+        rename_map[age_max_col] = "age_max_cnt"
+
     if age_grp_col and not age_grp_col.endswith("_cnt"):
         rename_map[age_grp_col] = "age_grp_cnt"
 
@@ -183,8 +224,51 @@ def _preprocess(
 
     df = df.rename(columns=rename_map)
 
+    # --- synthesise age_grp_cnt from age_min_cnt / age_max_cnt --------------
+    if age_min_col and age_max_col:
+        df["age_grp_cnt"] = _build_age_grp_from_min_max(df, "age_min_cnt", "age_max_cnt")
+        _warn_if_overlapping(df["age_grp_cnt"].cat.categories)
+
     # --- contact-count indicator column --------------------------------------
     if cnt_col not in df.columns:
         df[cnt_col] = 1
 
     return df
+
+
+# ---------------------------------------------------------------------------
+# Age-group helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_age_grp_from_min_max(
+    df: pd.DataFrame, min_col: str, max_col: str
+) -> "pd.Categorical":
+    """Return an ordered Categorical of left-closed intervals [min, max)."""
+    unique = (
+        df[[min_col, max_col]]
+        .drop_duplicates()
+        .sort_values([min_col, max_col])
+    )
+    cats = pd.IntervalIndex.from_arrays(
+        unique[min_col], unique[max_col], closed="left"
+    )
+    raw = pd.arrays.IntervalArray.from_arrays(
+        df[min_col], df[max_col], closed="left"
+    )
+    return pd.Categorical(raw, categories=cats, ordered=True)
+
+
+def _warn_if_overlapping(categories: "pd.IntervalIndex") -> None:
+    """Warn if any two intervals in an IntervalIndex overlap."""
+    pairs = sorted(categories, key=lambda iv: (iv.left, iv.right))
+    for i in range(1, len(pairs)):
+        if pairs[i].left < pairs[i - 1].right:
+            warnings.warn(
+                f"Age intervals overlap (e.g. {pairs[i - 1]} and {pairs[i]}). "
+                "Current models do not handle overlapping age ranges — "
+                "consider rebinning to non-overlapping intervals.",
+                UserWarning,
+                stacklevel=6,
+            )
+            break

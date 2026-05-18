@@ -175,19 +175,21 @@ def construct_log_P(pop_df: pd.DataFrame, col_spec: ColumnSpec) -> NDArray:
     Construct log population proportions (log_P) from population data.
 
     Returns shape (1, A) for unstratified or (K, A) for stratified cases.
+    A may be fine-age count or coarse-group count depending on population resolution.
     """
     if col_spec.strat_vars_pop:
+        age_dim = col_spec.age_pop or col_spec.age_grp_pop
         P = (
             pop_df.pivot(
                 index=col_spec.strat_vars_pop,
-                columns=col_spec.age_pop,
+                columns=age_dim,
                 values=col_spec.P,
             )
             .fillna(1)
             .to_numpy()
-        )  # shape (K, A)
+        )  # shape (K, A) or (K, B)
     else:
-        P = pop_df[col_spec.P].to_numpy()[np.newaxis, :]  # shape (1, A)
+        P = pop_df[col_spec.P].to_numpy()[np.newaxis, :]  # shape (1, A) or (1, B)
 
     return np.log(P)
 

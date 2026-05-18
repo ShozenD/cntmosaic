@@ -26,14 +26,20 @@ class StratificationData:
     ----------
     data : pd.DataFrame
         Dataframe containing stratified population proportions.
-        Must have columns for: age, stratification variable(s), and proportions.
+        Must have columns for: age (or age range), stratification variable(s), and proportions.
         Proportions within each age group must sum to 1.0.
-    age_col : str
-        Name of the column containing age values in the dataframe.
-        Should match or be compatible with the age range in the main dataset.
+    age_col : str, optional
+        Name of the column containing exact age values (e.g. 0, 1, 2, …).
+        Use this OR ``age_min_col``/``age_max_col``, not both.
+    age_min_col : str, optional
+        Name of the column containing the lower bound of each age range.
+        Must be used together with ``age_max_col``. Mutually exclusive with ``age_col``.
+    age_max_col : str, optional
+        Name of the column containing the upper bound of each age range.
+        Must be used together with ``age_min_col``. Mutually exclusive with ``age_col``.
     strat_var_cols : Union[str, List[str]], optional
         Name(s) of the stratification variable column(s) in the DataFrame.
-    prop_col : str, default='proportion'
+    prop_col : str, default='prop'
         Name of the column containing population proportions.
         Values must be in [0, 1] and sum to 1.0 within each age group.
         See also: from_counts() class method for automatic proportion computation from counts.
@@ -114,8 +120,7 @@ class StratificationData:
     age_min_col: Optional[str] = None
     age_max_col: Optional[str] = None
 
-    # Internal working attribute (set in __post_init__)
-    strat_col: str = None
+    strat_col: str = None  # legacy field; not used internally
 
     def __post_init__(self) -> None:
         """Process stratification columns and validate after initialization."""
@@ -643,10 +648,11 @@ class StratificationData:
         """
         Validate data structure matches stratification mode.
 
-        For PARTIAL: Requires columns [strat_col, age_col, prop_col].
-        For FULL: Same requirements (outer product computed internally)
+        For PARTIAL: Requires age column(s), strat_var_cols, and prop_col.
+        For FULL: Same requirements (outer product computed internally).
         """
-        required_cols = [self.age_col, self.strat_col, self.prop_col]
+        age_cols = [self.age_col] if self.age_col else [self.age_min_col, self.age_max_col]
+        required_cols = age_cols + (self.strat_var_cols or []) + [self.prop_col]
         missing = [col for col in required_cols if col not in self.data.columns]
         if missing:
             raise ValueError(

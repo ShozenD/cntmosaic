@@ -87,19 +87,19 @@ class ModelSummariser:
 
     def __init__(
         self,
-        model: "AgeMixCC | AgeMixFF | AgeMixFC | GenMixFF | GenMixFC | vdKassteele",
+        model: "AgeMixCC | AgeMixFF | AgeMixFC | GenMixFF | GenMixFC | GenMixCC | vdKassteele",
         num_samples: int = 3000,
         rng_key: Optional[PRNGKey] = None,
     ) -> None:
-        from ...models import AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC
+        from ...models import AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, GenMixCC
         from ...models._vdKassteele import vdKassteele
 
         if not isinstance(
-            model, (AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, vdKassteele)
+            model, (AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, GenMixCC, vdKassteele)
         ):
             raise TypeError(
                 f"model must be one of AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, "
-                f"or vdKassteele, got {type(model).__name__}"
+                f"GenMixCC, or vdKassteele, got {type(model).__name__}"
             )
 
         _method = model.inference_method
@@ -119,7 +119,7 @@ class ModelSummariser:
             self.model_type: Literal["agemix", "genmix"] = (
                 "agemix" if model.prior_type == "global" else "genmix"
             )
-        elif isinstance(model, (GenMixFF, GenMixFC)):
+        elif isinstance(model, (GenMixFF, GenMixFC, GenMixCC)):
             self.model_type = "genmix"
         else:
             self.model_type = "agemix"

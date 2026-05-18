@@ -58,7 +58,7 @@ class ModelEvaluatorPrem(BaseModelEvaluator):
         Stratification mode: "none", "partial", "full", or "mixed"
     K : int
         Number of strata (1 for unstratified)
-    age_bins : AgeBins
+    age_group_specs : AgeGroupSpecs
         Age bin definition from summariser
     pop_data : PopulationData or None
         Population data from summariser (may be None for legacy usage)
@@ -171,11 +171,11 @@ class ModelEvaluatorPrem(BaseModelEvaluator):
         # Prem-specific attributes extracted from the summariser
         self.strat_mode = self.summariser.strat_mode
         self.K = self.summariser.K
-        self.age_bins = self.summariser.age_bins
+        self.age_group_specs = self.summariser.age_group_specs
         self.pop_data = self.summariser.pop_data
         self.age_dist = self.summariser.age_dist
         self._has_fine_age_dist = self.age_dist is not None or (
-            self.pop_data is not None and self.pop_data.n_ages >= self.age_bins.range
+            self.pop_data is not None and self.pop_data.n_ages >= self.age_group_specs.range
         )
 
     def _validate_summariser(self, summariser: ModelSummariserPrem) -> None:
@@ -185,7 +185,7 @@ class ModelEvaluatorPrem(BaseModelEvaluator):
             "post_cint_samples",
             "strat_mode",
             "K",
-            "age_bins",
+            "age_group_specs",
             "summarise_cint",
             "summarise_mcint",
         ]
@@ -224,7 +224,7 @@ class ModelEvaluatorPrem(BaseModelEvaluator):
         NDArray or Dict[str, NDArray]
             Aggregated matrix(ces) matching model dimensions
         """
-        n_bins = len(self.age_bins)
+        n_bins = len(self.age_group_specs)
 
         if isinstance(cint_true, dict):
             # Stratified case
@@ -265,10 +265,10 @@ class ModelEvaluatorPrem(BaseModelEvaluator):
         import pandas as _pd
 
         n_fine = matrix.shape[0]
-        n_bins = len(self.age_bins)
+        n_bins = len(self.age_group_specs)
 
         # Create age bin edges
-        age_edges = self.age_bins.left
+        age_edges = self.age_group_specs.left
         age_labels = list(range(n_bins))
 
         # Create DataFrame for fine-grained ages

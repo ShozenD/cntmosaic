@@ -1,5 +1,47 @@
 import numpy as np
 
+
+def _default_style(label_angle_x: int = 0, legend_position: str = "right") -> dict:
+    """Return the base Altair style config shared by all mosaic plot functions."""
+    return {
+        "x_axis": {
+            "labelFontSize": 10,
+            "titleFontSize": 10,
+            "titleFontWeight": "normal",
+            "labelFontWeight": "normal",
+            "labelAngle": label_angle_x,
+            "grid": False,
+        },
+        "y_axis": {
+            "labelFontSize": 10,
+            "titleFontSize": 10,
+            "titleFontWeight": "normal",
+            "labelFontWeight": "normal",
+            "grid": False,
+        },
+        "title": {"fontSize": 10, "fontWeight": "normal", "anchor": "middle"},
+        "legend": {
+            "labelFontSize": 10,
+            "labelFontWeight": "normal",
+            "titleFontSize": 10,
+            "titleFontWeight": "normal",
+            "orient": legend_position,
+        },
+    }
+
+
+def _merge_style(default: dict, override: dict | None) -> dict:
+    """Merge *override* into *default*, updating nested dicts in-place."""
+    if not override:
+        return default
+    for key, val in override.items():
+        if key in default:
+            default[key].update(val)
+        else:
+            default[key] = val
+    return default
+
+
 def ravel_matrix(matrix: np.ndarray) -> tuple:
 		"""
 		Ravel a matrix in column-major order (Fortran order).

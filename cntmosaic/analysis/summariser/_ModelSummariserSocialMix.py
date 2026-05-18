@@ -5,7 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ...models import SocialMix
-from ...utils import AgeBins, depixilate
+from ...utils import AgeGroupSpecs, depixilate
 
 
 from .._stats import compute_quantiles, validate_alpha
@@ -33,7 +33,7 @@ class ModelSummariserSocialMix:
     ----------
     sm : SocialMix
         Reference to the SocialMix model
-    age_bins : AgeBins
+    age_bins : AgeGroupSpecs
         Age bins used in the model
     pop_data : PopulationData or None
         Population data container from the model
@@ -80,7 +80,7 @@ class ModelSummariserSocialMix:
         self.sm = sm
 
         # Reference key attributes
-        self.age_bins = sm.age_bins
+        self.age_group_specs = sm.age_group_specs
         self.pop_data = sm.pop_data
 
         # Extract population age distribution if available
@@ -153,14 +153,14 @@ class ModelSummariserSocialMix:
     def _depixilate_unstratified(self, samples: Dict, use_age_dist: bool) -> NDArray:
         """Depixilate unstratified bootstrap samples."""
         n_boot = samples.shape[0]
-        A = self.age_bins.range
+        A = self.age_group_specs.range
         depix_samples = np.empty((n_boot, A, A), dtype=np.float64)
 
         for i in range(n_boot):
             if use_age_dist:
-                depix_samples[i] = depixilate(samples[i], self.age_bins, self.age_dist)
+                depix_samples[i] = depixilate(samples[i], self.age_group_specs, self.age_dist)
             else:
-                depix_samples[i] = depixilate(samples[i], self.age_bins)
+                depix_samples[i] = depixilate(samples[i], self.age_group_specs)
 
         return depix_samples
 
@@ -168,7 +168,7 @@ class ModelSummariserSocialMix:
         self, samples_dict: Dict[str, NDArray], use_age_dist: bool
     ) -> Dict[str, NDArray]:
         """Depixilate stratified bootstrap samples."""
-        A = self.age_bins.range
+        A = self.age_group_specs.range
         depix_samples = {}
 
         for label, samples in samples_dict.items():
@@ -199,17 +199,17 @@ class ModelSummariserSocialMix:
                 # Depixilate with stratum-specific population
                 for i in range(n_boot):
                     depix_label[i] = depixilate(
-                        samples[i], self.age_bins, stratum_age_dist
+                        samples[i], self.age_group_specs, stratum_age_dist
                     )
             else:
                 # No age distribution or unstratified
                 for i in range(n_boot):
                     if use_age_dist:
                         depix_label[i] = depixilate(
-                            samples[i], self.age_bins, self.age_dist
+                            samples[i], self.age_group_specs, self.age_dist
                         )
                     else:
-                        depix_label[i] = depixilate(samples[i], self.age_bins)
+                        depix_label[i] = depixilate(samples[i], self.age_group_specs)
 
             depix_samples[label] = depix_label
 

@@ -10,22 +10,22 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from ...utils import AgeBins
+from ...utils import AgeGroupSpecs
 
 
 class AgeBinProcessor:
     """Handles age binning and zero-group merging."""
 
-    def __init__(self, age_bins: AgeBins):
+    def __init__(self, age_group_specs: AgeGroupSpecs):
         """
         Initialize age bin processor.
 
         Parameters
         ----------
-        age_bins : AgeBins
+        age_group_specs : AgeGroupSpecs
             Age stratification bins
         """
-        self.age_bins = age_bins
+        self.age_group_specs = age_group_specs
 
     def assign_age_groups(
         self, df: pd.DataFrame, age_col: str, group_col: str
@@ -48,7 +48,7 @@ class AgeBinProcessor:
             Dataframe with age group column added
         """
         df = df.copy()
-        bins = self.age_bins.left + [self.age_bins.right[-1]]
+        bins = self.age_group_specs.left + [self.age_group_specs.right[-1] + 1]
 
         df[group_col] = pd.cut(df[age_col], bins=bins, right=False, include_lowest=True)
 

@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 from tqdm import tqdm
 
 from ...dataloader import ContactData, ParticipantData, PopulationData
-from ...utils import AgeBins
+from ...utils import AgeGroupSpecs
 
 
 @dataclass
@@ -153,7 +153,7 @@ class SocialMixBootstrap:
         self,
         part_data: ParticipantData,
         cnt_data: ContactData,
-        age_bins: AgeBins,
+        age_group_specs: AgeGroupSpecs,
         pop_data: Optional[PopulationData] = None,
         apply_reciprocity: bool = True,
         n_boot: int = 1000,
@@ -168,7 +168,7 @@ class SocialMixBootstrap:
             Participant data container
         cnt_data : ContactData
             Contact data container
-        age_bins : AgeBins
+        age_group_specs : AgeGroupSpecs
             Age stratification bins
         pop_data : PopulationData, optional
             Population data for reciprocity adjustment
@@ -181,7 +181,7 @@ class SocialMixBootstrap:
         """
         self.part_data = part_data
         self.cnt_data = cnt_data
-        self.age_bins = age_bins
+        self.age_group_specs = age_group_specs
         self.pop_data = pop_data
         self.apply_reciprocity = apply_reciprocity
         self.n_boot = n_boot
@@ -202,13 +202,12 @@ class SocialMixBootstrap:
 
     def _assign_age_groups(self) -> None:
         """Assign age groups to participants and contacts if not already provided."""
-        # Construct bin edges
-        bin_edges = self.age_bins.left + [self.age_bins.right[-1]]
+        bin_edges = self.age_group_specs.left + [self.age_group_specs.right[-1] + 1]
 
-        # Create interval labels
+        # Interval labels: right bound is exclusive (right[i] + 1)
         intervals = [
-            pd.Interval(left=l, right=r, closed="left")
-            for l, r in zip(self.age_bins.left, self.age_bins.right)
+            pd.Interval(left=l, right=r + 1, closed="left")
+            for l, r in zip(self.age_group_specs.left, self.age_group_specs.right)
         ]
 
         # Assign age groups to participants if not present
@@ -510,11 +509,10 @@ class SocialMixBootstrap:
 
     def _load_population_data(self):
         """Load and process population data for reciprocity adjustment."""
-        # Assign age groups to population data
-        bin_edges = self.age_bins.left + [self.age_bins.right[-1]]
+        bin_edges = self.age_group_specs.left + [self.age_group_specs.right[-1] + 1]
         intervals = [
-            pd.Interval(left=l, right=r, closed="left")
-            for l, r in zip(self.age_bins.left, self.age_bins.right)
+            pd.Interval(left=l, right=r + 1, closed="left")
+            for l, r in zip(self.age_group_specs.left, self.age_group_specs.right)
         ]
 
         if "age_grp" not in self.pop_data.data.columns:

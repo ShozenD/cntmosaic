@@ -15,7 +15,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from ...dataloader import ContactData, ParticipantData, PopulationData
-from ...utils import AgeBins
+from ...utils import AgeGroupSpecs
 from ._socialmix_age_processing import AgeBinProcessor
 
 
@@ -33,7 +33,7 @@ class SocialMixValidator:
         Participant data container
     cnt_data : ContactData
         Contact data container
-    age_bins : AgeBins
+    age_bins : AgeGroupSpecs
         Age stratification bins
     pop_data : PopulationData, optional
         Population data container (required for reciprocity)
@@ -56,7 +56,7 @@ class SocialMixValidator:
         self,
         part_data: ParticipantData,
         cnt_data: ContactData,
-        age_bins: AgeBins,
+        age_group_specs: AgeGroupSpecs,
         pop_data: Optional[PopulationData] = None,
         apply_reciprocity: bool = True,
         adaptive_merge: bool = False,
@@ -64,14 +64,14 @@ class SocialMixValidator:
     ):
         self.part_data = part_data
         self.cnt_data = cnt_data
-        self.age_bins = age_bins
+        self.age_group_specs = age_group_specs
         self.pop_data = pop_data
         self.apply_reciprocity = apply_reciprocity
         self.adaptive_merge = adaptive_merge
         self.validate_for_bootstrap = validate_for_bootstrap
 
         # Initialize age processor
-        self.age_processor = AgeBinProcessor(age_bins)
+        self.age_processor = AgeBinProcessor(age_group_specs)
 
         # Stratification variables
         self.strat_vars_part: List[str] = []
@@ -90,7 +90,7 @@ class SocialMixValidator:
             Dictionary with keys:
             - 'part_data': Updated ParticipantData (may have merged age groups)
             - 'cnt_data': Updated ContactData (may have merged age groups)
-            - 'age_bins': Updated AgeBins (may have merged bins)
+            - 'age_bins': Updated AgeGroupSpecs (may have merged bins)
             - 'apply_reciprocity': Final reciprocity flag (may be disabled)
 
         Notes
@@ -123,7 +123,7 @@ class SocialMixValidator:
         return {
             "part_data": self.part_data,
             "cnt_data": self.cnt_data,
-            "age_bins": self.age_bins,
+            "age_group_specs": self.age_group_specs,
             "apply_reciprocity": self.apply_reciprocity,
         }
 
@@ -462,8 +462,8 @@ class SocialMixValidator:
                     # Update age bins
                     new_left = [interval.left for interval in merged_intervals]
                     new_right = [interval.right for interval in merged_intervals]
-                    object.__setattr__(self.age_bins, "left", new_left)
-                    object.__setattr__(self.age_bins, "right", new_right)
+                    object.__setattr__(self.age_group_specs, "left", new_left)
+                    object.__setattr__(self.age_group_specs, "right", new_right)
 
                     # Check for remaining empty groups
                     if self.strat_vars_part:
@@ -532,7 +532,7 @@ class SocialMixValidator:
         This method may modify:
         - self.part_data (reassigned age groups)
         - self.cnt_data (reassigned age groups)
-        - self.age_bins (merged bins)
+        - self.age_group_specs (merged bins)
         """
         # Determine grouping columns based on stratification
         group_cols = [f"{var}_part" for var in self.strat_vars_part] + ["age_grp_part"]
@@ -684,8 +684,8 @@ class SocialMixValidator:
         new_left = [interval.left for interval in merged_intervals]
         new_right = [interval.right for interval in merged_intervals]
 
-        object.__setattr__(self.age_bins, "left", new_left)
-        object.__setattr__(self.age_bins, "right", new_right)
+        object.__setattr__(self.age_group_specs, "left", new_left)
+        object.__setattr__(self.age_group_specs, "right", new_right)
 
     def _adaptive_merge_for_stability(
         self,
@@ -819,19 +819,19 @@ class SocialMixValidator:
             new_right = [interval.right for interval in merged_intervals]
 
             # Modify the existing age_bins object's internal lists
-            object.__setattr__(self.age_bins, "left", new_left)
-            object.__setattr__(self.age_bins, "right", new_right)
+            object.__setattr__(self.age_group_specs, "left", new_left)
+            object.__setattr__(self.age_group_specs, "right", new_right)
 
             # Format age bins for display
-            left_str = ", ".join(str(x) for x in self.age_bins.left)
-            right_str = ", ".join(str(x) for x in self.age_bins.right)
+            left_str = ", ".join(str(x) for x in self.age_group_specs.left)
+            right_str = ", ".join(str(x) for x in self.age_group_specs.right)
 
             strata_info = ""
             if self.strat_vars_part:
                 strata_age_counts = self.part_data.data.groupby(
                     group_cols, observed=False
                 ).size()
-                n_strata = len(strata_age_counts) // len(self.age_bins.left)
+                n_strata = len(strata_age_counts) // len(self.age_group_specs.left)
                 strata_info = f" across {n_strata} strata"
 
             warnings.warn(

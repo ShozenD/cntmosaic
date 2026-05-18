@@ -20,7 +20,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from ...dataloader import ContactData, ParticipantData, PopulationData
-from ...utils import AgeBins
+from ...utils import AgeGroupSpecs
 from ._base import DeterministicContactModel
 from ._socialmix_age_processing import AgeBinProcessor
 from ._socialmix_bootstrap import BootstrapResults, SocialMixBootstrap
@@ -57,7 +57,7 @@ class SocialMix(DeterministicContactModel):
         Population age distribution with columns:
         - 'age': age value (numeric)
         - 'P': population size at that age (numeric, > 0)
-    age_bins : AgeBins
+    age_bins : AgeGroupSpecs
         Age stratification bins defining age groups
     symmetric : bool, default False
         Apply reciprocity adjustment to ensure M[c,d]*P[c] = M[d,c]*P[d]
@@ -77,7 +77,7 @@ class SocialMix(DeterministicContactModel):
         Sample sizes per age group, shape (B,)
     P : NDArray
         Population sizes per age group, shape (B,)
-    effective_age_bins : AgeBins
+    effective_age_bins : AgeGroupSpecs
         Age bins after any adaptive merging
 
     Methods
@@ -121,7 +121,7 @@ class SocialMix(DeterministicContactModel):
         self,
         part_data: ParticipantData,
         cnt_data: ContactData,
-        age_bins: AgeBins,
+        age_group_specs: AgeGroupSpecs,
         pop_data: Optional[PopulationData] = None,
         apply_reciprocity: bool = True,
         adaptive_merge: bool = False,
@@ -130,7 +130,7 @@ class SocialMix(DeterministicContactModel):
         # Store parameters
         self.part_data = part_data
         self.cnt_data = cnt_data
-        self.age_bins = age_bins
+        self.age_group_specs = age_group_specs
         self.pop_data = pop_data
         self.apply_reciprocity = apply_reciprocity
         self.adaptive_merge = adaptive_merge
@@ -149,10 +149,10 @@ class SocialMix(DeterministicContactModel):
         self.K: int = 1  # Total number of strata
 
         # Initialize helper classes
-        self.age_processor = AgeBinProcessor(age_bins)
+        self.age_processor = AgeBinProcessor(age_group_specs)
 
         # Computed attributes (initialized in pipeline)
-        self.effective_age_bins: Optional[AgeBins] = None
+        self.effective_age_group_specs: Optional[AgeGroupSpecs] = None
         self._cint: Optional[NDArray] = None
         self._rate: Optional[NDArray] = None
         self._boot: Optional[BootstrapResults] = None
@@ -228,7 +228,7 @@ class SocialMix(DeterministicContactModel):
         validator = SocialMixValidator(
             self.part_data,
             self.cnt_data,
-            self.age_bins,
+            self.age_group_specs,
             self.pop_data,
             self.apply_reciprocity,
             self.adaptive_merge,
@@ -241,7 +241,7 @@ class SocialMix(DeterministicContactModel):
         # Update instance with validated components
         self.part_data = validated["part_data"]
         self.cnt_data = validated["cnt_data"]
-        self.age_bins = validated["age_bins"]
+        self.age_group_specs = validated["age_group_specs"]
         self.apply_reciprocity = validated["apply_reciprocity"]
 
         # Extract stratification variables from validated data
@@ -335,15 +335,12 @@ class SocialMix(DeterministicContactModel):
         Uses the age_bins provided during initialization to categorize
         raw ages into age groups.
         """
-        # Construct bin edges from AgeBins left and right boundaries
-        # age_bins.left gives [0, 5, 10, ...], age_bins.right gives [4, 9, 14, ..., max+1]
-        # For pd.cut, we need the full edge sequence
-        bin_edges = self.age_bins.left + [self.age_bins.right[-1]]
+        bin_edges = self.age_group_specs.left + [self.age_group_specs.right[-1] + 1]
 
-        # Create interval labels
+        # Interval labels: right bound is exclusive (right[i] + 1)
         intervals = [
-            pd.Interval(left=l, right=r, closed="left")
-            for l, r in zip(self.age_bins.left, self.age_bins.right)
+            pd.Interval(left=l, right=r + 1, closed="left")
+            for l, r in zip(self.age_group_specs.left, self.age_group_specs.right)
         ]
 
         # Assign age groups to participants if not present
@@ -756,7 +753,7 @@ class SocialMix(DeterministicContactModel):
         bootstrap = SocialMixBootstrap(
             part_data=self.part_data,
             cnt_data=self.cnt_data,
-            age_bins=self.age_bins,
+            age_group_specs=self.age_group_specs,
             pop_data=self.pop_data,
             apply_reciprocity=self.apply_reciprocity,
             n_boot=n_boot,

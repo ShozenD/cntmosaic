@@ -109,7 +109,7 @@ def mock_prem_unstratified(age_bins):
     # Create minimal mock
     prem = type("Prem", (), {})()
     prem.K = 1
-    prem.age_bins = age_bins
+    prem.age_group_specs = age_bins
     prem.data = pd.DataFrame({"stratum": ["All->All"] * 10})
 
     # Mock posterior samples
@@ -135,7 +135,7 @@ def mock_prem_stratified_full(age_bins):
     """Create mock Prem model for K=4 (full stratification)."""
     prem = type("Prem", (), {})()
     prem.K = 4
-    prem.age_bins = age_bins
+    prem.age_group_specs = age_bins
     prem.strat_vars_part = ["gender"]
     prem.strat_vars_cnt = ["gender"]
     prem.inference_type = "mcmc"

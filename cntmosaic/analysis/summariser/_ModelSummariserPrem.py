@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from ...dataloader.containers import PopulationData
 from ...models import Prem
 from ...models.classical._socialmix_age_processing import AgeBinProcessor
-from ...utils import AgeBins, depixilate, pixilate
+from ...utils import AgeGroupSpecs, depixilate, pixilate
 
 
 from .._stats import compute_quantiles, validate_alpha
@@ -41,7 +41,7 @@ class ModelSummariserPrem:
     ----------
     prem : Prem
         Reference to the Prem model
-    age_bins : AgeBins
+    age_bins : AgeGroupSpecs
         Age bins used in the model
     pop_data : PopulationData or None
         Population data container
@@ -116,7 +116,7 @@ class ModelSummariserPrem:
         self.prem = prem
 
         # Reference key attributes
-        self.age_bins = prem.age_bins
+        self.age_group_specs = prem.age_group_specs
         self.pop_data = pop_data
         self.num_samples = num_samples
 
@@ -126,7 +126,7 @@ class ModelSummariserPrem:
         self.strata_labels = self._create_stratum_labels()
 
         # Initialize helper classes
-        self.age_processor = AgeBinProcessor(self.age_bins)
+        self.age_processor = AgeBinProcessor(self.age_group_specs)
 
         # Computed attributes (initialized in pipeline)
         self.age_dist: Optional[NDArray] = None
@@ -144,7 +144,7 @@ class ModelSummariserPrem:
         # Derive age_grp_dist from age_dist if not provided
         if (
             self.age_grp_dist is None
-            and self.age_bins is not None
+            and self.age_group_specs is not None
             and self.age_dist is not None
         ):
             self.age_grp_dist = self._compute_age_grp_dist()
@@ -323,7 +323,7 @@ class ModelSummariserPrem:
     def _compute_age_grp_dist(self) -> NDArray:
         """Compute age group distribution from fine-grained age distribution."""
         age_grp_dist = []
-        age_edges = self.age_bins.left + [self.age_bins.max + 1]
+        age_edges = self.age_group_specs.left + [self.age_group_specs.max + 1]
 
         for i in range(len(age_edges) - 1):
             start_age = int(age_edges[i])
@@ -380,7 +380,7 @@ class ModelSummariserPrem:
         ----------
         pop_data : PopulationData
             Fine-grained population data
-        age_bins : AgeBins
+        age_bins : AgeGroupSpecs
             Age bins from the model
         strat_mode : str
             Stratification mode
@@ -390,7 +390,7 @@ class ModelSummariserPrem:
         PopulationData
             Aggregated population matching age bins
         """
-        from cntmosaic.utils import AgeBins
+        from cntmosaic.utils import AgeGroupSpecs
 
         # Get the population DataFrame
         df_pop = pop_data.data.copy()
@@ -459,7 +459,7 @@ class ModelSummariserPrem:
             Stratification mode: "none", "partial", "full", or "mixed"
         strata_labels : list of str, optional
             Stratum labels for full stratification mode. Required if strat_mode="full".
-        age_bins : AgeBins, optional
+        age_bins : AgeGroupSpecs, optional
             Age bin definition for automatic population aggregation. If pop_data has finer
             age resolution than contact matrices, population will be automatically aggregated
             to match. Required if population resolution doesn't match contact matrix resolution.
@@ -696,7 +696,7 @@ class ModelSummariserPrem:
         pop_data: Optional[PopulationData],
         strat_mode: str = "none",
         strata_labels: Optional[list] = None,
-        age_bins: Optional[AgeBins] = None,
+        age_bins: Optional[AgeGroupSpecs] = None,
     ):
         """
         Depixilate posterior samples to 1-year age resolution.
@@ -718,8 +718,8 @@ class ModelSummariserPrem:
             Stratification mode: "none", "partial", "full", or "mixed"
         strata_labels : list of str, optional
             Stratum labels for stratified models.
-        age_bins : AgeBins, optional
-            Age bin definition. If not provided, uses self.age_bins.
+        age_bins : AgeGroupSpecs, optional
+            Age bin definition. If not provided, uses self.age_group_specs.
 
         Returns
         -------
@@ -742,17 +742,17 @@ class ModelSummariserPrem:
 
         Uses source stratum population (P^s) for disaggregation weights.
         """
-        if self.age_bins is None and age_bins is None:
+        if self.age_group_specs is None and age_bins is None:
             raise ValueError("age_bins must be provided for depixilation")
 
         # Validate population has fine-grained age data
-        if pop_data.n_ages < self.age_bins.range:
+        if pop_data.n_ages < self.age_group_specs.range:
             raise ValueError(
                 f"PopulationData has only {pop_data.n_ages} ages, "
-                f"but need {self.age_bins.range} for fine-grained depixilation"
+                f"but need {self.age_group_specs.range} for fine-grained depixilation"
             )
 
-        A = self.age_bins.range
+        A = self.age_group_specs.range
 
         # Unstratified (K=1)
         if strat_mode == "none":
@@ -769,7 +769,7 @@ class ModelSummariserPrem:
 
             # Depixilate each sample
             for i in range(n_samples):
-                depix_samples[i] = depixilate(samples[i], self.age_bins, age_dist)
+                depix_samples[i] = depixilate(samples[i], self.age_group_specs, age_dist)
 
             return depix_samples
 
@@ -839,7 +839,7 @@ class ModelSummariserPrem:
 
                     for i in range(n_samples):
                         depix_label[i] = depixilate(
-                            sample[i], self.age_bins, source_age_dist
+                            sample[i], self.age_group_specs, source_age_dist
                         )
 
                     depix_samples[label] = depix_label
@@ -943,7 +943,7 @@ class ModelSummariserPrem:
                 self.pop_data,
                 self.strat_mode,
                 self.strata_labels,
-                age_bins=self.age_bins,
+                age_bins=self.age_group_specs,
             )
 
         # Apply depixilation if requested
@@ -954,7 +954,7 @@ class ModelSummariserPrem:
                     self.pop_data,
                     self.strat_mode,
                     self.strata_labels,
-                    age_bins=self.age_bins,
+                    age_bins=self.age_group_specs,
                 )
             else:
                 raise ValueError("pop_data must be provided for depixilation.")
@@ -1068,7 +1068,7 @@ class ModelSummariserPrem:
 
         # Validate requirements for depixilation
         if return_depixilated:
-            if self.age_bins is None:
+            if self.age_group_specs is None:
                 raise ValueError("age_bins required for depixilation")
             if self.age_dist is None:
                 raise ValueError(
@@ -1089,7 +1089,7 @@ class ModelSummariserPrem:
                 self.pop_data,
                 self.strat_mode,
                 self.strata_labels,
-                age_bins=self.age_bins,
+                age_bins=self.age_group_specs,
             )
             # Use fine-grained age distribution for rate computation
             pop_dist = self.age_dist
@@ -1187,7 +1187,7 @@ class ModelSummariserPrem:
             raise ValueError("Age group distribution required for symmetrization")
 
         if return_depixilated:
-            if self.age_bins is None:
+            if self.age_group_specs is None:
                 raise ValueError("age_bins required for depixilation")
             if self.age_dist is None:
                 raise ValueError(
@@ -1207,7 +1207,7 @@ class ModelSummariserPrem:
                     self.pop_data,
                     self.strat_mode,
                     self.strata_labels,
-                    age_bins=self.age_bins,
+                    age_bins=self.age_group_specs,
                 )
 
         # Compute marginals by summing over contact age (last axis)
@@ -1276,14 +1276,14 @@ class ModelSummariserPrem:
             samples = self.symmetrize_cint_samples(samples, self.age_grp_dist)
 
         if return_depixilated:
-            if self.age_bins is None or self.age_dist is None:
+            if self.age_group_specs is None or self.age_dist is None:
                 raise ValueError("age_bins and age_dist required for depixilation")
             cint_samples = self._depixilate_samples(
                 samples,
                 self.pop_data,
                 self.strat_mode,
                 self.strata_labels,
-                age_bins=self.age_bins,
+                age_bins=self.age_group_specs,
             )
             pop_dist = self.age_dist
         else:

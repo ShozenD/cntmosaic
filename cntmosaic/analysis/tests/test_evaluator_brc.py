@@ -19,7 +19,7 @@ from jax.random import PRNGKey
 pytestmark = pytest.mark.skip(reason="slow fixture setup (~9s per test) - disabled temporarily")
 from numpyro.infer.autoguide import AutoNormal
 
-from cntmosaic.analysis import ModelEvaluatorBRC, ModelSummariserBRC
+from cntmosaic.analysis import ModelEvaluatorBRC, ModelSummariser
 from cntmosaic.dataloader import ContactData, ContactSurveyLoader, ParticipantData, PopulationData
 from cntmosaic.datasets import load_age_distribution, load_template_patterns
 from cntmosaic.models import AgeMixFF
@@ -105,29 +105,29 @@ class TestModelEvaluatorBRCInitialization:
     def test_init_with_mcmc(self, brc_mcmc_fitted):
         """Test initialization with MCMC model."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true, alpha=0.05)
 
         assert evaluator.summariser is summariser
         assert evaluator.alpha == 0.05
-        assert evaluator.model_type == "brc"
+        assert evaluator.model_type == "agemix"
         assert isinstance(evaluator.cint_true, dict)
         assert isinstance(evaluator.mcint_true, dict)
 
     def test_init_with_svi(self, brc_svi_fitted):
         """Test initialization with SVI model."""
         model, cint_true = brc_svi_fitted
-        summariser = ModelSummariserBRC(model, num_samples=50)
+        summariser = ModelSummariser(model, num_samples=50)
         evaluator = ModelEvaluatorBRC(summariser, cint_true, alpha=0.1)
 
         assert evaluator.summariser is summariser
         assert evaluator.alpha == 0.1
-        assert evaluator.model_type == "brc"
+        assert evaluator.model_type == "agemix"
 
     def test_init_computes_marginals(self, brc_mcmc_fitted):
         """Test that marginal contact intensities are computed."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         # Marginals should equal row sums (cint_true is dict with "All->All" key)
@@ -141,19 +141,19 @@ class TestModelEvaluatorBRCInitialization:
         model = AgeMixFF(dataloader, priors)
 
         with pytest.raises(ValueError, match="Neither MCMC nor SVI"):
-            summariser = ModelSummariserBRC(model)
+            summariser = ModelSummariser(model)
 
     def test_init_with_wrong_summariser_type_raises_error(self, brc_mcmc_fitted):
         """Test that initialization with wrong summariser type raises TypeError."""
         _, cint_true = brc_mcmc_fitted
 
-        with pytest.raises(TypeError, match="Expected ModelSummariserBRC"):
+        with pytest.raises(TypeError, match="Expected ModelSummariser"):
             ModelEvaluatorBRC("not a summariser", cint_true)
 
     def test_init_with_invalid_alpha_raises_error(self, brc_mcmc_fitted):
         """Test that invalid alpha values raise ValueError."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
 
         with pytest.raises(ValueError, match="alpha must be in"):
             ModelEvaluatorBRC(summariser, cint_true, alpha=0)
@@ -167,7 +167,7 @@ class TestModelEvaluatorBRCInitialization:
     def test_init_with_negative_values_raises_error(self, brc_mcmc_fitted):
         """Test that negative true values raise ValueError."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
 
         cint_negative = {"All->All": cint_true["All->All"].copy()}
         cint_negative["All->All"][0, 0] = -1.0
@@ -178,7 +178,7 @@ class TestModelEvaluatorBRCInitialization:
     def test_init_with_nan_values_raises_error(self, brc_mcmc_fitted):
         """Test that NaN/Inf true values raise ValueError."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
 
         cint_nan = {"All->All": cint_true["All->All"].copy()}
         cint_nan["All->All"][0, 0] = np.nan
@@ -189,7 +189,7 @@ class TestModelEvaluatorBRCInitialization:
     def test_init_with_non_square_matrix_raises_error(self, brc_mcmc_fitted):
         """Test that non-square matrices raise ValueError."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
 
         cint_nonsquare = np.random.rand(10, 15)
 
@@ -203,7 +203,7 @@ class TestModelEvaluatorBRCContactIntensity:
     def test_evaluate_cint_returns_dataframe(self, brc_mcmc_fitted):
         """Test that evaluate_cint returns a DataFrame."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         metrics = evaluator.evaluate_cint()
@@ -214,7 +214,7 @@ class TestModelEvaluatorBRCContactIntensity:
     def test_evaluate_cint_has_required_columns(self, brc_mcmc_fitted):
         """Test that evaluate_cint DataFrame has required columns."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         metrics = evaluator.evaluate_cint()
@@ -234,7 +234,7 @@ class TestModelEvaluatorBRCContactIntensity:
     def test_evaluate_cint_values_are_reasonable(self, brc_mcmc_fitted):
         """Test that evaluate_cint produces reasonable metric values."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         metrics = evaluator.evaluate_cint(alpha=0.05)
@@ -251,7 +251,7 @@ class TestModelEvaluatorBRCContactIntensity:
     def test_evaluate_cint_caching(self, brc_mcmc_fitted):
         """Test that evaluate_cint results are cached."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         # First call
@@ -277,7 +277,7 @@ class TestModelEvaluatorBRCMarginalIntensity:
     def test_evaluate_mcint_returns_dataframe(self, brc_mcmc_fitted):
         """Test that evaluate_mcint returns a DataFrame."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         metrics = evaluator.evaluate_mcint()
@@ -288,7 +288,7 @@ class TestModelEvaluatorBRCMarginalIntensity:
     def test_evaluate_mcint_has_required_columns(self, brc_mcmc_fitted):
         """Test that evaluate_mcint DataFrame has required columns."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         metrics = evaluator.evaluate_mcint()
@@ -308,7 +308,7 @@ class TestModelEvaluatorBRCMarginalIntensity:
     def test_evaluate_mcint_values_are_reasonable(self, brc_mcmc_fitted):
         """Test that evaluate_mcint produces reasonable metric values."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         metrics = evaluator.evaluate_mcint(alpha=0.05)
@@ -329,7 +329,7 @@ class TestModelEvaluatorBRCCombinedEvaluation:
     def test_evaluate_returns_both_metrics(self, brc_mcmc_fitted):
         """Test that evaluate() returns both cint and mcint metrics."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         metrics = evaluator.evaluate(alpha=0.05)
@@ -342,7 +342,7 @@ class TestModelEvaluatorBRCCombinedEvaluation:
     def test_evaluate_with_custom_alpha(self, brc_mcmc_fitted):
         """Test evaluate() with custom alpha."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true, alpha=0.05)
 
         metrics = evaluator.evaluate(alpha=0.1)
@@ -357,7 +357,7 @@ class TestModelEvaluatorBRCPointEstimates:
     def test_get_point_estimate_error_cint(self, brc_mcmc_fitted):
         """Test point estimate errors for contact intensity."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         errors = evaluator.get_point_estimate_error("cint")
@@ -376,7 +376,7 @@ class TestModelEvaluatorBRCPointEstimates:
     def test_get_point_estimate_error_mcint(self, brc_mcmc_fitted):
         """Test point estimate errors for marginal intensity."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         errors = evaluator.get_point_estimate_error("mcint")
@@ -388,7 +388,7 @@ class TestModelEvaluatorBRCPointEstimates:
     def test_get_point_estimate_error_invalid_quantity(self, brc_mcmc_fitted):
         """Test that invalid quantity raises ValueError."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         with pytest.raises(ValueError, match="must be 'cint' or 'mcint'"):
@@ -401,19 +401,19 @@ class TestModelEvaluatorBRCCaching:
     def test_cache_info_initially_empty(self, brc_mcmc_fitted):
         """Test that cache is initially empty."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         cache_info = evaluator.get_cache_info()
 
         assert cache_info["n_cached"] == 0
-        assert cache_info["model_type"] == "brc"
+        assert cache_info["model_type"] == "agemix"
         assert cache_info["alpha"] == 0.05
 
     def test_cache_populated_after_evaluation(self, brc_mcmc_fitted):
         """Test that cache is populated after evaluation."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         evaluator.evaluate_cint()
@@ -425,7 +425,7 @@ class TestModelEvaluatorBRCCaching:
     def test_clear_cache(self, brc_mcmc_fitted):
         """Test clearing the cache."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         # Populate cache
@@ -444,7 +444,7 @@ class TestEdgeCases:
     def test_multiple_evaluations_same_evaluator(self, brc_mcmc_fitted):
         """Test calling multiple evaluation methods."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true)
 
         # Should all work without issues
@@ -465,7 +465,7 @@ class TestEdgeCases:
     def test_evaluator_with_zero_true_matrix(self, brc_mcmc_fitted):
         """Test evaluator behavior with zero true matrix (edge case)."""
         model, cint_true = brc_mcmc_fitted
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
 
         # Create zero matrix dict (edge case, but shouldn't crash)
         zero_matrix = {"All->All": np.zeros_like(cint_true["All->All"])}
@@ -489,7 +489,7 @@ class TestIntegration:
         model, cint_true = brc_mcmc_fitted
 
         # Create summariser and evaluator
-        summariser = ModelSummariserBRC(model)
+        summariser = ModelSummariser(model)
         evaluator = ModelEvaluatorBRC(summariser, cint_true, alpha=0.05)
 
         # Get all metrics
@@ -514,7 +514,7 @@ class TestIntegration:
         """Test complete evaluation workflow with SVI model."""
         model, cint_true = brc_svi_fitted
 
-        summariser = ModelSummariserBRC(model, num_samples=50)
+        summariser = ModelSummariser(model, num_samples=50)
         evaluator = ModelEvaluatorBRC(summariser, cint_true, alpha=0.05)
 
         # Should work identically to MCMC

@@ -11,7 +11,7 @@ import pandas as pd
 from ..models import AgeMixFF, AgeMixFC, GenMixFF, GenMixFC
 from ..vis._visuals import plot_mosaic
 from .evaluator._ModelEvaluatorBRC import ModelEvaluatorBRC
-from .summariser._ModelSummariserBRC import ModelSummariserBRC
+from .summariser._ModelSummariser import ModelSummariser
 
 
 def count_leaf_elements(d):
@@ -145,12 +145,12 @@ class ModelVisualiser:
 
     Parameters
     ----------
-    summariser : ModelSummariserBRC
+    summariser : ModelSummariser
         Model summariser instance containing posterior summaries of the fitted model.
 
     Attributes
     ----------
-    summariser : ModelSummariserBRC
+    summariser : ModelSummariser
         The model summariser used to extract posterior statistics.
     default_config : dict
         Default styling configuration for plot axes, titles, and legends.
@@ -158,11 +158,11 @@ class ModelVisualiser:
 
     Examples
     --------
-    >>> from cntmosaic.analysis import ModelSummariserBRC, ModelVisualiser
+    >>> from cntmosaic.analysis import ModelSummariser, ModelVisualiser
     >>> from cntmosaic.models import AgeMixFF
     >>>
     >>> # After fitting a model
-    >>> summariser = ModelSummariserBRC(model)
+    >>> summariser = ModelSummariser(model)
     >>> visualiser = ModelVisualiser(summariser)
     >>>
     >>> # Generate plots
@@ -201,7 +201,7 @@ class ModelVisualiser:
         },
     }
 
-    def __init__(self, summariser: ModelSummariserBRC):
+    def __init__(self, summariser: ModelSummariser):
         self.summariser = summariser
 
     def plot_rate(self, width=250, height=250, style_config=None):

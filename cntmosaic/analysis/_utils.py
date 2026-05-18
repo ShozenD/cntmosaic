@@ -3,7 +3,7 @@ from typing import Dict, Optional
 import numpy as np
 from numpy.typing import ArrayLike
 
-from cntmosaic.analysis.summariser._ModelSummariserBRC import ModelSummariserBRC
+from cntmosaic.analysis.summariser._ModelSummariser import ModelSummariser
 from cntmosaic.dataloader import ContactSurveyLoader
 
 
@@ -95,7 +95,7 @@ def _compute_P_sa(dataloader: ContactSurveyLoader) -> Dict[str, np.ndarray]:
 
 
 def z_marginals(
-    summariser: ModelSummariserBRC,
+    summariser: ModelSummariser,
     dataloader: ContactSurveyLoader,
 ) -> Dict[str, ArrayLike]:
     """
@@ -105,7 +105,7 @@ def z_marginals(
 
     Parameters
     ----------
-    summariser : ModelSummariserBRC
+    summariser : ModelSummariser
         Model summariser
     dataloader : ContactSurveyLoader
         An instantiated ContactSurveyLoader. Used to extract stratified source population sizes
@@ -453,7 +453,7 @@ def sample_eta(
 
 
 def predict_full_matrices(
-    summariser: ModelSummariserBRC,
+    summariser: ModelSummariser,
     dataloader: ContactSurveyLoader,
     rng: np.random.Generator = None,
 ) -> Dict[str, ArrayLike]:
@@ -462,7 +462,7 @@ def predict_full_matrices(
 
     Parameters
     ----------
-    summariser : ModelSummariserBRC
+    summariser : ModelSummariser
         A fitted partially stratified model summariser containing posterior samples of the contact intensities.
     dataloader : ContactSurveyLoader
         The ContactSurveyLoader used to prepare the data for the model, required to extract population sizes for each stratum.

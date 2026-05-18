@@ -10,14 +10,16 @@ from ._utils import (
 )
 from ._visualiser import ModelVisualiser
 from .evaluator import ModelEvaluatorBRC, ModelEvaluatorPrem, ModelEvaluatorSocialMix
-from .summariser._ModelSummariserBRC import ModelSummariserBRC
+from .summariser._ModelSummariser import ModelSummariser
 from .summariser._ModelSummariserPrem import ModelSummariserPrem
 from .summariser._ModelSummariserSocialMix import ModelSummariserSocialMix
+from .summariser._summary import ContactSummary
 
 __all__ = [
-    "ModelSummariserBRC",
+    "ModelSummariser",
     "ModelSummariserSocialMix",
     "ModelSummariserPrem",
+    "ContactSummary",
     "ModelEvaluatorBRC",
     "ModelEvaluatorSocialMix",
     "ModelEvaluatorPrem",

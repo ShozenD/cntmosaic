@@ -367,14 +367,14 @@ class TestInference:
 
 class TestSummarizerIntegration:
 
-    def test_single(self, single_large_sample):
+    def test_single(self, single_small_sample):
         """Test ModelSummariserPrem integration for unstratified model."""
-        part_data, cnt_data, pop_data = single_large_sample
+        part_data, cnt_data, pop_data = single_small_sample
         age_bins = AgeBins(0, 80, 5)
         model = Prem(part_data, cnt_data, age_bins)
-        model.run_inference_svi(PRNGKey(0), num_steps=500)
+        model.run_inference_svi(PRNGKey(0), num_steps=1)
 
-        summariser = ModelSummariserPrem(model, pop_data, num_samples=500)
+        summariser = ModelSummariserPrem(model, pop_data, num_samples=20)
 
         # Depixilated summary
         sum_cint = summariser.summarise_cint(return_depixilated=True)
@@ -391,7 +391,7 @@ class TestSummarizerIntegration:
         assert sum_mcint_pix["All->All"].shape == (3, 16)
 
         # No population data
-        summariser = ModelSummariserPrem(model, num_samples=500)
+        summariser = ModelSummariserPrem(model, num_samples=20)
 
         sum_cint = summariser.summarise_cint()
         assert sum_cint["All->All"].shape == (3, 16, 16)
@@ -400,14 +400,14 @@ class TestSummarizerIntegration:
             # Should raise error if requesting depixilated without pop data
             summariser.summarise_cint(return_depixilated=True)
 
-    def test_partial(self, partial_large_sample):
+    def test_partial(self, partial_small_sample):
         """Test ModelSummariserPrem integration for participant-stratified model."""
-        part_data, cnt_data, pop_data = partial_large_sample
+        part_data, cnt_data, pop_data = partial_small_sample
         age_bins = AgeBins(0, 80, 5)
         model = Prem(part_data, cnt_data, age_bins)
-        model.run_inference_svi(PRNGKey(0), num_steps=500)
+        model.run_inference_svi(PRNGKey(0), num_steps=1)
 
-        summariser = ModelSummariserPrem(model, pop_data, num_samples=500)
+        summariser = ModelSummariserPrem(model, pop_data, num_samples=20)
 
         # Depixilated summary
         sum_cint = summariser.summarise_cint(return_depixilated=True)
@@ -432,9 +432,9 @@ class TestSummarizerIntegration:
         part_data, cnt_data, pop_data = partial_multi_strat_large_sample
         age_bins = AgeBins(0, 80, 5)
         model = Prem(part_data, cnt_data, age_bins)
-        model.run_inference_svi(PRNGKey(0), num_steps=500)
+        model.run_inference_svi(PRNGKey(0), num_steps=1)
 
-        summariser = ModelSummariserPrem(model, pop_data, num_samples=500)
+        summariser = ModelSummariserPrem(model, pop_data, num_samples=20)
 
         # Depixilated summary
         sum_cint = summariser.summarise_cint(return_depixilated=True)

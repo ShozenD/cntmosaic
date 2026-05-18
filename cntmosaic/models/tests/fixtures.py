@@ -697,6 +697,104 @@ def full_multi_strat_large_sample():
     return part_data, cnt_data, pop_data
 
 
+# ---------------------------------------------------------------------------
+# Coarse-coarse fixtures with stratification (for GenMixCC)
+# Both participant and contact ages are recorded as coarse age groups.
+# ---------------------------------------------------------------------------
+
+_CC_BINS = [0, 10, 20, 30, 40, 50, 60, 70, 80]
+
+
+@pytest.fixture
+def partial_coarse_coarse_large_sample():
+    """Generate a large sample with partial stratification, coarse ages for both participant and contact."""
+
+    strat = Stratification(
+        name="sex", n_strata=2, labels=["M", "F"], ref_age_dist=df_age_dist.P.values
+    )
+
+    popcon = PopulationConstructor(strat)
+    df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
+
+    cnt_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
+
+    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
+    df_part["age_grp_part"] = pd.cut(df_part["age"], bins=_CC_BINS, right=False)
+    df_part.dropna(subset=["age_grp_part"], inplace=True)
+
+    df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices, model="poisson").generate(seed=42)
+    df_cnt["age_grp_cnt"] = pd.cut(df_cnt["age_cnt"], bins=_CC_BINS, right=False)
+    df_cnt.drop(columns="age_cnt", inplace=True)
+    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+
+    df_pop["age_grp_pop"] = pd.cut(df_pop["age"], bins=_CC_BINS, right=False)
+    df_pop.dropna(subset=["age_grp_pop"], inplace=True)
+    df_pop_coarse = (
+        df_pop.groupby(["age_grp_pop", "sex"], observed=False)["P"].sum().reset_index()
+    )
+
+    part_data = ParticipantData(
+        df_part, id_col="id", age_grp_col="age_grp_part", strat_var_cols="sex"
+    )
+    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+    pop_data = PopulationData(
+        df_pop_coarse, age_grp_col="age_grp_pop", size_col="P", strat_var_cols="sex"
+    )
+
+    return part_data, cnt_data, pop_data
+
+
+@pytest.fixture
+def full_coarse_coarse_large_sample():
+    """Generate a large sample with full stratification, coarse ages for both participant and contact."""
+
+    strat = Stratification(
+        name="sex", n_strata=2, labels=["M", "F"], ref_age_dist=df_age_dist.P.values
+    )
+
+    popcon = PopulationConstructor(strat)
+    df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["F", "M"], ordered=True)
+
+    cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
+
+    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part["sex"] = pd.Categorical(df_part["sex"], categories=["F", "M"], ordered=True)
+    df_part["age_grp_part"] = pd.cut(df_part["age"], bins=_CC_BINS, right=False)
+    df_part.dropna(subset=["age_grp_part"], inplace=True)
+
+    df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
+    df_cnt["sex_cnt"] = pd.Categorical(
+        df_cnt["sex_cnt"], categories=["F", "M"], ordered=True
+    )
+    df_cnt["age_grp_cnt"] = pd.cut(df_cnt["age_cnt"], bins=_CC_BINS, right=False)
+    df_cnt.drop(columns="age_cnt", inplace=True)
+    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+
+    df_pop["age_grp_pop"] = pd.cut(df_pop["age"], bins=_CC_BINS, right=False)
+    df_pop.dropna(subset=["age_grp_pop"], inplace=True)
+    df_pop_coarse = (
+        df_pop.groupby(["age_grp_pop", "sex"], observed=False)["P"].sum().reset_index()
+    )
+
+    part_data = ParticipantData(
+        df_part, id_col="id", age_grp_col="age_grp_part", strat_var_cols="sex"
+    )
+    cnt_data = ContactData(
+        df_cnt,
+        id_col="id",
+        age_grp_col="age_grp_cnt",
+        strat_var_cols="sex_cnt",
+    )
+    pop_data = PopulationData(
+        df_pop_coarse, age_grp_col="age_grp_pop", size_col="P", strat_var_cols="sex"
+    )
+
+    return part_data, cnt_data, pop_data
+
+
 @pytest.fixture
 def full_coarse_multi_strat_large_sample():
     """Generate a large sample with full stratification on multiple variables."""

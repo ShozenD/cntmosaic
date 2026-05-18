@@ -45,6 +45,7 @@ from ._AgeMixFF import AgeMixFFNumPyroMixin
 from ._AgeMixFC import AgeMixFCNumPyroMixin
 from ._GenMixFF import GenMixFFNumPyroMixin
 from ._GenMixFC import GenMixFCNumPyroMixin
+from ._GenMixCC import GenMixCCNumPyroMixin
 from ._Prem import PremNumPyroMixin
 from ._vdKassteele import vdKassteeleNumPyroMixin
 
@@ -55,6 +56,7 @@ __all__ = [
     "AgeMixFCNumPyroMixin",
     "GenMixFFNumPyroMixin",
     "GenMixFCNumPyroMixin",
+    "GenMixCCNumPyroMixin",
     "PremNumPyroMixin",
     "vdKassteeleNumPyroMixin",
 ]

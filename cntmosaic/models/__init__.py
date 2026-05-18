@@ -5,6 +5,7 @@ from ._AgeMixFF import AgeMixFF
 from ._AgeMixFC import AgeMixFC
 from ._GenMixFF import GenMixFF
 from ._GenMixFC import GenMixFC
+from ._GenMixCC import GenMixCC
 from ._Prem import Prem
 from ._vdKassteele import vdKassteele
 
@@ -36,6 +37,7 @@ __all__ = [
     "AgeMixFC",
     "GenMixFF",
     "GenMixFC",
+    "GenMixCC",
     # Other Bayesian models
     "Prem",
     "vdKassteele",

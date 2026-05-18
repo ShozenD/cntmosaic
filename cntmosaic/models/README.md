@@ -16,7 +16,7 @@ The naming convention encodes the data resolution and stratification structure:
 |-------|-----------------|-------------|----------------|
 | `AgeMixFF` | 1-year | 1-year | Age only |
 | `AgeMixFC` | 1-year | Coarse groups | Age only |
-| `AgeMixCC` | Coarse groups | Coarse groups | Age only — *to be implemented* |
+| `AgeMixCC` | Coarse groups | Coarse groups | Age only |
 | `GenMixFF` | 1-year | 1-year | Age + other features |
 | `GenMixFC` | 1-year | Coarse groups | Age + other features |
 | `GenMixCC` | Coarse groups | Coarse groups | Age + other features — *to be implemented* |
@@ -51,6 +51,26 @@ coarse age groups** (e.g., 0–4, 5–9, …).
   broad brackets (common in diary-based surveys).
 - **Key mechanism:** An age aggregation step (log-sum-exp over the coarse age group)
   recovers fine-age contact rates from the grouped observations.
+
+**Reference:** Dan et al. (2023), *PLoS Computational Biology*
+
+---
+
+### `AgeMixCC` — Age Mixing, Coarse-Coarse
+
+Estimates a social contact matrix at coarse age-group resolution from contact survey
+data where **both** participant and contact ages are reported in age groups (e.g., 0–9,
+10–19, …).
+
+- **Use when:** Your survey records both participant and contact ages only in broad age
+  brackets — no single-year resolution is available for either side.
+- **Key prior:** Smooth 2D function over the (participant age group, contact age group)
+  surface via `vdKassteele2D` (IGMRF, default) or any other `Prior2D` subclass.
+- **Default prior:** `vdKassteele2D(prior_type="global")` — can be overridden by passing
+  a `priors` dict to the constructor.
+- **Key difference from `AgeMixFC`:** Because both ages are already coarse, no
+  log-sum-exp aggregation is needed; contact intensities are read off the matrix by
+  direct indexing.
 
 **Reference:** Dan et al. (2023), *PLoS Computational Biology*
 

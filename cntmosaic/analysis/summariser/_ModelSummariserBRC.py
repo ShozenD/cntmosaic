@@ -8,7 +8,7 @@ from jax.random import PRNGKey
 from numpy.typing import NDArray
 
 from ...dataloader.containers import PopulationData
-from ...models import AgeMixFF, AgeMixFC, GenMixFF, GenMixFC
+from ...models import AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC
 from ...models._vdKassteele import vdKassteele
 
 
@@ -63,13 +63,13 @@ class ModelSummariserBRC:
     """
     Statistical summariser for BRC model inference results (MCMC or SVI).
 
-    Unified summariser for AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, and vdKassteele models.
+    Unified summariser for AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, and vdKassteele models.
     Computes quantiles and credible intervals for contact matrices from MCMC or SVI
     posterior samples, with automatic detection of inference method and model type.
 
     Parameters
     ----------
-    model : AgeMixFF | AgeMixFC | GenMixFF | GenMixFC | vdKassteele
+    model : AgeMixCC | AgeMixFF | AgeMixFC | GenMixFF | GenMixFC | vdKassteele
         Fitted BRC or vdKassteele model with MCMC or SVI results.
     num_samples : int, default=3000
         Number of posterior samples to draw if using SVI.
@@ -144,7 +144,7 @@ class ModelSummariserBRC:
 
     def __init__(
         self,
-        model: "AgeMixFF | AgeMixFC | GenMixFF | GenMixFC",
+        model: "AgeMixCC | AgeMixFF | AgeMixFC | GenMixFF | GenMixFC",
         num_samples: int = 3000,
     ) -> None:
         """
@@ -165,13 +165,20 @@ class ModelSummariserBRC:
             If model is not a BRC-family model.
         """
         # Validate model type
-        from ...models import AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, vdKassteele
+        from ...models import (
+            AgeMixCC,
+            AgeMixFF,
+            AgeMixFC,
+            GenMixFF,
+            GenMixFC,
+            vdKassteele,
+        )
 
         if not isinstance(
-            model, (AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, vdKassteele)
+            model, (AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC, vdKassteele)
         ):
             raise TypeError(
-                f"Model must be a GenMix-family model (AgeMixFF, AgeMixFC, GenMixFF, GenMixFC) or "
+                f"Model must be a GenMix-family model (AgeMixCC, AgeMixFF, AgeMixFC, GenMixFF, GenMixFC) or "
                 "vdKassteele, "
                 f"got {type(model).__name__}"
             )

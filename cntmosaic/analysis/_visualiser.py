@@ -4,6 +4,8 @@ This module provides visualization tools for analyzing and presenting
 contact matrix estimation results from the GenMix model family.
 """
 
+import copy
+
 import altair as alt
 import numpy as np
 import pandas as pd
@@ -203,6 +205,7 @@ class ModelVisualiser:
 
     def __init__(self, summariser: ModelSummariser):
         self.summariser = summariser
+        self.default_config = copy.deepcopy(ModelVisualiser.default_config)
 
     def plot_rate(self, width=250, height=250, style_config=None):
         """Plot posterior median contact rate matrix as a heatmap.
@@ -238,7 +241,7 @@ class ModelVisualiser:
         per day between age groups, estimated from the model's posterior distribution.
         """
         chart = plot_mosaic(
-            self.summariser.summarise_rate()[1],
+            list(self.summariser.summarise_rate().values())[0].central,
             title="Estimated contact rate",
             zlabel="rate",
             width=width,
@@ -340,7 +343,7 @@ class ModelVisualiser:
                 )
             )
 
-        elif type(self.model) in (GenMixFF, GenMixFC):
+        elif type(self.summariser.model) in (GenMixFF, GenMixFC):
             return {
                 k: alt.Chart(df_from_dict(v))
                 .mark_rect()

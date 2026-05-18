@@ -1,38 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from ..analysis.summariser._summary import ContactSummary
 
 import altair as alt
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from numpy.typing import NDArray
 
-from ..preprocess._utils import check_required_columns, expand_age_interval
-from ..utils import AgeBins, depixilate
-from ._utils import generate_vega_expression, ravel_matrix
-
-
-@dataclass
-class MosaicPlotConfig:
-    """Typed style configuration for mosaic plot functions.
-
-    Each field maps to the corresponding section of the internal ``default_config``
-    dict accepted by ``plot_mosaic``.  Pass this to ``plot_mosaic`` via
-    ``plot_config`` instead of the raw ``config`` dict.
-
-    Fields
-    ------
-    x_axis, y_axis, title, legend, color_scale : dict, optional
-        Altair / Vega-Lite property overrides for each chart section.
-    """
-
-    x_axis: Optional[Dict[str, Any]] = None
-    y_axis: Optional[Dict[str, Any]] = None
-    title: Optional[Dict[str, Any]] = None
-    legend: Optional[Dict[str, Any]] = None
-    color_scale: Optional[Dict[str, Any]] = None
+from ..utils import AgeGroupSpecs, depixilate
+from ._utils import _default_style, _merge_style, generate_vega_expression, ravel_matrix
 
 
 def plot_mosaic(
@@ -54,8 +32,7 @@ def plot_mosaic(
     y_tick_labels: list = None,
     z_tick_values: list = None,
     legend_position: str = "right",
-    config: dict = None,
-    plot_config: Optional[MosaicPlotConfig] = None,
+    style_config: Optional[dict] = None,
 ) -> alt.Chart:
     """
     Plot a mosaic visualization of a contact matrix.
@@ -101,63 +78,20 @@ def plot_mosaic(
     legend_position : str, optional
         Position of the legend. Valid values include 'left', 'right', 'top', 'bottom',
         'top-left', 'top-right', 'bottom-left', 'bottom-right', 'none'. Default is 'right'.
-    config : dict, optional
+    style_config : dict, optional
         A dictionary to override default style settings for axes, title, and legend.
-        The keys can include 'x_axis', 'y_axis', 'title', and 'legend'.
+        The keys can include 'x_axis', 'y_axis', 'title', 'legend', and 'color_scale'.
 
     Returns
     -------
     alt.Chart
         An Altair Chart object representing the mosaic visualisation of a contact matrix.
-
-    Notes
-    -----
-    The function flattens the input matrix using `ravel_matrix` to extract the x and y indices along with corresponding values.
-    It then constructs a DataFrame and configures the chart properties using default style settings,
-    which can be further customized via the `style_config` parameter.
     """
     alt.data_transformers.disable_max_rows()
 
-    # Default configurations for axis, title, and legend
-    default_config = {
-        "x_axis": {
-            "labelFontSize": 10,
-            "titleFontSize": 10,
-            "titleFontWeight": "normal",
-            "labelFontWeight": "normal",
-            "labelAngle": 0,
-            "grid": False,
-        },
-        "y_axis": {
-            "labelFontSize": 10,
-            "titleFontSize": 10,
-            "titleFontWeight": "normal",
-            "labelFontWeight": "normal",
-            "grid": False,
-        },
-        "title": {"fontSize": 10, "fontWeight": "normal", "anchor": "middle"},
-        "legend": {
-            "labelFontSize": 10,
-            "labelFontWeight": "normal",
-            "titleFontSize": 10,
-            "titleFontWeight": "normal",
-            "orient": legend_position,
-        },
-        "color_scale": {"scheme": color_scheme, "reverse": color_reverse},
-    }
-    if config:
-        for key in config:
-            if key in default_config:
-                default_config[key].update(config[key])
-            else:
-                default_config[key] = config[key]
-    if plot_config is not None:
-        raw = {k: v for k, v in vars(plot_config).items() if v is not None}
-        for key, val in raw.items():
-            if key in default_config:
-                default_config[key].update(val)
-            else:
-                default_config[key] = val
+    default_config = _default_style(label_angle_x=0, legend_position=legend_position)
+    default_config["color_scale"] = {"scheme": color_scheme, "reverse": color_reverse}
+    _merge_style(default_config, style_config)
     if color_mid is not None:
         default_config["color_scale"]["domainMid"] = color_mid
     if color_min is not None and color_max is not None:
@@ -235,65 +169,87 @@ def plot_mosaic(
 
 
 def plot_mosaic_pixilated(
-    matrix: np.ndarray,
-    age_bins: AgeBins,
+    matrix: "np.ndarray | ContactSummary",
+    age_group_specs: AgeGroupSpecs | None = None,
     title: str = "Contact pattern",
     xlabel: str = "Age of contacting individual",
     ylabel: str = "Age of contacted individual",
     zlabel: str = None,
     width: int | float = 250,
     height: int | float = 250,
+    color_scheme: str = "spectral",
+    color_reverse: bool = True,
+    color_min: Optional[float] = None,
+    color_max: Optional[float] = None,
     style_config: dict = None,
 ) -> alt.Chart:
+    """Plot a pixilated (coarse-age) mosaic contact matrix.
+
+    Parameters
+    ----------
+    matrix : np.ndarray or ContactSummary
+        The coarse-age contact matrix to visualise. If a ContactSummary is passed,
+        ``central`` is plotted and ``age_group_specs`` is inferred from it (unless
+        overridden by the explicit ``age_group_specs`` argument).
+    age_group_specs : AgeGroupSpecs, optional
+        Required when *matrix* is an ``np.ndarray``. Optional when *matrix* is a
+        ContactSummary that already carries its own ``age_group_specs``.
+    title : str, optional
+        Chart title. Default is 'Contact pattern'.
+    xlabel, ylabel : str, optional
+        Axis labels.
+    zlabel : str, optional
+        Color-scale legend title. Legend is hidden when None.
+    width, height : int or float, optional
+        Chart dimensions in pixels. Default 250 × 250.
+    color_scheme : str, optional
+        Vega color scheme name. Default is ``'spectral'``.
+    color_reverse : bool, optional
+        Whether to reverse the color scheme. Default is True.
+    color_min, color_max : float, optional
+        Fixed domain bounds for the color scale. Both must be set to take effect.
+    style_config : dict, optional
+        Dict of Altair/Vega-Lite overrides keyed by section
+        (``'x_axis'``, ``'y_axis'``, ``'title'``, ``'legend'``).
+    """
     alt.data_transformers.disable_max_rows()
 
-    # Default configurations for axis, title, and legend
-    default_config = {
-        "x_axis": {
-            "labelFontSize": 10,
-            "titleFontSize": 10,
-            "titleFontWeight": "normal",
-            "labelFontWeight": "normal",
-            "labelAngle": -45,
-            "grid": False,
-        },
-        "y_axis": {
-            "labelFontSize": 10,
-            "titleFontSize": 10,
-            "titleFontWeight": "normal",
-            "labelFontWeight": "normal",
-            "grid": False,
-        },
-        "title": {"fontSize": 10, "fontWeight": "normal", "anchor": "middle"},
-        "legend": {
-            "labelFontSize": 10,
-            "labelFontWeight": "normal",
-            "titleFontSize": 10,
-            "titleFontWeight": "normal",
-            "orient": "right",
-        },
-    }
-    if style_config:
-        for key in style_config:
-            if key in default_config:
-                default_config[key].update(style_config[key])
-            else:
-                default_config[key] = style_config[key]
+    # Resolve ContactSummary input
+    from ..analysis.summariser._summary import ContactSummary  # lazy to avoid circular import
+    if isinstance(matrix, ContactSummary):
+        resolved_specs = age_group_specs or matrix.age_group_specs
+        if resolved_specs is None:
+            raise ValueError(
+                "ContactSummary has no age_group_specs; pass age_group_specs explicitly."
+            )
+        age_group_specs = resolved_specs
+        matrix = matrix.central
+    elif age_group_specs is None:
+        raise ValueError(
+            "age_group_specs is required when matrix is an np.ndarray."
+        )
 
-    expanded_matrix = depixilate(matrix, age_bins)
+    default_config = _default_style(label_angle_x=-45)
+    _merge_style(default_config, style_config)
+
+    expanded_matrix = depixilate(matrix, age_group_specs)
 
     x_indices, y_indices, values = ravel_matrix(expanded_matrix)
     source = pd.DataFrame({"x": x_indices, "y": y_indices, "z": values})
 
     tick_pos = [
-        np.floor(np.mean([age_bins.left[i], age_bins.right[i] + 1]))
-        for i in range(len(age_bins.left))
+        np.floor(np.mean([age_group_specs.left[i], age_group_specs.right[i] + 1]))
+        for i in range(len(age_group_specs.left))
     ]
     tick_labels = [
-        f"[{age_bins.left[i]},{age_bins.right[i] + 1})"
-        for i in range(len(age_bins.left))
+        f"[{age_group_specs.left[i]},{age_group_specs.right[i] + 1})"
+        for i in range(len(age_group_specs.left))
     ]
     expression = generate_vega_expression(tick_pos, tick_labels)
+
+    color_scale_kwargs: dict = {"scheme": color_scheme, "reverse": color_reverse}
+    if color_min is not None and color_max is not None:
+        color_scale_kwargs["domain"] = [color_min, color_max]
 
     chart = (
         alt.Chart(source)
@@ -320,7 +276,7 @@ def plot_mosaic_pixilated(
             ),
             color=alt.Color(
                 "z:Q",
-                scale=alt.Scale(scheme="spectral", reverse=True),
+                scale=alt.Scale(**color_scale_kwargs),
                 title=zlabel,
                 legend=alt.Legend(**default_config["legend"]) if zlabel else None,
             ),
@@ -342,7 +298,7 @@ def plot_mosaic_marginal(
     width: int = 250,
     height: int = 250,
     title: str = "Contact intensity",
-    style_config: dict = None,
+    style_config: Optional[dict] = None,
 ) -> alt.Chart:
     """Plot the marginal contact intensity with optional uncertainty bands.
 
@@ -375,33 +331,10 @@ def plot_mosaic_marginal(
     """
     alt.data_transformers.disable_max_rows()
 
-    config = {
-        "x_axis": {
-            "values": list(range(0, 100, 10)),
-            "labelFontSize": 10,
-            "titleFontSize": 10,
-            "titleFontWeight": "normal",
-            "labelFontWeight": "normal",
-            "labelAngle": 0,
-            "grid": True,
-        },
-        "y_axis": {
-            "values": list(range(0, 100, 5)),
-            "labelFontSize": 10,
-            "titleFontSize": 10,
-            "titleFontWeight": "normal",
-            "labelFontWeight": "normal",
-            "grid": True,
-        },
-        "title": {"fontSize": 10, "fontWeight": "normal", "anchor": "middle"},
-    }
-
-    if style_config:
-        for key in style_config:
-            if key in config:
-                config[key].update(style_config[key])
-            else:
-                config[key] = style_config[key]
+    config = _default_style()
+    config["x_axis"].update({"values": list(range(0, 100, 10)), "grid": True})
+    config["y_axis"].update({"values": list(range(0, 100, 5)), "grid": True})
+    _merge_style(config, style_config)
 
     df = pd.DataFrame({"x": np.arange(mcint.size), "y": mcint})
     has_band = mcint_lb is not None and mcint_ub is not None
@@ -432,55 +365,3 @@ def plot_mosaic_marginal(
     )
 
 
-def plot_mosaic_empirical(
-    data: pd.DataFrame,
-    ax,
-    title: str = "Empirical contact intensity",
-    xlabel: str | None = "Age of contacting individual",
-    ylabel: str | None = "Age of contacted individual",
-    vmin: float = None,
-    vmax: float = None,
-    cbar_ax=None,
-    cbar_label: str | None = "Contact intensity",
-    cmap: str = "Spectral_r",
-):
-    # Check inputs
-    check_required_columns(data)
-
-    # Check if the data is coarse-grained
-    is_coarse = "age_grp_cnt" in data.columns
-    if is_coarse:
-        data = expand_age_interval(data, "age_grp_cnt")
-
-    data["cint"] = data["y"] / data["N"]
-    A = data["age_part"].max() - data["age_part"].min() + 1
-    cint = data["cint"].values.reshape(A, A).T
-
-    im = ax.imshow(cint, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax)
-
-    if is_coarse:
-        # Set y tick labels at the center of the intervals
-        ytick_locs = data["age_grp_cnt"].apply(lambda x: x.mid).unique()
-        ytick_labels = data["age_grp_cnt"].unique()
-        ytick_labels = [str(x) for x in ytick_labels]
-
-        ax.set_yticks(ytick_locs)
-        ax.set_yticklabels(ytick_labels)
-
-        # Set major grid lines at the lower bounds of the intervals
-        ytick_locs_minor = data["age_grp_cnt"].apply(lambda x: x.left).unique()
-        ax.set_yticks(ytick_locs_minor, minor=True)  # Set these as minor ticks
-
-    ax.tick_params(axis="both", which="major", labelsize=8)
-    ax.grid(which="major", axis="both", visible=False)
-    ax.set_title(title, fontsize=9, loc="left")
-    ax.set_xlabel(xlabel, fontsize=8)
-    ax.set_ylabel(ylabel, fontsize=8)
-
-    # Add color bar if a cbar_ax is provided
-    if cbar_ax:
-        cbar = plt.colorbar(im, cax=cbar_ax, orientation="vertical")
-        cbar.set_label(cbar_label, fontsize=8)
-        cbar.ax.tick_params(labelsize=8)
-
-    return im

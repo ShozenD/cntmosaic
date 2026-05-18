@@ -19,16 +19,24 @@ def _purge_modules(*prefixes: str) -> None:
 
 def test_analysis_import_does_not_load_numpyro():
     """Importing cntmosaic.analysis must not trigger a top-level numpyro import."""
-    _purge_modules("cntmosaic.analysis", "numpyro")
-    importlib.import_module("cntmosaic.analysis")
-    numpyro_loaded = any(
-        k == "numpyro" or k.startswith("numpyro.") for k in sys.modules
-    )
-    assert not numpyro_loaded, (
-        "numpyro was loaded as a side-effect of `import cntmosaic.analysis`. "
-        "Check for top-level `import numpyro` / `from numpyro` in analysis/_arviz.py "
-        "or any module it imports at module scope."
-    )
+    # Snapshot sys.modules so the purge+reimport doesn't corrupt module identity
+    # for the rest of the test suite (numpyro._PYRO_STACK is a module-level
+    # singleton; purging numpyro creates a new one, breaking existing references).
+    modules_snapshot = dict(sys.modules)
+    try:
+        _purge_modules("cntmosaic.analysis", "numpyro")
+        importlib.import_module("cntmosaic.analysis")
+        numpyro_loaded = any(
+            k == "numpyro" or k.startswith("numpyro.") for k in sys.modules
+        )
+        assert not numpyro_loaded, (
+            "numpyro was loaded as a side-effect of `import cntmosaic.analysis`. "
+            "Check for top-level `import numpyro` / `from numpyro` in analysis/_arviz.py "
+            "or any module it imports at module scope."
+        )
+    finally:
+        sys.modules.clear()
+        sys.modules.update(modules_snapshot)
 
 
 def test_svi_to_inference_data_accessible():

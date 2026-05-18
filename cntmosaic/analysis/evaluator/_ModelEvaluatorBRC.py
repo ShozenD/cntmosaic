@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from ..summariser._ModelSummariserBRC import ModelSummariserBRC
+from ..summariser._ModelSummariser import ModelSummariser
 from ._base import (
     BaseModelEvaluator,
     aggregate_metrics,
@@ -16,138 +16,67 @@ from ._base import (
 
 class ModelEvaluatorBRC(BaseModelEvaluator):
     """
-    Evaluator for BRC-family model performance against ground truth.
+    Evaluator for AgeMix and GenMix model performance against ground truth.
 
     Computes error metrics and uncertainty quantification statistics for estimated
     contact intensity matrices from Bayesian posterior samples. Supports both
-    standard age-only models (AgeMixFF, AgeMixFC) and hierarchical models (GenMixFF, GenMixFC).
-
-    This evaluator follows the same design patterns as ModelEvaluatorPrem for consistency,
-    with automatic detection of model type and appropriate metric aggregation.
+    standard age-only models (AgeMixFF, AgeMixFC, AgeMixCC) and hierarchical
+    generalised mixing models (GenMixFF, GenMixFC).
 
     Parameters
     ----------
-    summariser : ModelSummariserBRC
-        Summariser containing posterior samples and point estimates from a fitted
-        BRC-family model (MCMC or SVI inference).
+    summariser : ModelSummariser
+        Summariser containing posterior samples from a fitted AgeMix or GenMix
+        model (MCMC or SVI inference).
     cint_matrix_true : NDArray or dict
         Ground truth contact intensity matrix.
-        - For AgeMix models: NDArray of shape (A, A) where A is number of age groups
-        - For GenMix models: dict with structure {var1: {cat1: matrix, ...}, ...}
+        - For agemix models: NDArray of shape (A, A)
+        - For genmix models: dict mapping stratum labels to NDArray
     alpha : float, default=0.05
         Significance level for interval score and coverage computations.
         Must be in (0, 1).
 
     Attributes
     ----------
-    summariser : ModelSummariserBRC
-        Reference to the model summariser
-    cint_true : NDArray or dict
-        Ground truth contact intensity matrices
-    mcint_true : NDArray or dict
-        Ground truth marginal contact intensities (computed from cint_true)
-    alpha : float
-        Significance level for credible intervals
+    summariser : ModelSummariser
+        Reference to the model summariser.
     model_type : str
-        Either 'brc' or 'hibrc', automatically detected
+        Either ``"agemix"`` or ``"genmix"``, auto-detected from the summariser.
 
     Examples
     --------
-    **Standard age-only model evaluation:**
-
-    >>> # Fit model
     >>> model = AgeMixFF(dataloader, priors, likelihood="poisson")
     >>> model.run_inference_mcmc(rng_key, num_samples=1000)
-    >>>
-    >>> # Create summariser and evaluator
-    >>> summariser = ModelSummariserBRC(model)
+    >>> summariser = ModelSummariser(model)
     >>> evaluator = ModelEvaluatorBRC(summariser, cint_matrix_true, alpha=0.05)
-    >>>
-    >>> # Evaluate contact intensity
     >>> cint_metrics = evaluator.evaluate_cint()
-    >>> print(cint_metrics)
-    >>>
-    >>> # Evaluate marginal contact intensity
-    >>> mcint_metrics = evaluator.evaluate_mcint()
-    >>> print(mcint_metrics)
-    >>>
-    >>> # Get all metrics at once
-    >>> all_metrics = evaluator.evaluate()
-
-    **Hierarchical model evaluation:**
-
-    >>> # For GenMix models with stratification
-    >>> model = GenMixFF(dataloader, priors, likelihood="poisson")
-    >>> model.run_inference_svi(rng_key, guide, num_steps=5000)
-    >>>
-    >>> # True matrices organized by stratification
-    >>> cint_true = {
-    ...     "gender": {"male": matrix_m, "female": matrix_f},
-    ...     "location": {"urban": matrix_u, "rural": matrix_r}
-    ... }
-    >>>
-    >>> summariser = ModelSummariserBRC(model, num_samples=500)
-    >>> evaluator = ModelEvaluatorBRC(summariser, cint_true, alpha=0.05)
-    >>>
-    >>> # Returns metrics aggregated by variable and category
-    >>> metrics = evaluator.evaluate()
-
-    Notes
-    -----
-    - Caching is used to avoid redundant computation
-    - For HiBRC models, metrics are computed for each category and aggregated
-    - All metrics are returned as pandas DataFrames for easy analysis
-    - The interval score penalizes both interval width and coverage failures
 
     See Also
     --------
-    ModelSummariserBRC : Summarises posterior distributions from BRC models
-    ModelEvaluatorPrem : Similar evaluator for Prem models
+    ModelSummariser : Summarises posterior distributions from AgeMix/GenMix models.
+    ModelEvaluatorPrem : Similar evaluator for Prem models.
     """
 
     def __init__(
         self,
-        summariser: ModelSummariserBRC,
+        summariser: ModelSummariser,
         cint_matrix_true: NDArray[np.float64] | Dict[str, NDArray],
         alpha: float = 0.05,
     ) -> None:
-        """
-        Initialize ModelEvaluatorBRC.
-
-        Parameters
-        ----------
-        summariser : ModelSummariserBRC
-            Summariser with posterior samples from fitted BRC model
-        cint_matrix_true : NDArray or dict[str, NDArray]
-            True contact intensity matrix (for BRC) or dict of matrices (for HiBRC)
-        alpha : float, default=0.05
-            Significance level for interval metrics (must be in (0, 1))
-
-        Raises
-        ------
-        ValueError
-            If alpha not in (0, 1), or if model hasn't been fitted
-        TypeError
-            If summariser is not ModelSummariserBRC instance, or incompatible types
-        """
         super().__init__(summariser, cint_matrix_true, alpha)
-
-        # BRC-specific attribute
         self.model_type = self.summariser.model_type
 
-    def _validate_summariser(self, summariser: ModelSummariserBRC) -> None:
-        """Validate that summariser has required posterior samples."""
-        if not isinstance(summariser, ModelSummariserBRC):
+    def _validate_summariser(self, summariser: ModelSummariser) -> None:
+        if not isinstance(summariser, ModelSummariser):
             raise TypeError(
-                f"Expected ModelSummariserBRC instance, got {type(summariser).__name__}. "
-                f"Usage: summariser = ModelSummariserBRC(model); "
+                f"Expected ModelSummariser instance, got {type(summariser).__name__}. "
+                f"Usage: summariser = ModelSummariser(model); "
                 f"evaluator = ModelEvaluatorBRC(summariser, cint_true)"
             )
-
-        if summariser.post_cint_samples is None:
+        if summariser.inference_method is None:
             raise ValueError(
-                "Summariser must have posterior contact intensity samples. "
-                "Ensure MCMC or SVI inference was run on the BRC model."
+                "Summariser model has no completed inference. "
+                "Run model.run_inference_mcmc() or model.run_inference_svi() first."
             )
 
     def evaluate_cint(self, alpha: Optional[float] = None) -> pd.DataFrame:
@@ -190,18 +119,13 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
         cache_key = f"cint_alpha{alpha}"
 
         if cache_key not in self._metrics_cache:
-            if self.model_type == "brc":
-                # Standard BRC model
+            if self.model_type == "agemix":
                 summary = self.summariser.summarise_cint(alpha=alpha)
+                cs = summary["All->All"]
                 y_true = self.cint_true["All->All"]
-                y_est = summary["All->All"][1]  # median
-                y_low = summary["All->All"][0]  # lower bound
-                y_high = summary["All->All"][2]  # upper bound
-
                 rmse, mae, mape, int_score, coverage = compute_metrics(
-                    y_true, y_est, y_low, y_high
+                    y_true, cs.central, cs.lower, cs.upper
                 )
-
                 metrics_df = pd.DataFrame(
                     {
                         "var": ["all"],
@@ -213,11 +137,11 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
                         "coverage": [coverage],
                     }
                 )
-
-            else:  # model_type == "hibrc"
-                # Hierarchical BRC model
+            else:  # genmix
                 summary_dict = self.summariser.summarise_cint(alpha=alpha)
-                metrics_df = aggregate_metrics(self.cint_true, summary_dict)
+                # Convert ContactSummary to (3, ...) arrays for aggregate_metrics
+                summary_arrays = {k: v.to_array() for k, v in summary_dict.items()}
+                metrics_df = aggregate_metrics(self.cint_true, summary_arrays)
 
             self._metrics_cache[cache_key] = metrics_df
 
@@ -263,18 +187,13 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
         cache_key = f"mcint_alpha{alpha}"
 
         if cache_key not in self._metrics_cache:
-            if self.model_type == "brc":
-                # Standard BRC model
+            if self.model_type == "agemix":
                 summary = self.summariser.summarise_mcint(alpha=alpha)
+                cs = summary["All->All"]
                 y_true = self.mcint_true["All->All"]
-                y_est = summary["All->All"][1]  # median
-                y_low = summary["All->All"][0]  # lower bound
-                y_high = summary["All->All"][2]  # upper bound
-
                 rmse, mae, mape, int_score, coverage = compute_metrics(
-                    y_true, y_est, y_low, y_high
+                    y_true, cs.central, cs.lower, cs.upper
                 )
-
                 metrics_df = pd.DataFrame(
                     {
                         "var": ["all"],
@@ -286,11 +205,10 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
                         "coverage": [coverage],
                     }
                 )
-
-            else:  # model_type == "hibrc"
-                # Hierarchical BRC model
+            else:  # genmix
                 summary_dict = self.summariser.summarise_mcint(alpha=alpha)
-                metrics_df = aggregate_metrics(self.mcint_true, summary_dict)
+                summary_arrays = {k: v.to_array() for k, v in summary_dict.items()}
+                metrics_df = aggregate_metrics(self.mcint_true, summary_arrays)
 
             self._metrics_cache[cache_key] = metrics_df
 
@@ -346,7 +264,7 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
                 y_true = self.mcint_true
 
             # Compute errors
-            if self.model_type == "brc":
+            if self.model_type == "agemix":
                 y_true_arr = y_true["All->All"] if isinstance(y_true, dict) else y_true
                 diff = y_hat - y_true_arr
                 rmse = float(np.sqrt(np.mean(diff**2)))
@@ -370,7 +288,7 @@ class ModelEvaluatorBRC(BaseModelEvaluator):
                     norm_diff / norm_true if norm_true > 0 else np.inf
                 )
 
-            else:  # hibrc
+            else:  # genmix
                 # Aggregate across all categories
                 all_diffs = []
                 all_true = []

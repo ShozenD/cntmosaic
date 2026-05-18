@@ -3,9 +3,9 @@ Base classes and shared metric utilities for model evaluators.
 
 This module provides:
 
-- :class:`ModelSummariser` — a ``typing.Protocol`` describing the minimal interface
+- :class:`SummariserProtocol` — a ``typing.Protocol`` describing the minimal interface
   that any summariser must expose so an evaluator can call it. Concrete summariser
-  classes (``ModelSummariserBRC``, ``ModelSummariserPrem``, ``ModelSummariserSocialMix``)
+  classes (``ModelSummariser``, ``ModelSummariserPrem``, ``ModelSummariserSocialMix``)
   all satisfy this protocol.
 
 - :class:`BaseModelEvaluator` — an abstract base class that consolidates the metric
@@ -19,7 +19,7 @@ Relationship between evaluators and summarisers
 -----------------------------------------------
 Each model family has a paired summariser and evaluator::
 
-    ModelSummariserBRC       <-->  ModelEvaluatorBRC
+    ModelSummariser          <-->  ModelEvaluatorBRC
     ModelSummariserPrem      <-->  ModelEvaluatorPrem
     ModelSummariserSocialMix <-->  ModelEvaluatorSocialMix
 
@@ -44,16 +44,15 @@ from sklearn.metrics import (
 
 
 # ---------------------------------------------------------------------------
-# ModelSummariser Protocol
+# SummariserProtocol
 # ---------------------------------------------------------------------------
 
 @runtime_checkable
-class ModelSummariser(Protocol):
-    """
-    Minimal interface that a summariser object must expose for use with an evaluator.
+class SummariserProtocol(Protocol):
+    """Minimal interface that a summariser object must expose for use with an evaluator.
 
-    Any object that provides ``summarise_cint`` and ``summarise_mcint`` methods
-    satisfies this protocol — no explicit inheritance is required.
+    Any object that provides ``summarise_cint`` and ``summarise_mcint`` satisfies
+    this protocol — no explicit inheritance is required.
     """
 
     def summarise_cint(self, alpha: float = 0.05, **kwargs) -> Dict:
@@ -265,7 +264,7 @@ class BaseModelEvaluator(ABC):
 
     Parameters
     ----------
-    summariser : ModelSummariser
+    summariser : SummariserProtocol
         A fitted model summariser exposing ``summarise_cint`` and
         ``summarise_mcint``.
     cint_matrix_true : NDArray or dict
@@ -277,7 +276,7 @@ class BaseModelEvaluator(ABC):
 
     Attributes
     ----------
-    summariser : ModelSummariser
+    summariser : SummariserProtocol
         Reference to the model summariser.
     cint_true : NDArray or dict
         Ground-truth contact intensity matrix/matrices.
@@ -289,7 +288,7 @@ class BaseModelEvaluator(ABC):
 
     def __init__(
         self,
-        summariser: ModelSummariser,
+        summariser: SummariserProtocol,
         cint_matrix_true: NDArray[np.float64] | Dict[str, NDArray],
         alpha: float = 0.05,
     ) -> None:

@@ -12,51 +12,12 @@ from ...models.classical._socialmix_age_processing import AgeBinProcessor
 from ...utils import AgeBins, depixilate, pixilate
 
 
-def validate_alpha(alpha: float) -> None:
-    """Validate alpha parameter."""
-    if not 0 < alpha < 1:
-        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+from .._stats import compute_quantiles, validate_alpha
 
 
-def get_probs_from_alpha(alpha: float) -> Tuple[float, float, float]:
-    """Convert alpha to (lower, median, upper) probabilities."""
+def _get_ci_probs(alpha: float) -> Tuple[float, float, float]:
+    """Return (lower, median, upper) quantile probabilities for the given alpha."""
     return (alpha / 2, 0.5, 1 - alpha / 2)
-
-
-def compute_quantiles(
-    samples: NDArray, probs: Tuple[float, ...], axis: int = 0
-) -> NDArray:
-    """
-    Compute quantiles with validation and R-compatible method.
-
-    Parameters
-    ----------
-    samples : NDArray
-        Input data, shape (n_samples, ...)
-    probs : tuple of float
-        Quantile probabilities in [0, 1]
-    axis : int, default=0
-        Axis along which to compute quantiles
-
-    Returns
-    -------
-    quantiles : NDArray
-        Shape (len(probs), ...) with quantiles along axis 0
-    """
-    # Validate probabilities
-    if not all(0 <= p <= 1 for p in probs):
-        raise ValueError(f"All probabilities must be in [0, 1], got {probs}")
-
-    # Sort probabilities to ensure correct ordering in output
-    if list(probs) != sorted(probs):
-        warnings.warn(
-            "Probabilities are not sorted. Output will follow input order.",
-            UserWarning,
-        )
-
-    result = np.quantile(samples, probs, axis=axis)
-
-    return result
 
 
 class ModelSummariserPrem:
@@ -962,7 +923,7 @@ class ModelSummariserPrem:
         - New K>1: Dict[str, NDArray] with stratum labels as keys
         """
         validate_alpha(alpha)
-        probs = get_probs_from_alpha(alpha)
+        probs = _get_ci_probs(alpha)
 
         # Check cache
         cache_key = f"cint_alpha{alpha}_recip{apply_reciprocity}_depix{return_depixilated}_mode{self.strat_mode}"
@@ -1085,7 +1046,7 @@ class ModelSummariserPrem:
         to ensure proper handling of population weights.
         """
         validate_alpha(alpha)
-        probs = get_probs_from_alpha(alpha)
+        probs = _get_ci_probs(alpha)
 
         # Check cache
         cache_key = (
@@ -1212,7 +1173,7 @@ class ModelSummariserPrem:
         don't commute in general.
         """
         validate_alpha(alpha)
-        probs = get_probs_from_alpha(alpha)
+        probs = _get_ci_probs(alpha)
 
         # Check cache
         cache_key = (

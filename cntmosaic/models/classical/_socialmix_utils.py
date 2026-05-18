@@ -11,7 +11,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from ...dataloader import ContactData, ParticipantData, PopulationData
-from ...utils import AgeBins
+from ...utils import AgeGroupSpecs
 
 if TYPE_CHECKING:
     from ._SocialMix import SocialMix
@@ -249,10 +249,10 @@ class SocialMixDataLoader:
             return  # Already assigned
 
         # Use same bins as participant/contact data
-        bin_edges = self.sm.age_bins.left + [self.sm.age_bins.right[-1]]
+        bin_edges = self.sm.age_group_specs.left + [self.sm.age_group_specs.right[-1] + 1]
         intervals = [
-            pd.Interval(left=l, right=r, closed="left")
-            for l, r in zip(self.sm.age_bins.left, self.sm.age_bins.right)
+            pd.Interval(left=l, right=r + 1, closed="left")
+            for l, r in zip(self.sm.age_group_specs.left, self.sm.age_group_specs.right)
         ]
 
         ages = self.sm.pop_data.data["age"]

@@ -7,7 +7,7 @@ from jax.random import PRNGKey
 from numpy.typing import NDArray
 
 from ..dataloader.containers import ContactData, ParticipantData
-from ..utils import AgeBins
+from ..utils import AgeGroupSpecs
 from ._base import ContactModel
 from .numpyro import PremNumPyroMixin
 
@@ -29,7 +29,7 @@ class Prem(PremNumPyroMixin, ContactModel):
     cnt_data : ContactData
         Validated contact data container. Should include contact age groups
         (age_grp_cnt) and matching stratification variables.
-    age_bins : AgeBins
+    age_bins : AgeGroupSpecs
         Age binning scheme to categorize ages into age groups.
         Used to assign age groups if raw ages are provided in the containers.
     random_effects : bool, default=False
@@ -78,7 +78,7 @@ class Prem(PremNumPyroMixin, ContactModel):
     Basic usage without stratification:
 
     >>> from cntmosaic.dataloader.containers import ParticipantData, ContactData
-    >>> from cntmosaic.utils import AgeBins
+    >>> from cntmosaic.utils import AgeGroupSpecs
     >>> from jax.random import PRNGKey
     >>>
     >>> # Create validated data containers
@@ -94,7 +94,7 @@ class Prem(PremNumPyroMixin, ContactModel):
     ... )
     >>>
     >>> # Define age bins
-    >>> age_bins = AgeBins.from_boundaries([0, 5, 10, 15, 20, 65, 100])
+    >>> age_bins = AgeGroupSpecs.from_boundaries([0, 5, 10, 15, 20, 65, 100])
     >>>
     >>> # Initialize and run inference
     >>> model = Prem(part_data, cnt_data, age_bins)
@@ -191,7 +191,7 @@ class Prem(PremNumPyroMixin, ContactModel):
         self,
         part_data: ParticipantData,
         cnt_data: ContactData,
-        age_bins: AgeBins,
+        age_group_specs: AgeGroupSpecs,
         random_effects: bool = False,
         backend: Optional[Any] = None,
     ):
@@ -200,7 +200,7 @@ class Prem(PremNumPyroMixin, ContactModel):
         # Store validated data containers
         self.part_data = part_data
         self.cnt_data = cnt_data
-        self.age_bins = age_bins
+        self.age_group_specs = age_group_specs
         self.random_effects = random_effects
 
         # Stratification attributes (initialized in _preprocess)
@@ -404,15 +404,12 @@ class Prem(PremNumPyroMixin, ContactModel):
         Uses the age_bins provided during initialization to categorize
         raw ages into age groups.
         """
-        # Construct bin edges from AgeBins left and right boundaries
-        # age_bins.left gives [0, 5, 10, ...], age_bins.right gives [4, 9, 14, ..., max+1]
-        # For pd.cut, we need the full edge sequence
-        bin_edges = self.age_bins.left + [self.age_bins.right[-1]]
+        bin_edges = self.age_group_specs.left + [self.age_group_specs.right[-1] + 1]
 
-        # Create interval labels
+        # Interval labels: right bound is exclusive (right[i] + 1)
         intervals = [
-            pd.Interval(left=l, right=r, closed="left")
-            for l, r in zip(self.age_bins.left, self.age_bins.right)
+            pd.Interval(left=l, right=r + 1, closed="left")
+            for l, r in zip(self.age_group_specs.left, self.age_group_specs.right)
         ]
 
         # Assign age groups to participants if not present

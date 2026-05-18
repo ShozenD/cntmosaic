@@ -268,6 +268,7 @@ class ModelSummariser:
             upper=quantiles[-1],
             alpha=alpha,
             measure=measure,
+            age_group_specs=getattr(self.model, "age_group_specs", None),
         )
 
     # ------------------------------------------------------------------

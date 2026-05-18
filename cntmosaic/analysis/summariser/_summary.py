@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     import pandas as pd
     import xarray as xr
+    from ...utils import AgeGroupSpecs
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class ContactSummary:
     upper: NDArray
     alpha: float
     measure: str
+    age_group_specs: Optional["AgeGroupSpecs"] = None
 
     def to_array(self) -> NDArray:
         """Return shape ``(3, ...)`` array with ``[lower, central, upper]`` along axis 0."""

@@ -1,9 +1,9 @@
 import numpy as np
 
-from ._AgeBins import AgeBins
+from ._AgeGroupSpecs import AgeGroupSpecs
 
 
-def pixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = None):
+def pixilate(matrix: np.ndarray, age_bins: AgeGroupSpecs, age_dist: np.ndarray = None):
     """
     Aggregate a contact matrix over specified age intervals.
         - A 3D array of shape (n_samples, dim1, dim2): Aggregates spatially over the last two axes.
@@ -19,7 +19,7 @@ def pixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = None)
             Input array with either shape:
                     - (n_samples, dim1, dim2) for raw data to be aggregated, or
                     - (len(intervals), len(intervals)) for pre-aggregated data.
-    age_bins : AgeBins
+    age_bins : AgeGroupSpecs
             An object that defines the aggregation scheme. It must contain:
                     - left : array-like
                             Starting indices for each bin.
@@ -65,7 +65,7 @@ def pixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = None)
     return result[0] if single_sample else result
 
 
-def depixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = None):
+def depixilate(matrix: np.ndarray, age_bins: AgeGroupSpecs, age_dist: np.ndarray = None):
     """Depixilate a matrix using age bin slicing.
 
     This function transforms the input matrix by extracting sub-matrices based on the intervals
@@ -77,7 +77,7 @@ def depixilate(matrix: np.ndarray, age_bins: AgeBins, age_dist: np.ndarray = Non
     ----------
     matrix : np.ndarray
         A 2D NumPy array which is the input for depixilation.
-    age_bins : AgeBins
+    age_bins : AgeGroupSpecs
         An object containing binning information. It must have the attributes:
             - left : sequence of int
                 The starting indices for the bins.

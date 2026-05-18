@@ -54,7 +54,7 @@ class ModelEvaluatorSocialMix(BaseModelEvaluator):
         Ground truth marginal contact intensities (computed from cint_true)
     alpha : float
         Significance level for credible intervals
-    age_bins : AgeBins
+    age_group_specs : AgeGroupSpecs
         Age bin definition from summariser
     pop_data : PopulationData or None
         Population data from summariser (may be None for legacy usage)
@@ -177,7 +177,7 @@ class ModelEvaluatorSocialMix(BaseModelEvaluator):
         super().__init__(summariser, cint_matrix_true, alpha)
 
         # SocialMix-specific attributes
-        self.age_bins = self.summariser.age_bins
+        self.age_group_specs = self.summariser.age_group_specs
         self.pop_data = self.summariser.pop_data
         self.age_dist = self.summariser.age_dist
         self._is_stratified = _is_stratified
@@ -187,7 +187,7 @@ class ModelEvaluatorSocialMix(BaseModelEvaluator):
         # Check for required attributes
         required_attrs = [
             "sm",
-            "age_bins",
+            "age_group_specs",
             "summarise_cint",
             "summarise_mcint",
         ]

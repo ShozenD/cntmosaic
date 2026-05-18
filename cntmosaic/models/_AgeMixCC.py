@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 import jax.numpy as jnp
 
 from ..dataloader import ContactSurveyLoader
+from ..utils import AgeGroupSpecs
 from ._GenMix import GenMix
 from .numpyro import AgeMixCCNumPyroMixin
 from .numpyro.priors import Hill, vdKassteele2D
@@ -153,6 +154,7 @@ class AgeMixCC(AgeMixCCNumPyroMixin, GenMix):
         likelihood: str = "negbin",
         inv_odist: float = 1.0,
         backend: Optional[Any] = None,
+        age_group_specs: Optional[AgeGroupSpecs] = None,
     ) -> None:
         """
         Initialize AgeMixCC model with coarse-age resolution for both participant and contact.
@@ -170,6 +172,10 @@ class AgeMixCC(AgeMixCCNumPyroMixin, GenMix):
             Prior mean for inverse overdispersion (negbin only).
         backend : InferenceBackend, optional
             Pluggable inference engine (default: NumPyroBackend).
+        age_group_specs : AgeGroupSpecs, optional
+            Age group specification object encoding bin boundaries. When provided,
+            it is propagated into ContactSummary so that plot_mosaic_pixilated can
+            be called directly on a summary without a separate AgeGroupSpecs argument.
         """
         # Merge user priors with defaults (user priors take precedence)
         effective_priors = self.default_priors.copy()
@@ -177,6 +183,7 @@ class AgeMixCC(AgeMixCCNumPyroMixin, GenMix):
             effective_priors.update(priors)
 
         self.inv_odist = inv_odist
+        self.age_group_specs = age_group_specs
         super().__init__(dataloader, effective_priors, likelihood, backend=backend)
 
         # Convert to JAX arrays

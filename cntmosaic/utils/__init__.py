@@ -1,4 +1,5 @@
-from ._AgeBins import AgeBins
+from ._AgeGroupSpecs import AgeGroupSpecs
+from ._AgeBins import AgeBins  # backward-compat alias
 from ._utils import (
     pixilate,
     depixilate,
@@ -15,7 +16,8 @@ from ._tutorial_utils import (
 )
 
 __all__ = [
-    "AgeBins",
+    "AgeGroupSpecs",
+    "AgeBins",  # backward-compat alias
     "pixilate",
     "depixilate",
     "symm_from_tril_ix_col",

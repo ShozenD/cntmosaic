@@ -13,6 +13,7 @@ import numpy as np
 
 from .._types import StratMode
 from ..dataloader import ContactSurveyLoader
+from ..utils import AgeGroupSpecs
 from ._AgeMixCC import AgeMixCC
 from ._math import clr
 from .numpyro import GenMixCCNumPyroMixin
@@ -111,6 +112,7 @@ class GenMixCC(GenMixCCNumPyroMixin, AgeMixCC):
         likelihood: str = "negbin",
         inv_odist: float = 1.0,
         backend: Optional[Any] = None,
+        age_group_specs: Optional[AgeGroupSpecs] = None,
     ) -> None:
         """
         Initialize GenMixCC with hierarchical structure and coarse-coarse age resolution.
@@ -128,13 +130,17 @@ class GenMixCC(GenMixCCNumPyroMixin, AgeMixCC):
             Prior mean for inverse overdispersion (negbin only).
         backend : InferenceBackend, optional
             Pluggable inference engine (default: NumPyroBackend).
+        age_group_specs : AgeGroupSpecs, optional
+            Age group specification object encoding bin boundaries. Propagated into
+            ContactSummary so that plot_mosaic_pixilated can be called directly on a
+            summary without a separate AgeGroupSpecs argument.
         """
         effective_priors = self.default_priors.copy()
         effective_priors.update(priors)
 
         # AgeMixCC.__init__ sets: cid, did, log_P (1,B), B, log_V, and optionally rid/hill.
         # It also calls prior.set_age_bounds(0, B-1) for all priors.
-        super().__init__(dataloader, effective_priors, likelihood, inv_odist=inv_odist, backend=backend)
+        super().__init__(dataloader, effective_priors, likelihood, inv_odist=inv_odist, backend=backend, age_group_specs=age_group_specs)
 
         # Override log_P: stratified case is (K, B) not (1, B)
         self.log_P = jnp.array(self.data.log_P)

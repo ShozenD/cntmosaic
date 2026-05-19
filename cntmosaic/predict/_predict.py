@@ -1,73 +1,12 @@
-from typing import Dict, Optional
-
 import numpy as np
-from numpy.typing import ArrayLike
+import pandas as pd
+from scipy.stats import beta
 
-from cntmosaic.analysis.summariser._ModelSummariser import ModelSummariser
-from cntmosaic.dataloader import ContactSurveyLoader
+from typing import Dict, Literal, Optional, Tuple, Union
+from numpy.typing import ArrayLike, NDArray
 
-
-def spectral_radius(
-    matrices: Dict[str, ArrayLike],
-    dataloader: Optional[ContactSurveyLoader] = None,
-    method: Optional[str] = "generalised",
-) -> float | ArrayLike:
-    """Compute the spectral radius of the generalised or age-stratified matrix.
-
-    If matrices contain 2D arrays (A, A), returns a scalar.
-    If matrices contain 3D arrays (S, A, A), returns an array of shape (S,).
-
-    Parameters
-    ----------
-    matrices : dict
-        A dictionary mapping "source->target" to a 2D or 3D array
-    dataloader : ContactSurveyLoader, optional
-        An instantiated ContactSurveyLoader. Required if method="age". Used to extract
-        stratified population sizes via StratificationData proportions and
-        PopulationData totals.
-    method : str, optional
-        The method to use: "generalised" or "age". Default is "generalised"
-
-    Returns
-    -------
-    float or np.ndarray
-        The spectral radius of the combined matrix, either a scalar or an array of shape (S,) depending on the input.
-    """
-    cats = list(dict.fromkeys(k.split("->")[0] for k in matrices))
-    first = next(iter(matrices.values()))
-    batched = first.ndim == 3
-
-    if method == "generalised":
-        block_grid = [[matrices[f"{s}->{t}"] for t in cats] for s in cats]
-        if batched:
-            # Each block is (S, A, A) — use np.block on each sample
-            S = first.shape[0]
-            M = np.block([[matrices[f"{s}->{t}"] for t in cats] for s in cats])
-            # np.block broadcasts correctly for 3D: result is (S, K*A, K*A)
-        else:
-            M = np.block(block_grid)
-    elif method == "age":
-        if dataloader is None:
-            raise ValueError("dataloader is required for method='age'")
-        P_sa = _compute_P_sa(dataloader)
-        P_a = dataloader.pop_data.groupby("age")["P"].sum().sort_index().values
-        M = np.zeros_like(matrices[f"{cats[0]}->{cats[0]}"])
-        for source in cats:
-            mat_partial = sum(matrices[f"{source}->{t}"] for t in cats)
-            P_ka = P_sa[source]
-            if batched:
-                M += mat_partial * (P_ka / P_a)[None, :, None]
-            else:
-                M += mat_partial * (P_ka / P_a)[:, None]
-    else:
-        raise ValueError(f"Unknown method: {method!r}. Use 'generalised' or 'age'.")
-
-    if batched:
-        eigenvalues = np.linalg.eigvals(M)  # (S, N) complex
-        return np.max(np.abs(eigenvalues), axis=1)  # (S,)
-    else:
-        eigenvalues = np.linalg.eigvals(M)
-        return np.max(np.abs(eigenvalues))
+from ..dataloader import ContactSurveyLoader
+from ..analysis import ModelSummariser
 
 
 def _compute_P_sa(dataloader: ContactSurveyLoader) -> Dict[str, np.ndarray]:
@@ -87,6 +26,11 @@ def _compute_P_sa(dataloader: ContactSurveyLoader) -> Dict[str, np.ndarray]:
     Dict[str, np.ndarray]
         Dictionary mapping stratum labels to population size arrays of shape (A,).
     """
+    if dataloader.strat_data is None:
+        raise ValueError(
+            "_compute_P_sa requires a dataloader with strat_data. "
+            "The predict pipeline only supports partially-stratified (genmix) models."
+        )
     P_a = dataloader.pop_data.groupby("age")["P"].sum().sort_index().values
     Q_sa, labels = dataloader.strat_data._build_Q_and_labels(
         dataloader.strat_data.strat_var_cols
@@ -97,7 +41,7 @@ def _compute_P_sa(dataloader: ContactSurveyLoader) -> Dict[str, np.ndarray]:
 def z_marginals(
     summariser: ModelSummariser,
     dataloader: ContactSurveyLoader,
-) -> Dict[str, ArrayLike]:
+) -> Dict[str, NDArray]:
     """
     Compute the expected partially stratified total contact counts z^s_ab.
 
@@ -130,12 +74,12 @@ def z_marginals(
     return zs
 
 
-def frechet_bounds(
+def feasible_mixing_bounds(
     z_marginals: Dict[str, np.ndarray],
     return_eta: bool = False,
 ):
     """
-    Calculate Frechet-Hoeffding bounds for the associativity coefficient.
+    Calculate feasible mixing bounds (Frechet-Hoeffding bounds) for attributable fractions.
 
     Parameters
     ----------
@@ -193,10 +137,6 @@ def frechet_bounds(
                 max_dict[f"{source_lab}->{target_lab}"] = Z_max
 
     return min_dict, max_dict
-
-
-from numpy.typing import ArrayLike
-from scipy.stats import beta
 
 
 def rtruncated_beta(
@@ -294,8 +234,11 @@ def rtruncated_dirichlet(
         np.asarray(ub, dtype=float),
     )
 
-    x = np.zeros_like(concentration)
     K = concentration.shape[-1]  # last axis is the Dirichlet dimension
+    if K == 1:
+        return np.clip(np.ones_like(concentration), lb, ub)
+
+    x = np.zeros_like(concentration)
 
     # Sample component K-2 first (marginal truncated Beta)
     lb_km1 = np.maximum(lb[..., K - 2], 1 - np.sum(ub, axis=-1) + ub[..., K - 2])
@@ -332,7 +275,7 @@ def rtruncated_dirichlet(
 
 
 def sample_eta(
-    z_marginals: Dict[str, np.ndarray],
+    z_marg: Dict[str, np.ndarray],
     eta_lb: Dict[str, np.ndarray],
     eta_ub: Dict[str, np.ndarray],
     dataloader: ContactSurveyLoader,
@@ -353,7 +296,7 @@ def sample_eta(
 
     Parameters
     ----------
-    z_marginals : Dict[str, np.ndarray]
+    z_marg : Dict[str, np.ndarray]
         Dictionary mapping stratum labels to marginal contact count arrays
         of shape ``(S, A, A)`` (output of :func:`z_marginals`).
     eta_lb : Dict[str, np.ndarray]
@@ -366,7 +309,9 @@ def sample_eta(
         An instantiated ContactSurveyLoader.  Used to extract stratified population
         sizes via ``_compute_P_sa`` for the Dirichlet concentration.
     alpha : float, optional
-        Scalar multiplier for the Dirichlet concentration (default 1.0).
+        Dirichlet precision — scales the total concentration per age group
+        (default 1.0). Higher values pull samples closer to the population-
+        proportion prior.
     external_eta : Dict[str, np.ndarray] or None, optional
         External associativity fractions to add to the concentration,
         shape ``(A, A, K)`` per key.  If ``None``, ignored.
@@ -382,16 +327,16 @@ def sample_eta(
         Dictionary mapping ``"source->target"`` labels to associativity
         fraction arrays of shape ``(S, A, A)``.
     """
-    strata_names = list(z_marginals.keys())
+    strata_names = list(z_marg.keys())
     K = len(strata_names)
     S, A, _ = next(iter(eta_lb.values())).shape
 
     P_sa = _compute_P_sa(dataloader)
-    concentration = alpha * np.stack(
-        [P_sa[t] for t in strata_names],
-        axis=-1,
-    )
+    # Normalize to proportions first, then scale by alpha so that
+    # concentration.sum(axis=-1) == alpha for every age group.
+    concentration = np.stack([P_sa[t] for t in strata_names], axis=-1)  # (A, K)
     concentration /= concentration.sum(axis=-1, keepdims=True)
+    concentration = alpha * concentration
 
     tril_mask = np.tril(np.ones((A, A), dtype=bool))  # a >= b (sampled)
     striu_mask = ~tril_mask  # a < b  (filled via reciprocity)
@@ -428,8 +373,8 @@ def sample_eta(
         for k in strata_names:
             with np.errstate(divide="ignore", invalid="ignore"):
                 fill = (
-                    z_marginals[k].transpose(0, 2, 1)
-                    / z_marginals[ell]
+                    z_marg[k].transpose(0, 2, 1)
+                    / z_marg[ell]
                     * eta_out[f"{k}->{ell}"].transpose(0, 2, 1)
                 )
                 fill = np.nan_to_num(fill, nan=0.0, posinf=0.0, neginf=0.0)
@@ -442,8 +387,8 @@ def sample_eta(
                 continue
             with np.errstate(divide="ignore", invalid="ignore"):
                 diag_fix = (
-                    z_marginals[k][:, diag_idx, diag_idx]
-                    / z_marginals[ell][:, diag_idx, diag_idx]
+                    z_marg[k][:, diag_idx, diag_idx]
+                    / z_marg[ell][:, diag_idx, diag_idx]
                     * eta_out[f"{k}->{ell}"][:, diag_idx, diag_idx]
                 )
                 diag_fix = np.nan_to_num(diag_fix, nan=0.0, posinf=0.0, neginf=0.0)
@@ -455,8 +400,8 @@ def sample_eta(
 def predict_full_matrices(
     summariser: ModelSummariser,
     dataloader: ContactSurveyLoader,
-    rng: np.random.Generator = None,
-) -> Dict[str, ArrayLike]:
+    rng: np.random.Generator | None = None,
+) -> Dict[str, NDArray]:
     """
     Predict fully stratified contact intensity matrices from the inference results of a partially stratified model.
 
@@ -466,17 +411,18 @@ def predict_full_matrices(
         A fitted partially stratified model summariser containing posterior samples of the contact intensities.
     dataloader : ContactSurveyLoader
         The ContactSurveyLoader used to prepare the data for the model, required to extract population sizes for each stratum.
-    rng : np.random.Generator, optional
+    rng : np.random.Generator | None, optional
         A random number generator for sampling associativity fractions. If None, a new generator will be created.
 
     Returns
     -------
-    Dict[str, ArrayLike]
-        A dictionary mapping "source->target" stratum pairs to predicted fully stratified contact intensity matrices of shape (S, A, A), where S is the number of posterior samples and A is the number of age groups.
+    Dict[str, NDArray]
+        A dictionary mapping "source->target" stratum pairs to predicted fully stratified contact intensity matrices of shape (S, A, A),
+        where S is the number of posterior samples and A is the number of age groups.
     """
 
     sample_z_marginals = z_marginals(summariser, dataloader)
-    eta_lb, eta_ub = frechet_bounds(sample_z_marginals, return_eta=True)
+    eta_lb, eta_ub = feasible_mixing_bounds(sample_z_marginals, return_eta=True)
     sample_cint = summariser.get_posterior_samples("cint")
     samples_eta = sample_eta(sample_z_marginals, eta_lb, eta_ub, dataloader, rng=rng)
 
@@ -491,3 +437,62 @@ def predict_full_matrices(
             )
 
     return cint_dict
+
+
+def spectral_radius(
+    matrices: Dict[str, NDArray],
+    dataloader: Optional[ContactSurveyLoader] = None,
+    method: Optional[str] = "generalised",
+) -> Union[float, NDArray]:
+    """Compute the spectral radius of the generalised or age-stratified matrix.
+
+    If matrices contain 2D arrays (A, A), returns a scalar.
+    If matrices contain 3D arrays (S, A, A), returns an array of shape (S,).
+
+    Parameters
+    ----------
+    matrices : dict
+        A dictionary mapping "source->target" to a 2D or 3D array
+    dataloader : ContactSurveyLoader, optional
+        An instantiated ContactSurveyLoader. Required if method="age". Used to extract
+        stratified population sizes via StratificationData proportions and
+        PopulationData totals.
+    method : str, optional
+        The method to use: "generalised" or "age". Default is "generalised"
+
+    Returns
+    -------
+    float or np.ndarray
+        The spectral radius of the combined matrix, either a scalar or an array of shape (S,) depending on the input.
+    """
+    cats = list(dict.fromkeys(k.split("->")[0] for k in matrices))
+    first = next(iter(matrices.values()))
+    batched = first.ndim == 3
+
+    if method == "generalised":
+        # For 2-D blocks: produces (K*A, K*A).
+        # For 3-D blocks (S, A, A): np.block concatenates along the last two
+        # axes in order, producing (S, K*A, K*A).
+        M = np.block([[matrices[f"{s}->{t}"] for t in cats] for s in cats])
+    elif method == "age":
+        if dataloader is None:
+            raise ValueError("dataloader is required for method='age'")
+        P_sa = _compute_P_sa(dataloader)
+        P_a = dataloader.pop_data.groupby("age")["P"].sum().sort_index().values
+        M = np.zeros_like(matrices[f"{cats[0]}->{cats[0]}"])
+        for source in cats:
+            mat_partial = sum(matrices[f"{source}->{t}"] for t in cats)
+            P_ka = P_sa[source]
+            if batched:
+                M += mat_partial * (P_ka / P_a)[None, :, None]
+            else:
+                M += mat_partial * (P_ka / P_a)[:, None]
+    else:
+        raise ValueError(f"Unknown method: {method!r}. Use 'generalised' or 'age'.")
+
+    if batched:
+        eigenvalues = np.linalg.eigvals(M)  # (S, N) complex
+        return np.max(np.abs(eigenvalues), axis=1)  # (S,)
+    else:
+        eigenvalues = np.linalg.eigvals(M)
+        return np.max(np.abs(eigenvalues))

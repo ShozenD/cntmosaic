@@ -20,6 +20,7 @@ def preprocess_stratification_data(
     prop_col: str,
     age_min_col: Optional[str] = None,
     age_max_col: Optional[str] = None,
+    age_grp_col: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Validate and clean a raw stratification DataFrame.
@@ -29,7 +30,7 @@ def preprocess_stratification_data(
     data : pd.DataFrame
         Raw stratification DataFrame (not yet validated or converted).
     age_col : Optional[str]
-        Column containing age values. Mutually exclusive with age_min_col/age_max_col.
+        Column containing age values. Mutually exclusive with age_min_col/age_max_col/age_grp_col.
     strat_var_cols : List[str]
         Stratification variable column names (already normalised to a list).
     prop_col : str
@@ -38,19 +39,23 @@ def preprocess_stratification_data(
         Column containing minimum ages (for age range representation).
     age_max_col : Optional[str]
         Column containing maximum ages (for age range representation).
+    age_grp_col : Optional[str]
+        Column containing pre-built age groups (IntervalIndex or categorical).
+        Renamed to "age_grp_strat" in the output DataFrame.
 
     Returns
     -------
     pd.DataFrame
-        Cleaned DataFrame with stratification columns coerced to categorical.
+        Cleaned DataFrame with stratification columns coerced to categorical
+        and age_grp_col (if provided) renamed to "age_grp_strat".
 
     Raises
     ------
     ValueError
         If any required stratification column is absent from data.
     """
-    _check_columns(data, age_col, strat_var_cols, age_min_col, age_max_col)
-    return _preprocess(data, strat_var_cols)
+    _check_columns(data, age_col, strat_var_cols, age_min_col, age_max_col, age_grp_col)
+    return _preprocess(data, strat_var_cols, age_grp_col)
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +69,7 @@ def _check_columns(
     strat_var_cols: List[str],
     age_min_col: Optional[str],
     age_max_col: Optional[str],
+    age_grp_col: Optional[str] = None,
 ) -> None:
     """
     Assert required columns exist in df.
@@ -83,6 +89,12 @@ def _check_columns(
                 f"  Available columns: {list(df.columns)}"
             )
 
+    if age_grp_col and age_grp_col not in df.columns:
+        raise ValueError(
+            f"Age group column '{age_grp_col}' not found in data.\n"
+            f"  Available columns: {list(df.columns)}"
+        )
+
     missing = [col for col in strat_var_cols if col not in df.columns]
     if missing:
         raise ValueError(
@@ -94,9 +106,11 @@ def _check_columns(
 def _preprocess(
     data: pd.DataFrame,
     strat_var_cols: List[str],
+    age_grp_col: Optional[str] = None,
 ) -> pd.DataFrame:
     """
-    Copy data and coerce stratification columns to categorical dtype.
+    Copy data, coerce stratification columns to categorical dtype, and rename
+    age_grp_col to "age_grp_strat" if provided.
     """
     df = data.copy()
 
@@ -108,5 +122,16 @@ def _preprocess(
                 stacklevel=5,
             )
             df[col] = df[col].astype("category")
+
+    if age_grp_col:
+        if not isinstance(df[age_grp_col].dtype, pd.CategoricalDtype):
+            warnings.warn(
+                f"Converting '{age_grp_col}' to categorical dtype.",
+                UserWarning,
+                stacklevel=5,
+            )
+            df[age_grp_col] = df[age_grp_col].astype("category")
+        if age_grp_col != "age_grp_strat":
+            df = df.rename(columns={age_grp_col: "age_grp_strat"})
 
     return df

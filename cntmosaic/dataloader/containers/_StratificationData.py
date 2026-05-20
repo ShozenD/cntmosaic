@@ -33,10 +33,14 @@ class StratificationData:
         Use this OR ``age_min_col``/``age_max_col``, not both.
     age_min_col : str, optional
         Name of the column containing the lower bound of each age range.
-        Must be used together with ``age_max_col``. Mutually exclusive with ``age_col``.
+        Must be used together with ``age_max_col``. Mutually exclusive with ``age_col`` and ``age_grp_col``.
     age_max_col : str, optional
         Name of the column containing the upper bound of each age range.
-        Must be used together with ``age_min_col``. Mutually exclusive with ``age_col``.
+        Must be used together with ``age_min_col``. Mutually exclusive with ``age_col`` and ``age_grp_col``.
+    age_grp_col : str, optional
+        Name of the column containing pre-built age groups (e.g. pd.IntervalIndex or categorical).
+        Mutually exclusive with ``age_col`` and ``age_min_col``/``age_max_col``.
+        In the processed data this column is renamed to ``"age_grp_strat"``.
     strat_var_cols : Union[str, List[str]], optional
         Name(s) of the stratification variable column(s) in the DataFrame.
     prop_col : str, default='prop'
@@ -119,6 +123,7 @@ class StratificationData:
     prop_col: str = "prop"
     age_min_col: Optional[str] = None
     age_max_col: Optional[str] = None
+    age_grp_col: Optional[str] = None
 
     strat_col: str = None  # legacy field; not used internally
 
@@ -131,19 +136,21 @@ class StratificationData:
         # Validate mutual exclusivity of age specifications.
         _has_exact = self.age_col is not None
         _has_range = self.age_min_col is not None or self.age_max_col is not None
+        _has_grp = self.age_grp_col is not None
 
-        if not _has_exact and not _has_range:
+        if not _has_exact and not _has_range and not _has_grp:
             raise ValueError(
                 "Must specify an age representation:\n"
                 "  'age_col' for exact ages,\n"
-                "  or both 'age_min_col' and 'age_max_col' for age ranges."
+                "  both 'age_min_col' and 'age_max_col' for age ranges,\n"
+                "  or 'age_grp_col' for age groups."
             )
-        if _has_exact and _has_range:
+        if sum([_has_exact, _has_range, _has_grp]) > 1:
             raise ValueError(
                 "Age specification forms are mutually exclusive — provide exactly one:\n"
-                "  'age_col', or 'age_min_col'/'age_max_col'.\n"
-                f"  Got: age_col={self.age_col!r}, "
-                f"age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
+                "  'age_col', 'age_min_col'/'age_max_col', or 'age_grp_col'.\n"
+                f"  Got: age_col={self.age_col!r}, age_min_col={self.age_min_col!r}, "
+                f"age_max_col={self.age_max_col!r}, age_grp_col={self.age_grp_col!r}"
             )
         if _has_range and (self.age_min_col is None or self.age_max_col is None):
             raise ValueError(
@@ -159,6 +166,7 @@ class StratificationData:
             self.prop_col,
             self.age_min_col,
             self.age_max_col,
+            self.age_grp_col,
         )
 
         self.validate()
@@ -190,6 +198,7 @@ class StratificationData:
             self.prop_col,
             self.age_min_col,
             self.age_max_col,
+            self.age_grp_col,
         )
 
     @property
@@ -197,6 +206,8 @@ class StratificationData:
         """Return the list of column(s) used as the age groupby key."""
         if self.age_col:
             return [self.age_col]
+        if self.age_grp_col:
+            return ["age_grp_strat"]
         return [self.age_min_col, self.age_max_col]
 
     @classmethod
@@ -208,6 +219,7 @@ class StratificationData:
         count_col: str = "count",
         age_min_col: Optional[str] = None,
         age_max_col: Optional[str] = None,
+        age_grp_col: Optional[str] = None,
     ) -> "StratificationData":
         """
         Create StratificationData from population counts (automatically computes proportions).
@@ -274,14 +286,24 @@ class StratificationData:
         # Resolve age columns
         _has_exact = age_col is not None
         _has_range = age_min_col is not None or age_max_col is not None
-        if not _has_exact and not _has_range:
-            raise ValueError("Must specify 'age_col' or both 'age_min_col' and 'age_max_col'.")
-        if _has_exact and _has_range:
-            raise ValueError("Provide exactly one of 'age_col' or 'age_min_col'/'age_max_col'.")
+        _has_grp = age_grp_col is not None
+        if not _has_exact and not _has_range and not _has_grp:
+            raise ValueError(
+                "Must specify 'age_col', both 'age_min_col' and 'age_max_col', or 'age_grp_col'."
+            )
+        if sum([_has_exact, _has_range, _has_grp]) > 1:
+            raise ValueError(
+                "Provide exactly one of 'age_col', 'age_min_col'/'age_max_col', or 'age_grp_col'."
+            )
         if _has_range and (age_min_col is None or age_max_col is None):
             raise ValueError("Both 'age_min_col' and 'age_max_col' must be specified together.")
 
-        age_groupby_cols = [age_col] if age_col else [age_min_col, age_max_col]
+        if age_col:
+            age_groupby_cols = [age_col]
+        elif age_grp_col:
+            age_groupby_cols = [age_grp_col]
+        else:
+            age_groupby_cols = [age_min_col, age_max_col]
 
         # Validate required columns
         required_cols = age_groupby_cols + [count_col] + strat_var_cols
@@ -303,6 +325,7 @@ class StratificationData:
             age_col=age_col,
             age_min_col=age_min_col,
             age_max_col=age_max_col,
+            age_grp_col=age_grp_col,
             strat_var_cols=strat_var_cols,
         )
 
@@ -651,7 +674,12 @@ class StratificationData:
         For PARTIAL: Requires age column(s), strat_var_cols, and prop_col.
         For FULL: Same requirements (outer product computed internally).
         """
-        age_cols = [self.age_col] if self.age_col else [self.age_min_col, self.age_max_col]
+        if self.age_col:
+            age_cols = [self.age_col]
+        elif self.age_grp_col:
+            age_cols = ["age_grp_strat"]
+        else:
+            age_cols = [self.age_min_col, self.age_max_col]
         required_cols = age_cols + (self.strat_var_cols or []) + [self.prop_col]
         missing = [col for col in required_cols if col not in self.data.columns]
         if missing:

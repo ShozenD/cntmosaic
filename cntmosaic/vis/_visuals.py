@@ -32,6 +32,10 @@ def plot_mosaic(
     y_tick_labels: list = None,
     z_tick_values: list = None,
     legend_position: str = "right",
+    show_x_ticks: bool = True,
+    show_x_label: bool = True,
+    show_y_ticks: bool = True,
+    show_y_label: bool = True,
     style_config: Optional[dict] = None,
 ) -> alt.Chart:
     """
@@ -78,6 +82,14 @@ def plot_mosaic(
     legend_position : str, optional
         Position of the legend. Valid values include 'left', 'right', 'top', 'bottom',
         'top-left', 'top-right', 'bottom-left', 'bottom-right', 'none'. Default is 'right'.
+    show_x_ticks : bool, optional
+        Whether to show x-axis tick marks and tick labels. Default is True.
+    show_x_label : bool, optional
+        Whether to show the x-axis title. Default is True.
+    show_y_ticks : bool, optional
+        Whether to show y-axis tick marks and tick labels. Default is True.
+    show_y_label : bool, optional
+        Whether to show the y-axis title. Default is True.
     style_config : dict, optional
         A dictionary to override default style settings for axes, title, and legend.
         The keys can include 'x_axis', 'y_axis', 'title', 'legend', and 'color_scale'.
@@ -130,26 +142,34 @@ def plot_mosaic(
             y_tick_values, y_tick_labels
         )
 
+    x_axis = alt.Axis(
+        **x_tick_config,
+        **default_config["x_axis"],
+        labels=show_x_ticks,
+        ticks=show_x_ticks,
+    )
+
+    y_axis = alt.Axis(
+        **y_tick_config,
+        **default_config["y_axis"],
+        labels=show_y_ticks,
+        ticks=show_y_ticks,
+    )
+
     chart = (
         alt.Chart(source)
         .mark_rect(stroke=None)
         .encode(
             x=alt.X(
                 "x:O",
-                axis=alt.Axis(
-                    **x_tick_config,
-                    **default_config["x_axis"],
-                ),
-                title=xlabel,
+                axis=x_axis,
+                title=xlabel if show_x_label else None,
             ),
             y=alt.Y(
                 "y:O",
                 scale=alt.Scale(reverse=True),
-                axis=alt.Axis(
-                    **y_tick_config,
-                    **default_config["y_axis"],
-                ),
-                title=ylabel,
+                axis=y_axis,
+                title=ylabel if show_y_label else None,
             ),
             color=alt.Color(
                 "z:Q",
@@ -181,6 +201,10 @@ def plot_mosaic_pixilated(
     color_reverse: bool = True,
     color_min: Optional[float] = None,
     color_max: Optional[float] = None,
+    show_x_ticks: bool = True,
+    show_x_label: bool = True,
+    show_y_ticks: bool = True,
+    show_y_label: bool = True,
     style_config: dict = None,
 ) -> alt.Chart:
     """Plot a pixilated (coarse-age) mosaic contact matrix.
@@ -208,6 +232,14 @@ def plot_mosaic_pixilated(
         Whether to reverse the color scheme. Default is True.
     color_min, color_max : float, optional
         Fixed domain bounds for the color scale. Both must be set to take effect.
+    show_x_ticks : bool, optional
+        Whether to show x-axis tick marks and tick labels. Default is True.
+    show_x_label : bool, optional
+        Whether to show the x-axis title. Default is True.
+    show_y_ticks : bool, optional
+        Whether to show y-axis tick marks and tick labels. Default is True.
+    show_y_label : bool, optional
+        Whether to show the y-axis title. Default is True.
     style_config : dict, optional
         Dict of Altair/Vega-Lite overrides keyed by section
         (``'x_axis'``, ``'y_axis'``, ``'title'``, ``'legend'``).
@@ -261,8 +293,10 @@ def plot_mosaic_pixilated(
                     values=tick_pos,
                     labelExpr=expression,
                     **default_config["x_axis"],
+                    labels=show_x_ticks,
+                    ticks=show_x_ticks,
                 ),
-                title=xlabel,
+                title=xlabel if show_x_label else None,
             ),
             y=alt.Y(
                 "y:O",
@@ -271,8 +305,10 @@ def plot_mosaic_pixilated(
                     values=tick_pos,
                     labelExpr=expression,
                     **default_config["y_axis"],
+                    labels=show_y_ticks,
+                    ticks=show_y_ticks,
                 ),
-                title=ylabel,
+                title=ylabel if show_y_label else None,
             ),
             color=alt.Color(
                 "z:Q",

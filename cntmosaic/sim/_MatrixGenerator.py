@@ -47,7 +47,7 @@ class MatrixGenerator:
     ----------
     templates : dict of NDArray
         Template contact patterns with keys: 'household', 'school', 'work', 'community'.
-        Each matrix should be A\timesA where A is the number of age groups.
+        Each matrix should be A\\timesA where A is the number of age groups.
         Templates are assumed to be pre-smoothed.
         Use `cntmosaic.datasets.load_template_patterns()` to load defaults.
 
@@ -89,12 +89,12 @@ class MatrixGenerator:
     -----
     Mathematical Framework:
     - Template mixture: T = υ^h T^h + υ^s T^s + υ^w T^w + υ^c T^c
-    - Baseline intensity: M = C \times T
+    - Baseline intensity: M = C \\times T
     - Reciprocity: M̃ = ½(M + P M^T P^{-1})
     - Deviation matrix: D^{k,l} = exp(η E^{k,l})
     - Combined deviation: d^{s,t} = ∏_j D^{k_j(s), l_j(t)}
-    - Normalized deviation: \delta^{s,t} = d^{s,t} / \sum_{u,v} d^{u,v} S^{u,v}
-    - Stratified intensity: m^{s,t} = \gamma \delta^{s,t} P^t
+    - Normalized deviation: \\delta^{s,t} = d^{s,t} / \\sum_{u,v} d^{u,v} S^{u,v}
+    - Stratified intensity: m^{s,t} = \\gamma \\delta^{s,t} P^t
 
     References
     ----------
@@ -113,7 +113,7 @@ class MatrixGenerator:
         ----------
         templates : dict of NDArray
             Must contain keys: 'household', 'school', 'work', 'community'.
-            Each matrix should be A\timesA where A is the number of age groups.
+            Each matrix should be A\\timesA where A is the number of age groups.
             Use cntmosaic.datasets.load_template_patterns() to load default templates.
 
         Raises
@@ -160,7 +160,7 @@ class MatrixGenerator:
         """
         Normalize templates so average marginal intensity equals 1.
 
-        For each template T, computes: T̄ = T / (A^{-1} \sum_a \sum_b t_{a,b})
+        For each template T, computes: T̄ = T / (A^{-1} \\sum_a \\sum_b t_{a,b})
         """
         normalized = {}
         for name, T in templates.items():
@@ -428,7 +428,7 @@ class MatrixGenerator:
         Process:
         1. Sample mixture weights from Dirichlet(1,1,1,1)
         2. Create mixed template pattern T
-        3. Scale by mean intensity: M = C \times T
+        3. Scale by mean intensity: M = C \\times T
         4. Enforce reciprocity: M̃ = ½(M + P^{-1} M^T P)
 
         Parameters
@@ -606,7 +606,7 @@ class MatrixGenerator:
         """
         Enforce reciprocity on deviation matrix.
 
-        For diagonal blocks (k=k): D[a,b] ← sqrt(D[a,b] \times D[b,a])
+        For diagonal blocks (k=k): D[a,b] ← sqrt(D[a,b] \\times D[b,a])
         For off-diagonal blocks (k≠l): handled via pairing D^{k,l} and D^{l,k}
 
         Parameters
@@ -622,7 +622,7 @@ class MatrixGenerator:
             Reciprocal deviation matrix (A, A)
         """
         if is_diagonal:
-            # D[a,b] ← sqrt(D[a,b] \times D[b,a])
+            # D[a,b] ← sqrt(D[a,b] \\times D[b,a])
             D = np.sqrt(D * D.T)
         # For off-diagonal, reciprocity is enforced by ensuring D^{l,k}[b,a] = D^{k,l}[a,b]
         # This is handled in the calling code by proper indexing
@@ -658,9 +658,9 @@ class MatrixGenerator:
         """
         Normalize deviations using population proportions.
 
-        \delta^{s,t}_{a,b} = d^{s,t}_{a,b} / \sum_{u,v} d^{u,v}_{a,b} S^{u,v}_{a,b}
+        \\delta^{s,t}_{a,b} = d^{s,t}_{a,b} / \\sum_{u,v} d^{u,v}_{a,b} S^{u,v}_{a,b}
 
-        where S^{s,t}_{a,b} = (P^s_a / P_a) \times (P^t_b / P_b) = Q[s,a] \times Q[t,b]
+        where S^{s,t}_{a,b} = (P^s_a / P_a) \\times (P^t_b / P_b) = Q[s,a] \\times Q[t,b]
 
         Parameters
         ----------
@@ -673,7 +673,7 @@ class MatrixGenerator:
         Returns
         -------
         dict
-            Normalized deviation matrices {(s,t): \delta^{s,t}}
+            Normalized deviation matrices {(s,t): \\delta^{s,t}}
         """
         n_strata = Q.shape[0]
 
@@ -688,11 +688,11 @@ class MatrixGenerator:
         # S[u, v, a, b]
         S = Q[:, None, :, None] * Q[None, :, None, :]
 
-        # Compute denominator: \sum_{u,v} d^{u,v}_{a,b} S^{u,v}_{a,b}
+        # Compute denominator: \\sum_{u,v} d^{u,v}_{a,b} S^{u,v}_{a,b}
         # Sum over strata dimensions (0, 1), leaving age dimensions (a, b)
         denominator = (d_array * S).sum(axis=(0, 1))  # shape: (n_ages, n_ages)
 
-        # Normalize: \delta^{s,t}_{a,b} = d^{s,t}_{a,b} / denominator_{a,b}
+        # Normalize: \\delta^{s,t}_{a,b} = d^{s,t}_{a,b} / denominator_{a,b}
         delta_array = d_array / denominator[None, None, :, :]
 
         # Convert back to dict format
@@ -716,10 +716,10 @@ class MatrixGenerator:
         population (averaged across all strata).
 
         Process:
-        1. Generate baseline rate matrix \gamma
+        1. Generate baseline rate matrix \\gamma
         2. Generate deviations for each stratum (diagonal only, no reciprocity)
-        3. Normalize deviations: $\delta^s_{a,b} = d^s_{a,b} / \sum_u d^u_{a,b} S^u_a$
-        4. Compute intensities: m^s = \gamma \delta^s P
+        3. Normalize deviations: $\\delta^s_{a,b} = d^s_{a,b} / \\sum_u d^u_{a,b} S^u_a$
+        4. Compute intensities: m^s = \\gamma \\delta^s P
 
         Parameters
         ----------
@@ -823,16 +823,16 @@ class MatrixGenerator:
             d_array[s, :, :] = d_all[s]
 
         # S^s_a = Q[s, a] for partial case
-        # Compute denominator: \sum_u d^u_{a,b} S^u_a = \sum_u d^u_{a,b} Q[u,a]
+        # Compute denominator: \\sum_u d^u_{a,b} S^u_a = \\sum_u d^u_{a,b} Q[u,a]
         # Broadcasting: Q[:, :, None] has shape (n_strata, n_ages, 1)
         #               d_array has shape (n_strata, n_ages, n_ages)
         # Weighted sum over strata: (n_ages, n_ages)
         denominator = (d_array * Q[:, :, None]).sum(axis=0)
 
-        # Normalize: \delta^s_{a,b} = d^s_{a,b} / denominator_{a,b}
+        # Normalize: \\delta^s_{a,b} = d^s_{a,b} / denominator_{a,b}
         delta_array = d_array / denominator[None, :, :]
 
-        # Compute stratified contact intensities: m^s = \gamma \delta^s P
+        # Compute stratified contact intensities: m^s = \\gamma \\delta^s P
         partial_matrices = {}
         for s in range(n_strata):
             M_s = (Gamma_baseline * delta_array[s, :, :]) @ P_global_diag
@@ -994,8 +994,8 @@ class MatrixGenerator:
         2. Sample eta ~ Uniform(0,1) for each stratification variable
         3. Generate deviation matrices D^{k,l} for each stratification
         4. Combine deviations: d^{s,t} = ∏_j D^{k_j(s), l_j(t)}
-        5. Normalize deviations: \delta^{s,t} using population proportions
-        6. Compute stratified intensities: m^{s,t} = \gamma \delta^{s,t} P^t
+        5. Normalize deviations: \\delta^{s,t} using population proportions
+        6. Compute stratified intensities: m^{s,t} = \\gamma \\delta^{s,t} P^t
 
         Parameters
         ----------
@@ -1035,8 +1035,8 @@ class MatrixGenerator:
         Notes
         -----
         The full generation enforces:
-        - Reciprocity: \gamma^{s,t} P^t = (\gamma^{t,s} P^s)^T
-        - Weighted normalization: \sum_{s,t} \delta^{s,t} Q^s ⊗ Q^t = 1
+        - Reciprocity: \\gamma^{s,t} P^t = (\\gamma^{t,s} P^s)^T
+        - Weighted normalization: \\sum_{s,t} \\delta^{s,t} Q^s ⊗ Q^t = 1
         """
         rng = np.random.default_rng(seed)
 
@@ -1116,7 +1116,7 @@ class MatrixGenerator:
         # Normalize deviations
         delta_all = self._normalize_deviations(d_all, Q)
 
-        # Compute stratified contact intensities: m^{s,t} = \gamma \delta^{s,t} P^t
+        # Compute stratified contact intensities: m^{s,t} = \\gamma \\delta^{s,t} P^t
         M_full = {}
         for s in range(n_strata):
             for t in range(n_strata):
@@ -1269,7 +1269,7 @@ class MatrixGenerator:
         # Normalize deviations
         delta_all = self._normalize_deviations(d_all, Q)
 
-        # Compute stratified contact intensities: m^{s,t} = \gamma \delta^{s,t} P^t
+        # Compute stratified contact intensities: m^{s,t} = \\gamma \\delta^{s,t} P^t
         M_full = {}
         for s in range(n_strata):
             for t in range(n_strata):
@@ -1289,8 +1289,8 @@ class MatrixGenerator:
         Decode global stratum index into per-stratification category indices.
 
         For multiple stratifications with n_1, n_2, ..., n_J categories,
-        stratum index s ∈ [0, n_1 \times n_2 \times ... \times n_J) maps to
-        (k_1, k_2, ..., k_J) where k_j \in [0, n_j).
+        stratum index s ∈ [0, n_1 \\times n_2 \\times ... \\times n_J) maps to
+        (k_1, k_2, ..., k_J) where k_j \\in [0, n_j).
 
         Parameters
         ----------

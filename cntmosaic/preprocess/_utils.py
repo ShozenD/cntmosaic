@@ -42,7 +42,7 @@ def expand_age_interval(
     df: pd.DataFrame, interval_col: str, name: str = "age_expanded"
 ) -> pd.DataFrame:
 
-    if df[interval_col].dtype.name == "object":
+    if not isinstance(df[interval_col].dtype, pd.IntervalDtype):
         df[interval_col] = df[interval_col].apply(as_interval_type)
 
     expanded_rows = []

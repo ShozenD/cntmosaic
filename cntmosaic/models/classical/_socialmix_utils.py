@@ -217,7 +217,6 @@ class SocialMixDataLoader:
             pop_sizes = (
                 df_pop.groupby("age_grp", observed=False)["P"]
                 .sum()
-                .reindex(pd.Index(age_grps), fill_value=0)
             )
 
             if (pop_sizes == 0).any():

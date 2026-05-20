@@ -31,7 +31,13 @@ def _compute_P_sa(dataloader: ContactSurveyLoader) -> Dict[str, np.ndarray]:
             "_compute_P_sa requires a dataloader with strat_data. "
             "The predict pipeline only supports partially-stratified (genmix) models."
         )
-    P_a = dataloader.pop_data.groupby("age")["P"].sum().sort_index().values
+    age_col = dataloader.col_map.age_pop or dataloader.col_map.age_grp_pop
+    P_a = (
+        dataloader.pop_data.groupby(age_col, observed=True)["P"]
+        .sum()
+        .sort_index()
+        .values
+    )
     Q_sa, labels = dataloader.strat_data._build_Q_and_labels(
         dataloader.strat_data.strat_var_cols
     )
@@ -478,7 +484,8 @@ def spectral_radius(
         if dataloader is None:
             raise ValueError("dataloader is required for method='age'")
         P_sa = _compute_P_sa(dataloader)
-        P_a = dataloader.pop_data.groupby("age")["P"].sum().sort_index().values
+        age_col = dataloader.col_map.age_pop or dataloader.col_map.age_grp_pop
+        P_a = dataloader.pop_data.groupby(age_col)["P"].sum().sort_index().values
         M = np.zeros_like(matrices[f"{cats[0]}->{cats[0]}"])
         for source in cats:
             mat_partial = sum(matrices[f"{source}->{t}"] for t in cats)

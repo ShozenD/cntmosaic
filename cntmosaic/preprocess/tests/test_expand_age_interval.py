@@ -5,11 +5,11 @@ from .._utils import expand_age_interval
 def test_basic_functionality():
     # Create a simple DataFrame
     data = pd.DataFrame({
-      'age_part': [0, 1, 2],
-      'age_grp_cnt': ['[0,5)', '[5,10)', '[10,15)'],
+      'part_age': [0, 1, 2],
+      'cnt_age_grp': ['[0,5)', '[5,10)', '[10,15)'],
     })
     
-    expanded_data = expand_age_interval(data, 'age_grp_cnt')
+    expanded_data = expand_age_interval(data, 'cnt_age_grp')
     
     # Check the dimensions
     assert expanded_data.shape == (15, 3), "Incorrect dimensions"
@@ -17,12 +17,12 @@ def test_basic_functionality():
 def test_additional_columns():
     # Create a simple DataFrame
     data = pd.DataFrame({
-      'age_part': [0, 1, 2],
+      'part_age': [0, 1, 2],
       'age_sex': ['M', 'F', 'M'],
-      'age_grp_cnt': ['[0,5)', '[5,10)', '[10,15)'],
+      'cnt_age_grp': ['[0,5)', '[5,10)', '[10,15)'],
     })
     
-    expanded_data = expand_age_interval(data, 'age_grp_cnt')
+    expanded_data = expand_age_interval(data, 'cnt_age_grp')
     
     # Check the dimensions
     assert expanded_data.shape == (15, 4), "Incorrect dimensions"
@@ -30,7 +30,7 @@ def test_additional_columns():
 def test_custom_column_choice():
     # Create a simple DataFrame
     data = pd.DataFrame({
-      'age_part': [0, 1, 2],
+      'part_age': [0, 1, 2],
       'age_sex': ['M', 'F', 'M'],
       'custom_col': ['[0,5)', '[5,10)', '[10,15)'],
     })

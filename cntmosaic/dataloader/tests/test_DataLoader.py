@@ -154,11 +154,12 @@ def data_full():
     # Generate contacts
     cnt_gen = ContactGenerator(df_part, contact_matrices)
     df_cnt = cnt_gen.generate(SEED)
-    df_cnt["sex_cnt"] = pd.Categorical(
-        df_cnt["sex_cnt"], categories=["M", "F"], ordered=True
+    df_cnt = df_cnt.rename(columns={"sex_cnt": "cnt_sex", "hhsize_cnt": "cnt_hhsize"})
+    df_cnt["cnt_sex"] = pd.Categorical(
+        df_cnt["cnt_sex"], categories=["M", "F"], ordered=True
     )
-    df_cnt["hhsize_cnt"] = pd.Categorical(
-        df_cnt["hhsize_cnt"], categories=["1", "2", "3", "4", "5+"], ordered=True
+    df_cnt["cnt_hhsize"] = pd.Categorical(
+        df_cnt["cnt_hhsize"], categories=["1", "2", "3", "4", "5+"], ordered=True
     )
 
     # Population size offsets
@@ -183,7 +184,7 @@ class TestSingle:
 
         # Create dataclass objects with standardized column names
         part_data = ParticipantData(data=df_part, id_col="id", age_col="age")
-        cnt_data = ContactData(data=df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(data=df_cnt, id_col="id", age_col="cnt_age")
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
@@ -215,7 +216,7 @@ class TestSingle:
 
         # Create dataclass objects with repeat column
         part_data = ParticipantData(df_part, "id", "age", repeat_col="repeat")
-        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 
@@ -232,7 +233,7 @@ class TestSingle:
 
         # Create age groups for contacts
         bins = [0, 5, 15, 25, 35, 45, 55, 65, 75, 80]
-        df_cnt["age_grp_cnt"] = pd.cut(df_cnt["age_cnt"], bins=bins, right=False)
+        df_cnt["age_grp_cnt"] = pd.cut(df_cnt["cnt_age"], bins=bins, right=False)
         df_cnt["age_grp_cnt"] = pd.Categorical(df_cnt["age_grp_cnt"])
 
         # Create dataclass objects with age groups
@@ -277,7 +278,7 @@ class TestPartial:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
@@ -318,7 +319,7 @@ class TestPartial:
             repeat_col="repeat",
         )
 
-        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
 
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
 
@@ -357,7 +358,7 @@ class TestPartial:
 
         # Create age groups for contacts
         bins = [0, 5, 15, 25, 35, 45, 55, 65, 75, 80]
-        df_cnt["age_grp_cnt"] = pd.cut(df_cnt["age_cnt"], bins=bins, right=False)
+        df_cnt["age_grp_cnt"] = pd.cut(df_cnt["cnt_age"], bins=bins, right=False)
 
         # Create dataclass objects with age groups and stratification
         part_data = ParticipantData(
@@ -402,7 +403,7 @@ class TestPartial:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
@@ -445,8 +446,8 @@ class TestFull:
         cnt_data = ContactData(
             df_cnt,
             id_col="id",
-            age_col="age_cnt",
-            strat_var_cols=["sex_cnt", "hhsize_cnt"],
+            age_col="cnt_age",
+            strat_var_cols=["cnt_sex", "cnt_hhsize"],
         )
         pop_data = PopulationData(
             data=df_pop, age_col="age", size_col="P", strat_var_cols=["sex", "hhsize"]
@@ -500,7 +501,7 @@ class TestMethods:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
         pop_data = PopulationData(df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,
@@ -579,11 +580,12 @@ def data_multi_strat():
     # Generate contact data
     cnt_gen = ContactGenerator(df_part, contact_matrices)
     df_cnt = cnt_gen.generate(SEED)
-    df_cnt["sex_cnt"] = pd.Categorical(
-        df_cnt["sex_cnt"], categories=["M", "F"], ordered=True
+    df_cnt = df_cnt.rename(columns={"sex_cnt": "cnt_sex", "setting_cnt": "cnt_setting"})
+    df_cnt["cnt_sex"] = pd.Categorical(
+        df_cnt["cnt_sex"], categories=["M", "F"], ordered=True
     )
-    df_cnt["setting_cnt"] = pd.Categorical(
-        df_cnt["setting_cnt"], categories=["home", "work"], ordered=True
+    df_cnt["cnt_setting"] = pd.Categorical(
+        df_cnt["cnt_setting"], categories=["home", "work"], ordered=True
     )
 
     # Population data
@@ -616,7 +618,7 @@ class TestStratificationOrdering:
             data=df_part, id_col="id", age_col="age", strat_var_cols=["sex"]
         )
         cnt_data = ContactData(
-            df_cnt, id_col="id", age_col="age_cnt", strat_var_cols=["sex_cnt"]
+            df_cnt, id_col="id", age_col="cnt_age", strat_var_cols=["cnt_sex"]
         )
         pop_data = PopulationData(
             data=df_pop, age_col="age", size_col="P", strat_var_cols=["sex"]
@@ -648,8 +650,8 @@ class TestStratificationOrdering:
         cnt_data = ContactData(
             df_cnt,
             id_col="id",
-            age_col="age_cnt",
-            strat_var_cols=["sex_cnt", "setting_cnt"],
+            age_col="cnt_age",
+            strat_var_cols=["cnt_sex", "cnt_setting"],
         )
         pop_data = PopulationData(
             data=df_pop,
@@ -705,9 +707,9 @@ class TestStratificationOrdering:
         # Use cached df_full (same snapshot used during load()) for consistency
         df = dataloader.df_full
         sex_part_codes = df["sex_part"].cat.codes.to_numpy()
-        sex_cnt_codes = df["sex_cnt"].cat.codes.to_numpy()
+        sex_cnt_codes = df["cnt_sex"].cat.codes.to_numpy()
         setting_part_codes = df["setting_part"].cat.codes.to_numpy()
-        setting_cnt_codes = df["setting_cnt"].cat.codes.to_numpy()
+        setting_cnt_codes = df["cnt_setting"].cat.codes.to_numpy()
 
         # Vectorised flat_ix check
         sex_ix = sex_part_codes * 2 + sex_cnt_codes
@@ -717,9 +719,9 @@ class TestStratificationOrdering:
 
         # Vectorised label lookup check
         sex_part_vals = df["sex_part"].to_numpy().astype(str)
-        sex_cnt_vals = df["sex_cnt"].to_numpy().astype(str)
+        sex_cnt_vals = df["cnt_sex"].to_numpy().astype(str)
         setting_part_vals = df["setting_part"].to_numpy().astype(str)
-        setting_cnt_vals = df["setting_cnt"].to_numpy().astype(str)
+        setting_cnt_vals = df["cnt_setting"].to_numpy().astype(str)
 
         for i in range(len(df)):
             actual_label = full_labels[flat_ix[i]]
@@ -739,7 +741,7 @@ class TestStratificationOrdering:
         part_data = ParticipantData(
             data=df_part, id_col="id", age_col="age", strat_var_cols=["sex"]
         )
-        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat, age_col="age", strat_var_cols=["sex"], prop_col="Q"
@@ -780,7 +782,7 @@ class TestStratificationOrdering:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
         pop_data = PopulationData(data=df_pop, age_col="age", size_col="P")
         strat_prop_data = StratificationData(
             data=df_strat,

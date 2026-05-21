@@ -285,7 +285,7 @@ def _preprocess(
     if age_max_col:
         rename_map[age_max_col] = "age_max"
     if age_grp_col:
-        rename_map[age_grp_col] = "age_grp_pop"
+        rename_map[age_grp_col] = "pop_age_grp"
 
     df = df.rename(columns=rename_map)
 
@@ -293,7 +293,7 @@ def _preprocess(
     if age_col:
         sort_cols = ["age"]
     elif age_grp_col:
-        sort_cols = ["age_grp_pop"]
+        sort_cols = ["pop_age_grp"]
     else:
         sort_cols = ["age_min", "age_max"]
 

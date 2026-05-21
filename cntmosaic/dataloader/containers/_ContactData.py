@@ -346,17 +346,17 @@ class ContactData:
                 f"Currently using 'age_grp_col': {self.age_grp_col}"
             )
 
-        ages = self.data["age_cnt"]
+        ages = self.data["cnt_age"]
         return (float(ages.min()), float(ages.max()))
 
-    def get_strat_vars(self, suffix: bool = False) -> List[str]:
+    def get_strat_vars(self, prefix: bool = False) -> List[str]:
         """
-        Return list of stratification variable names, optionally with _cnt suffix.
+        Return list of stratification variable names, optionally with cnt_ prefix.
 
         Parameters
         ----------
-        suffix : bool, default=True
-            If True, return stratification variable names with '_cnt' suffix.
+        prefix : bool, default=False
+            If True, return stratification variable names with 'cnt_' prefix.
             If False, return original stratification variable names.
 
         Returns
@@ -367,21 +367,21 @@ class ContactData:
         Examples
         --------
         >>> cnt_data = ContactData(df, 'id', age_col='contact_age', strat_var_cols=['setting', 'duration'])
-        >>> cnt_data.get_strat_vars(suffix=True)
-        ['setting_cnt', 'duration_cnt']
-        >>> cnt_data.get_strat_vars(suffix=False)
+        >>> cnt_data.get_strat_vars(prefix=True)
+        ['cnt_setting', 'cnt_duration']
+        >>> cnt_data.get_strat_vars(prefix=False)
         ['setting', 'duration']
         """
         if not self.strat_var_cols:
             return []
 
-        if suffix:
+        if prefix:
             return [
-                f"{var}_cnt" if not var.endswith("_cnt") else var
+                f"cnt_{var}" if not var.startswith("cnt_") else var
                 for var in self.strat_var_cols
             ]
         else:
-            return [var.removesuffix("_cnt") for var in self.strat_var_cols]
+            return [var.removeprefix("cnt_") for var in self.strat_var_cols]
 
     def get_strat_var_schema(self) -> Dict[str, Dict[str, List[str | int]]]:
         """
@@ -397,19 +397,15 @@ class ContactData:
             values and their corresponding codes.
         """
         schema = {}
-        if self.strat_var_cols is None:
+        if not self.strat_var_cols:
             return schema
 
-        else:
-            for var in self.strat_var_cols:
-                var_cnt = f"{var}_cnt" if not var.endswith("_cnt") else var
-                if var_cnt in self.data.columns:
-                    categories = self.data[var_cnt].cat.categories.tolist()
-                    codes = sorted(self.data[var_cnt].cat.codes.unique().tolist())
+        for var in self.strat_var_cols:
+            var_cnt = f"cnt_{var}" if not var.startswith("cnt_") else var
+            if var_cnt in self.data.columns:
+                categories = self.data[var_cnt].cat.categories.tolist()
+                codes = sorted(self.data[var_cnt].cat.codes.unique().tolist())
+                bare = var.removeprefix("cnt_")
+                schema[bare] = {"categories": categories, "codes": codes}
 
-                    var = (
-                        var.removesuffix("_cnt") if var.endswith("_cnt") else var
-                    )  # Remove suffix
-                    schema[var] = {"categories": categories, "codes": codes}
-
-            return schema
+        return schema

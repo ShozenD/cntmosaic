@@ -68,8 +68,8 @@ class SocialMixDataLoader:
         Calculate and store stratification dimensions.
         """
         # Get age group dimensions
-        self.sm.C = len(self.sm.part_data.data["age_grp_part"].cat.categories)
-        self.sm.D = len(self.sm.cnt_data.data["age_grp_cnt"].cat.categories)
+        self.sm.C = len(self.sm.part_data.data["part_age_grp"].cat.categories)
+        self.sm.D = len(self.sm.cnt_data.data["cnt_age_grp"].cat.categories)
 
         # Calculate K_part: number of participant strata
         if self.sm.strat_vars_part:
@@ -98,20 +98,20 @@ class SocialMixDataLoader:
             - Shape (K_part, C) if K_part > 1 (stratified)
         """
         df_part = self.sm.part_data.data
-        age_grps_part = df_part["age_grp_part"].cat.categories
+        age_grps_part = df_part["part_age_grp"].cat.categories
 
         if self.sm.K_part == 1:
             # No stratification: simple count by age group
             counts = (
-                df_part.groupby("age_grp_part", observed=False)
+                df_part.groupby("part_age_grp", observed=False)
                 .size()
                 .reindex(pd.Index(age_grps_part), fill_value=0)
             )
             self.sm.N = counts.values.astype(np.int64)
         else:
             # Stratified: group by strat vars + age
-            group_cols = [f"{var}_part" for var in self.sm.strat_vars_part] + [
-                "age_grp_part"
+            group_cols = [f"part_{var}" for var in self.sm.strat_vars_part] + [
+                "part_age_grp"
             ]
             counts = df_part.groupby(group_cols, observed=False).size()
 
@@ -136,12 +136,12 @@ class SocialMixDataLoader:
         """
         df_part = self.sm.part_data.data
         df_cnt = self.sm.cnt_data.data
-        age_grps_part = df_part["age_grp_part"].cat.categories
-        age_grps_cnt = df_cnt["age_grp_cnt"].cat.categories
+        age_grps_part = df_part["part_age_grp"].cat.categories
+        age_grps_cnt = df_cnt["cnt_age_grp"].cat.categories
 
         # Merge participants with contacts
-        part_cols = ["id", "age_grp_part"] + [
-            f"{v}_part" for v in self.sm.strat_vars_part
+        part_cols = ["id", "part_age_grp"] + [
+            f"part_{v}" for v in self.sm.strat_vars_part
         ]
         merged = df_cnt.merge(df_part[part_cols], on="id", how="inner")
 
@@ -154,7 +154,7 @@ class SocialMixDataLoader:
         if self.sm.K_part == 1 and self.sm.K_cnt == 1:
             # No stratification: simple (C, D) matrix
             Y_agg = (
-                merged.groupby(["age_grp_part", "age_grp_cnt"], observed=False)["y"]
+                merged.groupby(["part_age_grp", "cnt_age_grp"], observed=False)["y"]
                 .sum()
                 .unstack(fill_value=0)
             )
@@ -167,9 +167,9 @@ class SocialMixDataLoader:
 
         elif self.sm.K_part > 1 and self.sm.K_cnt == 1:
             # Partial stratification: (K_part, C, D) tensor
-            group_cols = [f"{v}_part" for v in self.sm.strat_vars_part] + [
-                "age_grp_part",
-                "age_grp_cnt",
+            group_cols = [f"part_{v}" for v in self.sm.strat_vars_part] + [
+                "part_age_grp",
+                "cnt_age_grp",
             ]
             Y_agg = merged.groupby(group_cols, observed=False)["y"].sum()
 
@@ -184,10 +184,10 @@ class SocialMixDataLoader:
         else:
             # Full/mixed stratification: (K_part, K_cnt, C, D) tensor
             group_cols = (
-                [f"{v}_part" for v in self.sm.strat_vars_part]
-                + ["age_grp_part"]
-                + [f"{v}_cnt" for v in self.sm.strat_vars_cnt]
-                + ["age_grp_cnt"]
+                [f"part_{v}" for v in self.sm.strat_vars_part]
+                + ["part_age_grp"]
+                + [f"cnt_{v}" for v in self.sm.strat_vars_cnt]
+                + ["cnt_age_grp"]
             )
             Y_agg = merged.groupby(group_cols, observed=False)["y"].sum()
 
@@ -306,11 +306,11 @@ class SocialMixDataLoader:
             # Full mode: (K_part, K_cnt, C, D)
             # Get categorical codes for all dimensions
             for var in strat_vars_part:
-                df[f"{var}_part_code"] = df[f"{var}_part"].cat.codes
+                df[f"{var}_part_code"] = df[f"part_{var}"].cat.codes
             for var in strat_vars_cnt:
-                df[f"{var}_cnt_code"] = df[f"{var}_cnt"].cat.codes
-            df["age_grp_part_code"] = df["age_grp_part"].cat.codes
-            df["age_grp_cnt_code"] = df["age_grp_cnt"].cat.codes
+                df[f"{var}_cnt_code"] = df[f"cnt_{var}"].cat.codes
+            df["part_age_grp_code"] = df["part_age_grp"].cat.codes
+            df["cnt_age_grp_code"] = df["cnt_age_grp"].cat.codes
 
             # Create composite stratum codes
             df["k_part"] = self._create_composite_index(
@@ -329,17 +329,17 @@ class SocialMixDataLoader:
                 arr[
                     int(row["k_part"]),
                     int(row["k_cnt"]),
-                    int(row["age_grp_part_code"]),
-                    int(row["age_grp_cnt_code"]),
+                    int(row["part_age_grp_code"]),
+                    int(row["cnt_age_grp_code"]),
                 ] = row["value"]
 
         elif has_contact_age:
             # Partial mode: (K_part, C, D)
             for var in strat_vars:
-                col_name = f"{var}_{suffix}" if suffix else var
+                col_name = f"{suffix}_{var}" if suffix else var
                 df[f"{var}_code"] = df[col_name].cat.codes
-            df["age_grp_part_code"] = df["age_grp_part"].cat.codes
-            df["age_grp_cnt_code"] = df["age_grp_cnt"].cat.codes
+            df["part_age_grp_code"] = df["part_age_grp"].cat.codes
+            df["cnt_age_grp_code"] = df["cnt_age_grp"].cat.codes
 
             # Create composite stratum code
             df["k"] = self._create_composite_index(
@@ -352,19 +352,19 @@ class SocialMixDataLoader:
             for _, row in df.iterrows():
                 arr[
                     int(row["k"]),
-                    int(row["age_grp_part_code"]),
-                    int(row["age_grp_cnt_code"]),
+                    int(row["part_age_grp_code"]),
+                    int(row["cnt_age_grp_code"]),
                 ] = row["value"]
 
         else:
             # Simple stratified: (K, C) or (K, D)
             for var in strat_vars:
-                col_name = f"{var}_{suffix}" if suffix else var
+                col_name = f"{suffix}_{var}" if suffix else var
                 df[f"{var}_code"] = df[col_name].cat.codes
 
             # Determine age column name
-            if "age_grp_part" in df.columns:
-                age_col = "age_grp_part"
+            if "part_age_grp" in df.columns:
+                age_col = "part_age_grp"
             elif "age_grp" in df.columns:
                 age_col = "age_grp"
             else:

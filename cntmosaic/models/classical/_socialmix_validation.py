@@ -129,8 +129,8 @@ class SocialMixValidator:
 
     def _extract_strat_vars(self) -> None:
         """Extract stratification variables from data containers."""
-        self.strat_vars_part = self.part_data.get_strat_vars(suffix=False)
-        self.strat_vars_cnt = self.cnt_data.get_strat_vars(suffix=False)
+        self.strat_vars_part = self.part_data.get_strat_vars(prefix=False)
+        self.strat_vars_cnt = self.cnt_data.get_strat_vars(prefix=False)
         self.strat_vars_pop = (
             self.pop_data.get_strat_vars(suffix=False)
             if self.pop_data is not None
@@ -250,8 +250,8 @@ class SocialMixValidator:
         """
         for var in self.strat_vars_shared:
             # Get column names
-            col_part = f"{var}_part"
-            col_cnt = f"{var}_cnt"
+            col_part = f"part_{var}"
+            col_cnt = f"cnt_{var}"
 
             # Get categories from both sides
             part_col = self.part_data.data[col_part]
@@ -349,7 +349,7 @@ class SocialMixValidator:
         modify the age bins.
         """
         # Determine grouping columns based on stratification
-        group_cols = [f"{var}_part" for var in self.strat_vars_part] + ["age_grp_part"]
+        group_cols = [f"part_{var}" for var in self.strat_vars_part] + ["part_age_grp"]
 
         # Compute counts for all (stratum, age_group) combinations
         if self.strat_vars_part:
@@ -360,12 +360,12 @@ class SocialMixValidator:
 
             # For each age group, find minimum count across all strata
             age_min_counts = strata_age_counts.groupby(
-                "age_grp_part", observed=False
+                "part_age_grp", observed=False
             ).min()
 
             # Reindex to ensure all age groups present
             age_min_counts = age_min_counts.reindex(
-                pd.Index(self.part_data.data["age_grp_part"].cat.categories),
+                pd.Index(self.part_data.data["part_age_grp"].cat.categories),
                 fill_value=0,
             )
 
@@ -373,10 +373,10 @@ class SocialMixValidator:
         else:
             # No stratification: simple age group counts
             age_grp_counts = (
-                self.part_data.data.groupby("age_grp_part", observed=False)
+                self.part_data.data.groupby("part_age_grp", observed=False)
                 .size()
                 .reindex(
-                    pd.Index(self.part_data.data["age_grp_part"].cat.categories),
+                    pd.Index(self.part_data.data["part_age_grp"].cat.categories),
                     fill_value=0,
                 )
             )
@@ -401,21 +401,21 @@ class SocialMixValidator:
                             group_cols, observed=False
                         ).size()
                         age_min_counts = strata_age_counts.groupby(
-                            "age_grp_part", observed=False
+                            "part_age_grp", observed=False
                         ).min()
                         age_min_counts = age_min_counts.reindex(
                             pd.Index(
-                                self.part_data.data["age_grp_part"].cat.categories
+                                self.part_data.data["part_age_grp"].cat.categories
                             ),
                             fill_value=0,
                         )
                     else:
                         age_min_counts = (
-                            self.part_data.data.groupby("age_grp_part", observed=False)
+                            self.part_data.data.groupby("part_age_grp", observed=False)
                             .size()
                             .reindex(
                                 pd.Index(
-                                    self.part_data.data["age_grp_part"].cat.categories
+                                    self.part_data.data["part_age_grp"].cat.categories
                                 ),
                                 fill_value=0,
                             )
@@ -429,34 +429,32 @@ class SocialMixValidator:
                     # Reassign age groups
                     df_part_updated = self.age_processor.reassign_age_groups(
                         self.part_data.data,
-                        age_grp_col="age_grp_part",
+                        age_grp_col="part_age_grp",
                         merged_intervals=merged_intervals,
-                        new_group_col="age_grp_part",
+                        new_group_col="part_age_grp",
                     )
 
                     df_cnt_updated = self.age_processor.reassign_age_groups(
                         self.cnt_data.data,
-                        age_grp_col="age_grp_cnt",
+                        age_grp_col="cnt_age_grp",
                         merged_intervals=merged_intervals,
-                        new_group_col="age_grp_cnt",
+                        new_group_col="cnt_age_grp",
                     )
 
                     # Update data containers
                     self.part_data = ParticipantData(
                         df_part_updated,
                         id_col=self.part_data.id_col,
-                        age_col=None,
-                        age_grp_col="age_grp_part",
-                        strat_var_cols=self.part_data.get_strat_vars(suffix=True),
+                        part_age_grp_col="part_age_grp",
+                        part_strat_var_cols=self.part_data.get_strat_vars(prefix=True),
                     )
 
                     self.cnt_data = ContactData(
                         df_cnt_updated,
                         id_col=self.cnt_data.id_col,
-                        age_col=None,
-                        age_grp_col="age_grp_cnt",
+                        cnt_age_grp_col="cnt_age_grp",
                         cnt_col=self.cnt_data.cnt_col,
-                        strat_var_cols=self.cnt_data.get_strat_vars(suffix=True),
+                        cnt_strat_var_cols=self.cnt_data.get_strat_vars(prefix=True),
                     )
 
                     # Update age bins
@@ -471,11 +469,11 @@ class SocialMixValidator:
                             group_cols, observed=False
                         ).size()
                         age_min_counts = strata_age_counts.groupby(
-                            "age_grp_part", observed=False
+                            "part_age_grp", observed=False
                         ).min()
                         age_min_counts = age_min_counts.reindex(
                             pd.Index(
-                                self.part_data.data["age_grp_part"].cat.categories
+                                self.part_data.data["part_age_grp"].cat.categories
                             ),
                             fill_value=0,
                         )
@@ -484,11 +482,11 @@ class SocialMixValidator:
                         ].index.tolist()
                     else:
                         age_grp_counts = (
-                            self.part_data.data.groupby("age_grp_part", observed=False)
+                            self.part_data.data.groupby("part_age_grp", observed=False)
                             .size()
                             .reindex(
                                 pd.Index(
-                                    self.part_data.data["age_grp_part"].cat.categories
+                                    self.part_data.data["part_age_grp"].cat.categories
                                 ),
                                 fill_value=0,
                             )
@@ -535,7 +533,7 @@ class SocialMixValidator:
         - self.age_group_specs (merged bins)
         """
         # Determine grouping columns based on stratification
-        group_cols = [f"{var}_part" for var in self.strat_vars_part] + ["age_grp_part"]
+        group_cols = [f"part_{var}" for var in self.strat_vars_part] + ["part_age_grp"]
 
         # Compute counts for all (stratum, age_group) combinations
         if self.strat_vars_part:
@@ -547,12 +545,12 @@ class SocialMixValidator:
             # For each age group, find minimum count across all strata
             # An age group is problematic if it's empty (count=0) in ANY stratum
             age_min_counts = strata_age_counts.groupby(
-                "age_grp_part", observed=False
+                "part_age_grp", observed=False
             ).min()
 
             # Reindex to ensure all age groups present
             age_min_counts = age_min_counts.reindex(
-                pd.Index(self.part_data.data["age_grp_part"].cat.categories),
+                pd.Index(self.part_data.data["part_age_grp"].cat.categories),
                 fill_value=0,
             )
 
@@ -560,10 +558,10 @@ class SocialMixValidator:
         else:
             # No stratification: simple age group counts
             age_grp_counts = (
-                self.part_data.data.groupby("age_grp_part", observed=False)
+                self.part_data.data.groupby("part_age_grp", observed=False)
                 .size()
                 .reindex(
-                    pd.Index(self.part_data.data["age_grp_part"].cat.categories),
+                    pd.Index(self.part_data.data["part_age_grp"].cat.categories),
                     fill_value=0,
                 )
             )
@@ -582,18 +580,18 @@ class SocialMixValidator:
                     strata_age_counts = self.part_data.data.groupby(
                         group_cols, observed=False
                     ).size()
-                    age_min_counts = strata_age_counts.groupby("age_grp_part", observed=False).min()
+                    age_min_counts = strata_age_counts.groupby("part_age_grp", observed=False).min()
                     age_min_counts = age_min_counts.reindex(
-                        pd.Index(self.part_data.data["age_grp_part"].cat.categories),
+                        pd.Index(self.part_data.data["part_age_grp"].cat.categories),
                         fill_value=0,
                     )
                 else:
                     age_min_counts = (
-                        self.part_data.data.groupby("age_grp_part", observed=False)
+                        self.part_data.data.groupby("part_age_grp", observed=False)
                         .size()
                         .reindex(
                             pd.Index(
-                                self.part_data.data["age_grp_part"].cat.categories
+                                self.part_data.data["part_age_grp"].cat.categories
                             ),
                             fill_value=0,
                         )
@@ -650,16 +648,16 @@ class SocialMixValidator:
         # Reassign age groups in participant and contact data
         df_part_updated = self.age_processor.reassign_age_groups(
             self.part_data.data,
-            age_grp_col="age_grp_part",
+            age_grp_col="part_age_grp",
             merged_intervals=merged_intervals,
-            new_group_col="age_grp_part",
+            new_group_col="part_age_grp",
         )
 
         df_cnt_updated = self.age_processor.reassign_age_groups(
             self.cnt_data.data,
-            age_grp_col="age_grp_cnt",
+            age_grp_col="cnt_age_grp",
             merged_intervals=merged_intervals,
-            new_group_col="age_grp_cnt",
+            new_group_col="cnt_age_grp",
         )
 
         # Create new data containers with updated dataframes
@@ -667,7 +665,7 @@ class SocialMixValidator:
             df_part_updated,
             id_col=self.part_data.id_col,
             age_col=None,
-            age_grp_col="age_grp_part",
+            age_grp_col="part_age_grp",
             strat_var_cols=self.part_data.strat_var_cols,
         )
 
@@ -675,7 +673,7 @@ class SocialMixValidator:
             df_cnt_updated,
             id_col=self.cnt_data.id_col,
             age_col=None,
-            age_grp_col="age_grp_cnt",
+            age_grp_col="cnt_age_grp",
             cnt_col=self.cnt_data.cnt_col,
             strat_var_cols=self.cnt_data.strat_var_cols,
         )
@@ -733,48 +731,45 @@ class SocialMixValidator:
             # Reassign age groups and recalculate counts
             df_part_updated = self.age_processor.reassign_age_groups(
                 self.part_data.data,
-                age_grp_col="age_grp_part",
+                age_grp_col="part_age_grp",
                 merged_intervals=merged_intervals,
-                new_group_col="age_grp_part",
+                new_group_col="part_age_grp",
             )
 
             df_cnt_updated = self.age_processor.reassign_age_groups(
                 self.cnt_data.data,
-                age_grp_col="age_grp_cnt",
+                age_grp_col="cnt_age_grp",
                 merged_intervals=merged_intervals,
-                new_group_col="age_grp_cnt",
+                new_group_col="cnt_age_grp",
             )
 
             # Create new data containers with updated dataframes
-            # Note: strat_var_cols=None allows auto-detection from columns with _part/_cnt suffix
             self.part_data = ParticipantData(
                 df_part_updated,
                 id_col=self.part_data.id_col,
-                age_col=None,
-                age_grp_col="age_grp_part",
-                strat_var_cols=[f"{var}_part" for var in self.strat_vars_part],
+                part_age_grp_col="part_age_grp",
+                part_strat_var_cols=[f"part_{var}" for var in self.strat_vars_part],
             )
 
             self.cnt_data = ContactData(
                 df_cnt_updated,
                 id_col=self.cnt_data.id_col,
-                age_col=None,
-                age_grp_col="age_grp_cnt",
+                cnt_age_grp_col="cnt_age_grp",
                 cnt_col=self.cnt_data.cnt_col,
-                strat_var_cols=[f"{var}_cnt" for var in self.strat_vars_cnt],
+                cnt_strat_var_cols=[f"cnt_{var}" for var in self.strat_vars_cnt],
             )
 
             # Update validator's stratification tracking to match new containers
-            self.strat_vars_part = self.part_data.get_strat_vars(suffix=False)
-            self.strat_vars_cnt = self.cnt_data.get_strat_vars(suffix=False)
+            self.strat_vars_part = self.part_data.get_strat_vars(prefix=False)
+            self.strat_vars_cnt = self.cnt_data.get_strat_vars(prefix=False)
 
             # Rebuild group_cols with updated stratification info
             if self.strat_vars_part:
-                group_cols = [f"{var}_part" for var in self.strat_vars_part] + [
-                    "age_grp_part"
+                group_cols = [f"part_{var}" for var in self.strat_vars_part] + [
+                    "part_age_grp"
                 ]
             else:
-                group_cols = ["age_grp_part"]
+                group_cols = ["part_age_grp"]
 
             # Update current state
             current_intervals = merged_intervals
@@ -785,10 +780,10 @@ class SocialMixValidator:
                     group_cols, observed=False
                 ).size()
                 age_min_counts = strata_age_counts.groupby(
-                    "age_grp_part", observed=False
+                    "part_age_grp", observed=False
                 ).min()
                 age_min_counts = age_min_counts.reindex(
-                    pd.Index(self.part_data.data["age_grp_part"].cat.categories),
+                    pd.Index(self.part_data.data["part_age_grp"].cat.categories),
                     fill_value=0,
                 )
                 current_counts = age_min_counts.values.copy()
@@ -798,10 +793,10 @@ class SocialMixValidator:
                 failure_prob = np.sum(failure_probs)
             else:
                 age_min_counts = (
-                    self.part_data.data.groupby("age_grp_part", observed=False)
+                    self.part_data.data.groupby("part_age_grp", observed=False)
                     .size()
                     .reindex(
-                        pd.Index(self.part_data.data["age_grp_part"].cat.categories),
+                        pd.Index(self.part_data.data["part_age_grp"].cat.categories),
                         fill_value=0,
                     )
                 )

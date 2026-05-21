@@ -54,7 +54,7 @@ class ContactGenerator:
     >>> contact_gen = ContactGenerator(participants, matrices)
     >>> contacts = contact_gen.generate(seed=42)
     >>> print(contacts.head())
-       id  age_cnt   y
+       id  cnt_age   y
     0   1        2  12
     1   1        3   8
     2   1        4   3
@@ -80,7 +80,7 @@ class ContactGenerator:
     >>> contact_gen = ContactGenerator(participants, matrices)
     >>> contacts = contact_gen.generate(seed=42)
     >>> print(contacts.head())
-       id  age_cnt   y
+       id  cnt_age   y
     0   1        2  15
     1   1        3   9
     2   2        1   6
@@ -108,16 +108,16 @@ class ContactGenerator:
     >>> contact_gen = ContactGenerator(participants, matrices)
     >>> contacts = contact_gen.generate(seed=42)
     >>> print(contacts.head())
-       id  age_cnt region_cnt   y
-    0   1        2      Urban  12
-    1   1        3      Urban   8
-    2   1        1      Rural   3
-    3   2        0      Urban   7
-    4   2        2      Rural   5
+       id  cnt_age  cnt_region   y
+    0   1        2       Urban  12
+    1   1        3       Urban   8
+    2   1        1       Rural   3
+    3   2        0       Urban   7
+    4   2        2       Rural   5
     >>>
     >>> # Urban participants have contacts with both Urban and Rural strata
-    >>> print(contacts[contacts['id'] == 1]['region_cnt'].value_counts())
-    region_cnt
+    >>> print(contacts[contacts['id'] == 1]['cnt_region'].value_counts())
+    cnt_region
     Urban    3
     Rural    2
     """
@@ -397,8 +397,8 @@ class ContactGenerator:
         -------
         pd.DataFrame
                 Contact data with columns:
-                - ['id', 'age_cnt', 'y'] for single or partial case
-                - ['id', 'age_cnt', '{strat_col_name}_cnt', 'y'] for full case
+                - ['id', 'cnt_age', 'y'] for single or partial case
+                - ['id', 'cnt_age', 'cnt_{strat_col_name}', 'y'] for full case
         """
         # Get age groups for all participants
         age_groups = df_part["age"].astype(int).values
@@ -453,7 +453,7 @@ class ContactGenerator:
                         # Single stratification
                         row_data = [
                             participant_id,
-                            age_cnt,
+                            int(age_cnt),
                             target_label,
                             contact_count,
                         ]
@@ -466,23 +466,23 @@ class ContactGenerator:
         if target_label is not None:
             # For multi-stratification, create separate columns
             if len(self.strat_columns) > 1:
-                strat_cnt_cols = [f"{col}_cnt" for col in self.strat_columns]
-                columns = ["id", "age_cnt"] + strat_cnt_cols + ["y"]
+                strat_cnt_cols = [f"cnt_{col}" for col in self.strat_columns]
+                columns = ["id", "cnt_age"] + strat_cnt_cols + ["y"]
             else:
                 # Single stratification
                 strat_cnt_col = (
-                    f"{strat_col_name}_cnt" if strat_col_name else "stratum_cnt"
+                    f"cnt_{strat_col_name}" if strat_col_name else "cnt_stratum"
                 )
-                columns = ["id", "age_cnt", strat_cnt_col, "y"]
+                columns = ["id", "cnt_age", strat_cnt_col, "y"]
         else:
-            columns = ["id", "age_cnt", "y"]
+            columns = ["id", "cnt_age", "y"]
 
         df = pd.DataFrame(data, columns=columns)
 
-        # Ensure integer types for id, age_cnt, and y columns
+        # Ensure integer types for id, cnt_age, and y columns
         # This is important when data is empty or when pd.concat mixes types
         if len(df) > 0:
-            df["age_cnt"] = df["age_cnt"].astype(int)
+            df["cnt_age"] = df["cnt_age"].astype(int)
             df["y"] = df["y"].astype(int)
 
         return df
@@ -516,7 +516,7 @@ class ContactGenerator:
         >>> # Single population
         >>> contacts = contact_gen.generate(seed=42)
         >>> print(contacts.head())
-           id  age_cnt   y
+           id  cnt_age   y
         0   1        2  12
         1   1        3   8
         2   2        1   5
@@ -524,7 +524,7 @@ class ContactGenerator:
         >>> # Partial case (multiple subgroups, contacts with general population)
         >>> contacts = contact_gen.generate(seed=42)
         >>> print(contacts.head())
-           id  age_cnt   y
+           id  cnt_age   y
         0   1        2  15
         1   1        3   9
         2   2        1   6
@@ -534,12 +534,12 @@ class ContactGenerator:
         >>> # Full case (all subgroup interactions)
         >>> contacts = contact_gen.generate(seed=42)
         >>> print(contacts.head())
-           id  age_cnt subgroup_cnt   y
-        0   1        2        urban  12
-        1   1        3        urban   8
-        2   1        1        rural   3
-        3   2        0        urban   7
-        4   2        2        rural   5
+           id  cnt_age  cnt_subgroup   y
+        0   1        2         urban  12
+        1   1        3         urban   8
+        2   1        1         rural   3
+        3   2        0         urban   7
+        4   2        2         rural   5
 
         Notes
         -----
@@ -805,7 +805,7 @@ class ContactGenerator:
             # Aggregate contacts
             for _, row in contacts_with_age.iterrows():
                 age_from = int(row["age"])
-                age_to = int(row["age_cnt"])
+                age_to = int(row["cnt_age"])
                 empirical[age_from, age_to] += row["y"]
 
             # Normalize if requested
@@ -837,13 +837,13 @@ class ContactGenerator:
                         target_parts = target_label.split("_")
                         contacts_pair = contacts.copy()
                         for i, col in enumerate(self.strat_columns):
-                            col_cnt = f"{col}_cnt"
+                            col_cnt = f"cnt_{col}"
                             contacts_pair = contacts_pair[
                                 contacts_pair[col_cnt] == target_parts[i]
                             ]
                     else:
                         # Single stratification
-                        strat_col_name = f"{self.strat_column}_cnt"
+                        strat_col_name = f"cnt_{self.strat_column}"
                         contacts_pair = contacts[
                             contacts[strat_col_name] == target_label
                         ]
@@ -856,7 +856,7 @@ class ContactGenerator:
                     # Aggregate contacts
                     for _, row in contacts_with_age.iterrows():
                         age_from = int(row["age"])
-                        age_to = int(row["age_cnt"])
+                        age_to = int(row["cnt_age"])
                         empirical[age_from, age_to] += row["y"]
 
                     # Normalize if requested
@@ -890,7 +890,7 @@ class ContactGenerator:
             # Aggregate contacts
             for _, row in contacts_with_age.iterrows():
                 age_from = int(row["age"])
-                age_to = int(row["age_cnt"])
+                age_to = int(row["cnt_age"])
                 empirical[age_from, age_to] += row["y"]
 
             # Normalize if requested

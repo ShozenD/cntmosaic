@@ -28,19 +28,19 @@ class ParticipantData:
     age_col : Optional[str], default=None
         Name of the column containing participant ages as numeric values.
         Use this OR age_grp_col, not both. Ages should be non-negative.
-        Renamed to 'age_part' internally.
+        Renamed to 'part_age' internally.
     age_min_col : Optional[str], default=None
         Name of the column containing minimum age of participants (for age ranges).
         Use this with age_max_col for age range representation. Both are required together.
-        Renamed to 'age_min_part' internally.
+        Renamed to 'part_age_min' internally.
     age_max_col : Optional[str], default=None
         Name of the column containing maximum age of participants (for age ranges).
         Use this with age_min_col for age range representation. Both are required together.
-        Renamed to 'age_max_part' internally.
+        Renamed to 'part_age_max' internally.
     age_grp_col : Optional[str], default=None
         Name of the column containing participant age groups as pd.IntervalIndex.
         Use this OR age_col, not both. Must be categorical with IntervalIndex categories.
-        Renamed to 'age_grp_part' internally.
+        Renamed to 'part_age_grp' internally.
     strat_var_cols : Optional[Union[List[str], str]], default=None
         Stratification variable column name(s) for participants.
         Can be a single string or list of strings. Examples: 'gender', ['gender', 'region'].
@@ -48,7 +48,7 @@ class ParticipantData:
     repeat_col : Optional[str], default=None
         Name of the column indicating repeat interviews/waves.
         Used to track longitudinal data where participants are surveyed multiple times.
-        Renamed to 'repeat_part' internally.
+        Renamed to 'part_repeat' internally.
     amb_cnt_col : Optional[str], default=None
         Name of the column containing ambiguous/group contact counts.
         If None, no ambiguous contact column is added to the DataFrame.
@@ -96,7 +96,7 @@ class ParticipantData:
     (25.0, 52.0)
     >>> # Columns are renamed with standardized names
     >>> list(part_data.data.columns)
-    ['id', 'age_part', 'gender_part']
+    ['id', 'part_age', 'gender_part']
     >>> part_data.data['gender_part'].dtype.name
     'category'
     >>>
@@ -121,12 +121,12 @@ class ParticipantData:
     >>> part_data.get_strat_vars(suffix=True)
     ['gender_part', 'region_part']
     >>> list(part_data.data.columns)
-    ['id', 'age_grp_part', 'gender_part', 'region_part']
+    ['id', 'part_age_grp', 'gender_part', 'region_part']
     >>>
     >>> # Get sample sizes
     >>> sample_sizes = part_data.get_sample_sizes(stratify=True)
     >>> sample_sizes.columns.tolist()
-    ['age_grp_part', 'gender_part', 'region_part', 'N']
+    ['part_age_grp', 'gender_part', 'region_part', 'N']
 
     Notes
     -----
@@ -137,19 +137,19 @@ class ParticipantData:
     3. Converts object-type columns (except ID) to categorical dtype
     4. Renames columns to standardized names:
        - id_col → 'id' (only if id_col != 'id')
-       - age_col → 'age_part' (only if not already ending with '_part')
-       - age_grp_col → 'age_grp_part' (only if not already ending with '_part')
+       - age_col → 'part_age' (only if not already starting with 'part_')
+       - age_grp_col → 'part_age_grp' (only if not already starting with 'part_')
        - Each strat_var_cols → '{var}_part' (only if not already ending with '_part')
-       - repeat_col → 'repeat_part' (only if not already ending with '_part')
+       - repeat_col → 'part_repeat' (only if not already starting with 'part_')
     5. Validates all data constraints
 
     **Processed DataFrame Columns:**
 
     - id: Participant identifier (standardized from id_col)
-    - age_part: Participant age (if using age_col)
-    - age_grp_part: Participant age group (if using age_grp_col)
+    - part_age: Participant age (if using age_col)
+    - part_age_grp: Participant age group (if using age_grp_col)
     - {var}_part: Each stratification variable with _part suffix
-    - repeat_part: Repeat interview indicator (if specified)
+    - part_repeat: Repeat interview indicator (if specified)
     - {amb_cnt_col}: Ambiguous contact count column (only if specified)
 
     **Validation Checks:**
@@ -351,7 +351,7 @@ class ParticipantData:
                 f"Currently using 'age_grp_col': {self.age_grp_col}"
             )
 
-        ages = self.data["age_part"]
+        ages = self.data["part_age"]
         return (float(ages.min()), float(ages.max()))
 
     @property
@@ -463,7 +463,7 @@ class ParticipantData:
         2     20
         ...
         """
-        age_column = "age_part" if self.age_col else "age_grp_part"
+        age_column = "part_age" if self.age_col else "part_age_grp"
         if stratify and self.strat_var_cols:
             group_cols = [age_column] + [f"{var}_part" for var in self.strat_var_cols]
             return (

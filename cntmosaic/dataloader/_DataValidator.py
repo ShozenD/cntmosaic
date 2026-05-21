@@ -91,7 +91,7 @@ class DataValidator:
         populates the part_vars, cnt_vars, pop_vars, and strat_vars attributes.
         """
         self.part_vars = set(self.part_data.get_strat_vars(suffix=False))
-        self.cnt_vars = set(self.cnt_data.get_strat_vars(suffix=False))
+        self.cnt_vars = set(self.cnt_data.get_strat_vars(prefix=False))
         self.pop_vars = set(self.pop_data.get_strat_vars(suffix=False))
         if self.strat_data:
             self.strat_vars = set(self.strat_data.get_strat_vars())
@@ -99,7 +99,7 @@ class DataValidator:
             self.strat_vars = set()
 
         self.part_vars_list = self.part_data.get_strat_vars(suffix=False)
-        self.cnt_vars_list = self.cnt_data.get_strat_vars(suffix=False)
+        self.cnt_vars_list = self.cnt_data.get_strat_vars(prefix=False)
         self.pop_vars_list = self.pop_data.get_strat_vars(suffix=False)
 
         if self.strat_data:
@@ -195,7 +195,7 @@ class DataValidator:
                 stacklevel=3,
             )
             # Reorder contact data to match participant data variable order
-            self.cnt_data.strat_var_cols = [f"{var}_cnt" for var in self.part_vars_list]
+            self.cnt_data.strat_var_cols = [f"cnt_{var}" for var in self.part_vars_list]
 
         # Population must have stratification in FULL mode
         if not self.pop_vars:
@@ -299,8 +299,8 @@ class DataValidator:
                 )
 
             # Reorder categories to match reference
-            self.cnt_data.data[f"{var}_cnt"] = pd.Categorical(
-                self.cnt_data.data[f"{var}_cnt"],
+            self.cnt_data.data[f"cnt_{var}"] = pd.Categorical(
+                self.cnt_data.data[f"cnt_{var}"],
                 categories=reference_cats,
                 ordered=True,
             )

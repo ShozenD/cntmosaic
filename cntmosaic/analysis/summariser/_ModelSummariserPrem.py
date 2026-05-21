@@ -257,7 +257,7 @@ class ModelSummariserPrem:
         # For each shared variable, validate categories and ordering
         for var in part_strat_vars:
             # Get column names
-            col_part = f"{var}_part"
+            col_part = f"part_{var}"
             col_pop = var  # PopulationData uses base variable names
 
             # Get categories from both sides

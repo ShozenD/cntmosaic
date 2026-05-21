@@ -15,8 +15,8 @@ def _build_model(fixture, prior_type):
     # Extract age_min/age_max from the interval column so StratificationData can
     # handle the coarse age groups.
     df_strat = pop_data.data.copy()
-    df_strat["age_min"] = df_strat["age_grp_pop"].apply(lambda x: x.left).astype(int)
-    df_strat["age_max"] = df_strat["age_grp_pop"].apply(lambda x: x.right).astype(int)
+    df_strat["age_min"] = df_strat["pop_age_grp"].apply(lambda x: x.left).astype(int)
+    df_strat["age_max"] = df_strat["pop_age_grp"].apply(lambda x: x.right).astype(int)
     strat_data = StratificationData.from_counts(
         df_strat,
         age_min_col="age_min",

@@ -211,25 +211,25 @@ class SocialMixBootstrap:
         ]
 
         # Assign age groups to participants if not present
-        if "age_grp_part" not in self.part_data.data.columns:
-            if "age_part" in self.part_data.data.columns:
-                ages = self.part_data.data["age_part"]
+        if "part_age_grp" not in self.part_data.data.columns:
+            if "part_age" in self.part_data.data.columns:
+                ages = self.part_data.data["part_age"]
                 age_grps = pd.cut(ages, bins=bin_edges, right=False, labels=intervals)
-                self.part_data.data["age_grp_part"] = age_grps
+                self.part_data.data["part_age_grp"] = age_grps
             else:
                 raise ValueError(
-                    "ParticipantData must have either 'age_part' or 'age_grp_part' column."
+                    "ParticipantData must have either 'part_age' or 'part_age_grp' column."
                 )
 
         # Assign age groups to contacts if not present
-        if "age_grp_cnt" not in self.cnt_data.data.columns:
-            if "age_cnt" in self.cnt_data.data.columns:
-                ages = self.cnt_data.data["age_cnt"]
+        if "cnt_age_grp" not in self.cnt_data.data.columns:
+            if "cnt_age" in self.cnt_data.data.columns:
+                ages = self.cnt_data.data["cnt_age"]
                 age_grps = pd.cut(ages, bins=bin_edges, right=False, labels=intervals)
-                self.cnt_data.data["age_grp_cnt"] = age_grps
+                self.cnt_data.data["cnt_age_grp"] = age_grps
             else:
                 raise ValueError(
-                    "ContactData must have either 'age_cnt' or 'age_grp_cnt' column."
+                    "ContactData must have either 'cnt_age' or 'cnt_age_grp' column."
                 )
 
         # Assign age groups to population if provided
@@ -339,8 +339,8 @@ class SocialMixBootstrap:
             Pre-generated bootstrap sample indices
         """
         # Extract stratification info
-        self.strat_vars_part = self.part_data.get_strat_vars(suffix=False)
-        self.strat_vars_cnt = self.cnt_data.get_strat_vars(suffix=False)
+        self.strat_vars_part = self.part_data.get_strat_vars(prefix=False)
+        self.strat_vars_cnt = self.cnt_data.get_strat_vars(prefix=False)
 
         # Determine stratification mode
         if len(self.strat_vars_part) == 0 and len(self.strat_vars_cnt) == 0:
@@ -353,14 +353,14 @@ class SocialMixBootstrap:
             self.strat_mode = "mixed"
 
         # Get dimensions
-        self.C = len(self.part_data.data["age_grp_part"].cat.categories)
-        self.D = len(self.cnt_data.data["age_grp_cnt"].cat.categories)
+        self.C = len(self.part_data.data["part_age_grp"].cat.categories)
+        self.D = len(self.cnt_data.data["cnt_age_grp"].cat.categories)
 
         # Calculate K_part and K_cnt
         if self.strat_vars_part:
             self.K_part = 1
             for var in self.strat_vars_part:
-                col_name = f"{var}_part"
+                col_name = f"part_{var}"
                 self.K_part *= self.part_data.data[col_name].nunique()
         else:
             self.K_part = 1
@@ -368,7 +368,7 @@ class SocialMixBootstrap:
         if self.strat_vars_cnt:
             self.K_cnt = 1
             for var in self.strat_vars_cnt:
-                col_name = f"{var}_cnt"
+                col_name = f"cnt_{var}"
                 self.K_cnt *= self.cnt_data.data[col_name].nunique()
         else:
             self.K_cnt = 1
@@ -377,7 +377,7 @@ class SocialMixBootstrap:
         Y_raw = self._build_contact_tensor()  # (N, K_cnt, D)
 
         # Extract participant age codes
-        age_codes = self.part_data.data["age_grp_part"].cat.codes.values.astype(
+        age_codes = self.part_data.data["part_age_grp"].cat.codes.values.astype(
             np.int32
         )
 
@@ -414,7 +414,7 @@ class SocialMixBootstrap:
         if self.K_cnt == 1:
             # No contact stratification: aggregate by (id, age_grp_cnt)
             df_agg = (
-                self.cnt_data.data.groupby(["id", "age_grp_cnt"], observed=False)["y"]
+                self.cnt_data.data.groupby(["id", "cnt_age_grp"], observed=False)["y"]
                 .sum()
                 .reset_index()
             )
@@ -422,13 +422,13 @@ class SocialMixBootstrap:
             for _, row in df_agg.iterrows():
                 i = id_to_idx.get(row["id"])
                 if i is not None:
-                    d = row["age_grp_cnt"]
-                    d_code = self.cnt_data.data["age_grp_cnt"].cat.categories.get_loc(d)
+                    d = row["cnt_age_grp"]
+                    d_code = self.cnt_data.data["cnt_age_grp"].cat.categories.get_loc(d)
                     Y_raw[i, 0, d_code] = row["y"]
         else:
             # Contact stratification: aggregate by (id, strat_vars_cnt, age_grp_cnt)
             group_cols = (
-                ["id"] + [f"{v}_cnt" for v in self.strat_vars_cnt] + ["age_grp_cnt"]
+                ["id"] + [f"cnt_{v}" for v in self.strat_vars_cnt] + ["cnt_age_grp"]
             )
             df_agg = (
                 self.cnt_data.data.groupby(group_cols, observed=False)["y"]
@@ -443,12 +443,12 @@ class SocialMixBootstrap:
                 i = id_to_idx.get(row["id"])
                 if i is not None:
                     # Get contact stratum code
-                    strat_tuple = tuple(row[f"{v}_cnt"] for v in self.strat_vars_cnt)
+                    strat_tuple = tuple(row[f"cnt_{v}"] for v in self.strat_vars_cnt)
                     k = cnt_strat_mapping[strat_tuple]
 
                     # Get age code
-                    d = row["age_grp_cnt"]
-                    d_code = self.cnt_data.data["age_grp_cnt"].cat.categories.get_loc(d)
+                    d = row["cnt_age_grp"]
+                    d_code = self.cnt_data.data["cnt_age_grp"].cat.categories.get_loc(d)
 
                     Y_raw[i, k, d_code] = row["y"]
 
@@ -465,7 +465,7 @@ class SocialMixBootstrap:
 
         for i in range(N):
             strat_tuple = tuple(
-                self.part_data.data.iloc[i][f"{v}_part"] for v in self.strat_vars_part
+                self.part_data.data.iloc[i][f"part_{v}"] for v in self.strat_vars_part
             )
             codes[i] = strat_mapping[strat_tuple]
 
@@ -478,7 +478,7 @@ class SocialMixBootstrap:
         # Get all category combinations
         categories = []
         for var in self.strat_vars_part:
-            col_name = f"{var}_part"
+            col_name = f"part_{var}"
             cats = self.part_data.data[col_name].cat.categories.tolist()
             categories.append(cats)
 
@@ -496,7 +496,7 @@ class SocialMixBootstrap:
         # Get all category combinations
         categories = []
         for var in self.strat_vars_cnt:
-            col_name = f"{var}_cnt"
+            col_name = f"cnt_{var}"
             cats = self.cnt_data.data[col_name].cat.categories.tolist()
             categories.append(cats)
 
@@ -743,7 +743,7 @@ class SocialMixBootstrap:
         # Get category combinations for participant strata
         categories = []
         for var in self.strat_vars_part:
-            col_name = f"{var}_part"
+            col_name = f"part_{var}"
             cats = self.part_data.data[col_name].cat.categories.tolist()
             categories.append(cats)
 
@@ -767,7 +767,7 @@ class SocialMixBootstrap:
         # Get category combinations for contact strata
         categories = []
         for var in self.strat_vars_cnt:
-            col_name = f"{var}_cnt"
+            col_name = f"cnt_{var}"
             cats = self.cnt_data.data[col_name].cat.categories.tolist()
             categories.append(cats)
 

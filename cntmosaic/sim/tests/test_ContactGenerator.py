@@ -76,7 +76,7 @@ def test_single(generate_single):
     df_cnt = cnt_gen.generate(seed=0)
 
     assert df_cnt.shape[0] > 0, "No contacts generated in single population case"
-    assert df_cnt.columns.tolist() == ["id", "age_cnt", "y"]
+    assert df_cnt.columns.tolist() == ["id", "cnt_age", "y"]
     assert (
         df_cnt["id"].nunique() <= df_part["id"].nunique()
     ), "More unique IDs in contacts than participants"
@@ -90,7 +90,7 @@ def test_partial(generate_partial):
     df_cnt = cnt_gen.generate(seed=0)
 
     assert df_cnt.shape[0] > 0, "No contacts generated in partial case"
-    assert df_cnt.columns.tolist() == ["id", "age_cnt", "y"]
+    assert df_cnt.columns.tolist() == ["id", "cnt_age", "y"]
     assert (
         df_cnt["id"].nunique() <= df_part["id"].nunique()
     ), "More unique IDs in contacts than participants"
@@ -104,10 +104,10 @@ def test_full(generate_full):
     df_cnt = cnt_gen.generate(seed=0)
 
     assert df_cnt.shape[0] > 0, "No contacts generated in full case"
-    assert df_cnt.columns.tolist() == ["id", "age_cnt", "region_cnt", "y"]
+    assert df_cnt.columns.tolist() == ["id", "cnt_age", "cnt_region", "y"]
     assert (
         df_cnt["id"].nunique() <= df_part["id"].nunique()
     ), "More unique IDs in contacts than participants"
 
     # Check that contacts include both strata
-    assert set(df_cnt["region_cnt"].unique()) == {"Urban", "Rural"}
+    assert set(df_cnt["cnt_region"].unique()) == {"Urban", "Rural"}

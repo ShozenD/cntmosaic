@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import warnings
-from typing import Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 from numpy.typing import NDArray
 
-from ...models import SocialMix
+if TYPE_CHECKING:
+    from ...models import SocialMix
 from ...utils import AgeGroupSpecs, depixilate
-
+from ._summary import ContactSummary
 
 from .._stats import compute_quantiles, validate_alpha
 
@@ -72,9 +75,13 @@ class ModelSummariserSocialMix:
         ValueError
             If model has not been fitted
         """
-        # Validate model has been fitted
+        # Validate model has been fitted and bootstrapped
         if sm.Y is None:
             raise ValueError("SocialMix model has not been fitted")
+        if sm._boot is None:
+            raise ValueError(
+                "Bootstrap has not been run. Call sm.run_inference_bootstrap() first."
+            )
 
         # Store reference to model
         self.sm = sm
@@ -226,205 +233,112 @@ class ModelSummariserSocialMix:
     def summarise_cint(
         self,
         alpha: float = 0.05,
-        return_depixilated: bool = False,
         force_recompute: bool = False,
-    ) -> Dict[str, NDArray]:
+    ) -> Dict[str, ContactSummary]:
         """
-        Compute summary statistics for contact intensity matrix.
-
-        Contact intensity M[c,d] represents the average number of contacts
-        that individuals in age group c have with individuals in age group d.
-
-        Parameters
-        ----------
-        alpha : float, default=0.05
-            Significance level for confidence intervals (e.g., 0.05 for 95% CI)
-        return_depixilated : bool, default=False
-            If True and adaptive merging occurred, return results in original
-            age bins. If False or no merging, return in effective bins.
-        force_recompute : bool, default=False
-            Force recomputation even if cached
+        Compute bootstrap confidence intervals for contact intensity.
 
         Returns
         -------
-        Dict[str, NDArray]
-            Dict mapping stratum labels to NDArray of shape (3, C, D)
-
-        Examples
-        --------
-        >>> # Unstratified
-        >>> summary = summariser.summarise_cint(alpha=0.05)
-        >>> lower, median, upper = summary[0], summary[1], summary[2]
-        >>>
-        >>> # Stratified
-        >>> summary = summariser.summarise_cint(alpha=0.05)
-        >>> lower_MF = summary['M->F'][0]
-        >>> median_MF = summary['M->F'][1]
+        Dict[str, ContactSummary]
+            Dict mapping stratum labels to ContactSummary objects.
         """
         validate_alpha(alpha)
         self._validate_bootstrap()
 
-        # Check cache
-        cache_key = f"cint_alpha{alpha}_depix{return_depixilated}"
+        cache_key = f"cint_alpha{alpha}"
         if not force_recompute and cache_key in self._cache:
             return self._cache[cache_key]
 
-        # Stack bootstrap samples
-        samples = self._stack_samples(self.sm._boot.cint_samples)
+        stacked = self._stack_samples(self.sm._boot.cint_samples)
         probs = _get_ci_probs(alpha)
-
-        # Handle depixilation if needed
-        if return_depixilated:
-            if self.age_dist is None:
-                raise ValueError(
-                    "Population data required for depixilation. "
-                    "Provide pop_data when initializing SocialMix."
-                )
-
-            if "All->All" in samples.keys():
-                samples["All->All"] = self._depixilate_unstratified(
-                    samples["All->All"], use_age_dist=True
-                )
-            else:
-                samples = self._depixilate_stratified(samples, use_age_dist=True)
-
-        # Compute quantiles
-        result = self._compute_quantiles(samples, probs)
-
-        # Cache and return
+        result = {}
+        for label, arr in stacked.items():
+            q = np.quantile(arr, probs, axis=0)
+            result[label] = ContactSummary(
+                lower=q[0],
+                central=q[1],
+                upper=q[2],
+                alpha=alpha,
+                measure="median",
+                age_group_specs=self.sm.age_group_specs,
+            )
         self._cache[cache_key] = result
         return result
 
     def summarise_rate(
         self,
         alpha: float = 0.05,
-        return_depixilated: bool = False,
         force_recompute: bool = False,
-    ) -> Union[Dict[str, NDArray]]:
+    ) -> Dict[str, ContactSummary]:
         """
-        Compute summary statistics for contact rate matrix.
-
-        Contact rate R[c,d] represents the per-capita rate at which
-        individuals in age group c contact individuals in age group d.
-
-        Parameters
-        ----------
-        alpha : float, default=0.05
-            Significance level for confidence intervals
-        return_depixilated : bool, default=False
-            If True and adaptive merging occurred, return results in original
-            age bins. If False or no merging, return in effective bins.
-        force_recompute : bool, default=False
-            Force recomputation even if cached
+        Compute bootstrap confidence intervals for contact rate.
 
         Returns
         -------
-        Dict[str, NDArray]
-            Dict mapping stratum labels to NDArray of shape (3, C, D)
+        Dict[str, ContactSummary]
+            Dict mapping stratum labels to ContactSummary objects.
         """
         validate_alpha(alpha)
         self._validate_bootstrap()
 
-        # Check cache
-        cache_key = f"rate_alpha{alpha}_depix{return_depixilated}"
+        cache_key = f"rate_alpha{alpha}"
         if not force_recompute and cache_key in self._cache:
             return self._cache[cache_key]
 
-        # Stack bootstrap samples
-        samples = self._stack_samples(self.sm._boot.rate_samples)
+        stacked = self._stack_samples(self.sm._boot.rate_samples)
         probs = _get_ci_probs(alpha)
-
-        # Handle depixilation if needed
-        if return_depixilated:
-            if "All->All" in samples.keys():
-                samples = self._depixilate_unstratified(samples, use_age_dist=False)
-            else:
-                samples = self._depixilate_stratified(samples, use_age_dist=False)
-
-        # Compute quantiles
-        result = self._compute_quantiles(samples, probs)
-
-        # Cache and return
+        result = {}
+        for label, arr in stacked.items():
+            q = np.quantile(arr, probs, axis=0)
+            result[label] = ContactSummary(
+                lower=q[0],
+                central=q[1],
+                upper=q[2],
+                alpha=alpha,
+                measure="median",
+                age_group_specs=self.sm.age_group_specs,
+            )
         self._cache[cache_key] = result
         return result
 
     def summarise_mcint(
         self,
         alpha: float = 0.05,
-        return_depixilated: bool = False,
         force_recompute: bool = False,
-    ) -> Union[NDArray, Dict[str, NDArray]]:
+    ) -> Dict[str, ContactSummary]:
         """
-        Compute summary statistics for marginal contact intensity.
+        Compute bootstrap confidence intervals for marginal contact intensity.
 
-        Marginal contact intensity m_c = Σ_d M[c,d] represents the total
-        average number of contacts made by individuals in age group c
-        across all age groups.
-
-        Parameters
-        ----------
-        alpha : float, default=0.05
-            Significance level for confidence intervals
-        return_depixilated : bool, default=False
-            If True and adaptive merging occurred, return results in original
-            age bins. If False or no merging, return in effective bins.
-        force_recompute : bool, default=False
-            Force recomputation even if cached
+        Marginal contact intensity m_c = Σ_d M[c,d] is the total average
+        number of contacts made by individuals in age group c.
 
         Returns
         -------
-        Union[NDArray, Dict[str, NDArray]]
-            For unstratified: NDArray of shape (3, C) with [lower, median, upper]
-            For stratified: Dict mapping stratum labels to NDArray of shape (3, C)
-
-        Notes
-        -----
-        Marginal intensity is computed by summing the intensity matrix
-        over the contact age dimension. When depixilation is needed,
-        we must:
-        1. Depixilate each full intensity matrix sample
-        2. Compute marginals from depixilated matrices
-        3. Then compute quantiles
-
-        This ensures mathematical correctness, as marginals and depixilation
-        don't commute in general.
+        Dict[str, ContactSummary]
+            Dict mapping stratum labels to ContactSummary objects (1-D central arrays).
         """
         validate_alpha(alpha)
         self._validate_bootstrap()
 
-        # Check cache
-        cache_key = f"mcint_alpha{alpha}_depix{return_depixilated}"
+        cache_key = f"mcint_alpha{alpha}"
         if not force_recompute and cache_key in self._cache:
             return self._cache[cache_key]
 
-        # Stack bootstrap samples
-        samples = self._stack_samples(self.sm._boot.cint_samples)
+        stacked = self._stack_samples(self.sm._boot.cint_samples)
         probs = _get_ci_probs(alpha)
-
-        # Handle depixilation if needed
-        if return_depixilated:
-            if self.age_dist is None:
-                raise ValueError(
-                    "Population data required for depixilation. "
-                    "Provide pop_data when initializing SocialMix."
-                )
-
-            if "All->All" in samples.keys():
-                samples = self._depixilate_unstratified(
-                    samples["All->All"], use_age_dist=True
-                )
-            else:
-                samples = self._depixilate_stratified(samples, use_age_dist=True)
-
-        # Compute marginals by summing over contact age (last axis)
-        if isinstance(samples, dict):
-            marginal_samples = {label: s.sum(axis=-1) for label, s in samples.items()}
-            result = self._compute_quantiles_stratified(marginal_samples, probs)
-        else:
-            marginal_samples = samples.sum(axis=-1)
-            result = self._compute_quantiles(marginal_samples, probs)
-
-        # Cache and return
+        result = {}
+        for label, arr in stacked.items():
+            marginal = arr.sum(axis=-1)  # (n_boot, C)
+            q = np.quantile(marginal, probs, axis=0)
+            result[label] = ContactSummary(
+                lower=q[0],
+                central=q[1],
+                upper=q[2],
+                alpha=alpha,
+                measure="median",
+                age_group_specs=self.sm.age_group_specs,
+            )
         self._cache[cache_key] = result
         return result
 
@@ -432,7 +346,7 @@ class ModelSummariserSocialMix:
         """Clear all cached computations."""
         self._cache.clear()
 
-    def get_cache_info(self) -> Dict[str, int]:
+    def get_cache_info(self) -> Dict[str, Any]:
         """
         Get information about cached results.
 

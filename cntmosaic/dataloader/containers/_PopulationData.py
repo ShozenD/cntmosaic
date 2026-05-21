@@ -138,11 +138,11 @@ class PopulationData:
     ...     data=df,
     ...     age_col='age',
     ...     size_col='population',
-    ...     age_grp_col='age_group'
+    ...     pop_age_grp_col='age_group'
     ... )
-    >>> 'age_grp_pop' in pop_data.data.columns
+    >>> 'pop_age_grp' in pop_data.data.columns
     True
-    >>> pop_data.data['age_grp_pop'].dtype
+    >>> pop_data.data['pop_age_grp'].dtype
     dtype('interval[int64, right)')
 
     Notes
@@ -187,7 +187,7 @@ class PopulationData:
     age_col: Optional[str] = None
     age_min_col: Optional[str] = None
     age_max_col: Optional[str] = None
-    age_grp_col: Optional[str] = None
+    pop_age_grp_col: Optional[str] = None
     strat_var_cols: Optional[Union[List[str], str]] = None
 
     def __post_init__(self) -> None:
@@ -229,14 +229,14 @@ class PopulationData:
         # age_col and age_min/max are mutually exclusive.
         # age_grp_col and age_min/max are mutually exclusive.
         _has_exact = self.age_col is not None
-        _has_grp = self.age_grp_col is not None
+        _has_grp = self.pop_age_grp_col is not None
         _has_range = self.age_min_col is not None or self.age_max_col is not None
 
         if not _has_exact and not _has_grp and not _has_range:
             raise ValueError(
                 "Must specify an age representation:\n"
                 "  'age_col' for exact integer ages (e.g., 25, 34, 45),\n"
-                "  'age_grp_col' for age groups (e.g., pd.IntervalIndex or categorical),\n"
+                "  'pop_age_grp_col' for age groups (e.g., pd.IntervalIndex or categorical),\n"
                 "  or both 'age_min_col' and 'age_max_col' for age ranges."
             )
         if _has_exact and _has_range:
@@ -249,8 +249,8 @@ class PopulationData:
         if _has_grp and _has_range:
             raise ValueError(
                 "Age specification forms are mutually exclusive — provide exactly one:\n"
-                "  'age_grp_col' or 'age_min_col'/'age_max_col'.\n"
-                f"  Got: age_grp_col={self.age_grp_col!r}, "
+                "  'pop_age_grp_col' or 'age_min_col'/'age_max_col'.\n"
+                f"  Got: pop_age_grp_col={self.pop_age_grp_col!r}, "
                 f"age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
             )
         if _has_range and (self.age_min_col is None or self.age_max_col is None):
@@ -267,7 +267,7 @@ class PopulationData:
                 self.data,
                 self.age_col,
                 self.size_col,
-                self.age_grp_col,
+                self.pop_age_grp_col,
                 self.strat_var_cols,  # type: ignore
                 self.age_min_col,
                 self.age_max_col,

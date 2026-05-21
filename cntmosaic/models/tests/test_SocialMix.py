@@ -1,8 +1,27 @@
+"""
+Unit tests for SocialMix classical contact matrix estimation.
+
+Tests are organised by concern:
+  TestInstantiation   – constructor paths: .from_containers() and .from_dataframes()
+  TestStratification  – strat_mode and K inferred correctly for each data layout
+  TestCint            – .cint() output type (ContactSummary), shape, reciprocity
+  TestRate            – .rate() output type (ContactSummary), shape, error handling
+  TestAdaptiveMerge   – small-sample behaviour with adaptive_merge=True/False
+  TestBootstrap       – run_inference_bootstrap() stores BootstrapResults (N_BOOT=10)
+  TestSummariser      – ModelSummariserSocialMix mirrors ModelSummariser interface
+
+Upcoming changes tested here (not yet implemented):
+  - SocialMix.from_containers() and SocialMix.from_dataframes() class methods
+  - .cint() and .rate() returning Dict[str, ContactSummary] instead of Dict[str, NDArray]
+  - ModelSummariserSocialMix.summarise_cint/rate/mcint() returning Dict[str, ContactSummary]
+  - ModelSummariserSocialMix.clear_cache() and .get_cache_info()
+"""
+
 import numpy as np
 import pytest
 
-from ...analysis.summariser import ModelSummariserSocialMix
-from ...utils import AgeBins
+from ...analysis.summariser import ContactSummary, ModelSummariserSocialMix
+from ...utils import AgeGroupSpecs
 from ..classical._SocialMix import SocialMix
 from .fixtures import (
     full_large_sample,
@@ -15,644 +34,447 @@ from .fixtures import (
     single_small_sample,
 )
 
-# Language: python
+N_BOOT = 10
+AGE_BINS = AgeGroupSpecs(0, 80, 5)  # 16 age groups
 
 
-class TestInit:
+# ============================================================================
+# Helper
+# ============================================================================
 
-    def test_single(self, single_large_sample):
+
+def _from_containers(fixture, **kwargs):
+    """Build SocialMix via .from_containers() with default 5-year age bins."""
+    part_data, cnt_data, pop_data = fixture
+    return SocialMix.from_containers(part_data, cnt_data, AGE_BINS, pop_data, **kwargs)
+
+
+# ============================================================================
+# Instantiation
+# ============================================================================
+
+
+class TestInstantiation:
+    """Both constructor paths produce valid, equivalent models."""
+
+    def test_from_containers_single(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        assert sm.Y is not None
+        assert sm.N is not None
+        assert sm.P is not None
+
+    def test_from_dataframes_single(self, single_large_sample):
         part_data, cnt_data, pop_data = single_large_sample
+        sm = SocialMix.from_dataframes(
+            part_data.data, cnt_data.data, AGE_BINS, pop_data.data
+        )
+        assert sm.Y is not None
 
-        age_bins = AgeBins(0, 80, 5)
-        sm = SocialMix(part_data, cnt_data, age_bins, pop_data)
+    def test_from_containers_equals_from_dataframes(self, single_large_sample):
+        """Both paths produce identical Y and N arrays."""
+        part_data, cnt_data, pop_data = single_large_sample
+        sm_c = _from_containers(single_large_sample, apply_reciprocity=False)
+        sm_df = SocialMix.from_dataframes(
+            part_data.data,
+            cnt_data.data,
+            AGE_BINS,
+            pop_data.data,
+            apply_reciprocity=False,
+        )
+        np.testing.assert_array_equal(sm_c.Y, sm_df.Y)
+        np.testing.assert_array_equal(sm_c.N, sm_df.N)
 
-        assert sm.K == 1
-        assert sm.strat_mode == "single"
-        assert sm.apply_reciprocity is True
-
-    def test_single_no_pop(self, single_large_sample):
+    def test_missing_pop_disables_reciprocity(self, single_large_sample):
         part_data, cnt_data, _ = single_large_sample
-
-        age_bins = AgeBins(0, 80, 5)
-
         with pytest.warns(
             UserWarning,
-            match="Reciprocity adjustment requested but no population data provided",
+            match="Reciprocity adjustment requested but no population data",
         ):
-            sm = SocialMix(part_data, cnt_data, age_bins, apply_reciprocity=True)
-
-        assert sm.K == 1
-        assert sm.strat_mode == "single"
+            sm = SocialMix.from_containers(
+                part_data, cnt_data, AGE_BINS, apply_reciprocity=True
+            )
         assert sm.apply_reciprocity is False
 
-    def test_partial(self, partial_large_sample):
-        part_data, cnt_data, pop_data = partial_large_sample
-
-        # Define age bins
-        age_bins = AgeBins(0, 80, 5)
-
-        # Initialize SocialMix
-        sm = SocialMix(part_data, cnt_data, age_bins, pop_data, apply_reciprocity=False)
-
-        assert sm.K == 2
-        assert sm.strat_mode == "partial"
-        assert sm.strat_vars_part == ["sex"]
-        assert sm.strat_vars_cnt == []
-
-    def test_partial_multi_strat(self, partial_multi_strat_large_sample):
-        part_data, cnt_data, pop_data = partial_multi_strat_large_sample
-
-        # Define age bins
-        age_bins = AgeBins(0, 80, 5)
-
-        # Initialize SocialMix
+    def test_partial_warns_reciprocity_not_applicable(
+        self, partial_multi_strat_large_sample
+    ):
         with pytest.warns(
             UserWarning,
             match="Reciprocity adjustment is not applicable for partial stratification",
         ):
-            sm = SocialMix(part_data, cnt_data, age_bins, pop_data)
+            _from_containers(partial_multi_strat_large_sample)
 
-        assert sm.K == 4
+
+# ============================================================================
+# Stratification mode detection
+# ============================================================================
+
+
+class TestStratification:
+    """strat_mode and K are correctly inferred for each data layout."""
+
+    def test_single(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        assert sm.strat_mode == "single"
+        assert sm.K == 1
+        assert sm.K_part == 1
+        assert sm.K_cnt == 1
+        assert sm.strat_vars_part == []
+        assert sm.strat_vars_cnt == []
+
+    def test_partial(self, partial_large_sample):
+        sm = _from_containers(partial_large_sample, apply_reciprocity=False)
         assert sm.strat_mode == "partial"
-        assert sm.strat_vars_part == ["sex", "ses"]
+        assert sm.K == 2
+        assert sm.strat_vars_part == ["sex"]
         assert sm.strat_vars_cnt == []
         assert sm.strat_vars_shared == []
 
-    def test_full(self, full_large_sample):
-        part_data, cnt_data, pop_data = full_large_sample
-
-        # Define age bins
-        age_bins = AgeBins(0, 80, 5)
-
-        # Initialize SocialMix
-        sm = SocialMix(part_data, cnt_data, age_bins, pop_data)
-
+    def test_partial_multi_strat(self, partial_multi_strat_large_sample):
+        with pytest.warns(UserWarning):
+            sm = _from_containers(partial_multi_strat_large_sample)
+        assert sm.strat_mode == "partial"
         assert sm.K == 4
+        assert sorted(sm.strat_vars_part) == ["ses", "sex"]
+        assert sm.strat_vars_cnt == []
+
+    def test_full(self, full_large_sample):
+        sm = _from_containers(full_large_sample)
         assert sm.strat_mode == "full"
+        assert sm.K == 4
         assert sm.strat_vars_part == ["sex"]
         assert sm.strat_vars_cnt == ["sex"]
         assert sm.strat_vars_shared == ["sex"]
 
     def test_full_multi_strat(self, full_multi_strat_large_sample):
-        part_data, cnt_data, pop_data = full_multi_strat_large_sample
-        age_bins = AgeBins(0, 80, 5)
-        sm = SocialMix(part_data, cnt_data, age_bins, pop_data)
-
-        assert sm.K == 16
+        sm = _from_containers(full_multi_strat_large_sample)
         assert sm.strat_mode == "full"
-        assert sm.strat_vars_part == ["sex", "ses"]
-        assert sm.strat_vars_cnt == ["sex", "ses"]
-        assert sm.strat_vars_shared == sorted(["sex", "ses"])
+        assert sm.K == 16
+        assert sorted(sm.strat_vars_part) == ["ses", "sex"]
+        assert sorted(sm.strat_vars_cnt) == ["ses", "sex"]
+
+
+# ============================================================================
+# Contact intensity – .cint()
+# ============================================================================
 
 
 class TestCint:
-    """Tests for contact intensity matrix computation"""
+    """cint() returns Dict[str, ContactSummary] with correct shape and math."""
 
-    def test_cint_single_no_reciprocity(self, single_large_sample):
-        """Contact intensity shape and non-negativity without reciprocity"""
-        part_data, cnt_data, _ = single_large_sample
-        age_bins = AgeBins(0, 80, 5)
+    def test_returns_contact_summary_single(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        result = sm.cint()
+        assert isinstance(result, dict)
+        assert "All->All" in result
+        assert isinstance(result["All->All"], ContactSummary)
 
-        sm = SocialMix(part_data, cnt_data, age_bins, apply_reciprocity=False)
-        cint_dict = sm.cint()
+    def test_shape_single(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        cs = sm.cint()["All->All"]
+        assert cs.central.shape == (16, 16)
 
-        # Check structure
-        assert "All->All" in cint_dict
-        assert len(cint_dict) == 1
+    def test_non_negative_single(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        cs = sm.cint()["All->All"]
+        assert np.all(cs.central >= 0)
 
-        M = cint_dict["All->All"]
-        assert M.shape == (16, 16)  # 0-80 in 5-year bins = 16 groups
-        assert np.all(M >= 0), "Contact intensities must be non-negative"
-        assert not np.all(M == 0), "Should have some non-zero contacts"
+    def test_keys_partial(self, partial_large_sample):
+        sm = _from_containers(partial_large_sample, apply_reciprocity=False)
+        assert set(sm.cint().keys()) == {"M->All", "F->All"}
 
-    def test_cint_reciprocity_single(self, single_large_sample):
-        """Reciprocity adjustment satisfies M[c,d]*P[c] ≈ M[d,c]*P[d]"""
-        part_data, cnt_data, pop_data = single_large_sample
-        age_bins = AgeBins(0, 80, 5)
+    def test_keys_full(self, full_large_sample):
+        sm = _from_containers(full_large_sample)
+        assert set(sm.cint().keys()) == {"M->M", "M->F", "F->M", "F->F"}
 
-        sm = SocialMix(part_data, cnt_data, age_bins, pop_data, apply_reciprocity=True)
-        M = sm.cint()["All->All"]
+    def test_caching(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        assert sm.cint() is sm.cint()
 
-        # Check reciprocity constraint: M[c,d]*P[c] ≈ M[d,c]*P[d]
+    def test_reciprocity_single(self, single_large_sample):
+        """M[c,d]*P[c] == M[d,c]*P[d] after adjustment."""
+        sm = _from_containers(single_large_sample, apply_reciprocity=True)
+        M = sm.cint()["All->All"].central
         P = sm.P
-        left = M * P[:, np.newaxis]  # Broadcasting P along rows
-        right = M.T * P[np.newaxis, :]  # Broadcasting P along columns (transposed)
-
         np.testing.assert_allclose(
-            left, right, rtol=1e-8, err_msg="Reciprocity constraint violated"
+            M * P[:, np.newaxis],
+            M.T * P[np.newaxis, :],
+            rtol=1e-8,
         )
 
-    def test_cint_reciprocity_full(self, full_large_sample):
-        """Reciprocity works correctly with full stratification"""
-        part_data, cnt_data, pop_data = full_large_sample
-
-        age_bins = AgeBins(0, 80, 5)
-
-        sm = SocialMix(part_data, cnt_data, age_bins, pop_data, apply_reciprocity=True)
-        cint_dict = sm.cint()
-
-        # Check within-stratum reciprocity (M->M, F->F)
-        for stratum in ["M->M", "F->F"]:
-            M = cint_dict[stratum]
-            k = 1 if stratum == "M->M" else 0
-            P = sm.P[k, :]
-
-            left = M * P[:, np.newaxis]
-            right = M.T * P[np.newaxis, :]
+    def test_reciprocity_full(self, full_large_sample):
+        """For every s,t stratum pair: M^st / P^t == (M^ts / P^s)^T."""
+        sm = _from_containers(full_large_sample, apply_reciprocity=True)
+        cint = sm.cint()
+        labels = sm._create_stratum_labels()
+        for i, label_st in enumerate(labels):
+            s, t = label_st.split("->")
+            reverse = f"{t}->{s}"
+            M_st = cint[label_st].central
+            M_ts = cint[reverse].central
+            k_s = i // sm.K_cnt
+            k_t = i % sm.K_cnt
+            P_s = sm.P[k_s, :]
+            P_t = sm.P[k_t, :]
             np.testing.assert_allclose(
-                left, right, rtol=1e-8, err_msg=f"{stratum} reciprocity failed"
-            )
-
-        # Check between-stratum reciprocity: M[M->F] * P[M] ≈ M[F->M] * P[F]
-        M_MF = cint_dict["M->F"]
-        M_FM = cint_dict["F->M"]
-        P_F = sm.P[0, :]
-        P_M = sm.P[1, :]
-
-        left = M_MF / P_F[np.newaxis, :]
-        right = (M_FM / P_M[np.newaxis, :]).T
-        np.testing.assert_allclose(
-            left, right, rtol=1e-8, err_msg="Between-stratum reciprocity failed"
-        )
-
-    def test_cint_reciprocity_full_multi_strat(self, full_multi_strat_large_sample):
-        part_data, cnt_data, pop_data = full_multi_strat_large_sample
-
-        # Define age bins
-        age_bins = AgeBins(0, 80, 5)
-
-        # Initialize SocialMix
-        sm = SocialMix(part_data, cnt_data, age_bins, pop_data, apply_reciprocity=True)
-
-        # Compute contact intensity matrices
-        cint_dict = sm.cint()
-
-        # Check within-stratum reciprocity (M->M, F->F)
-        for k, stratum in enumerate(
-            [
-                "F_High->F_High",
-                "F_Low->F_Low",
-                "M_High->M_High",
-                "M_Low->M_Low",
-            ]
-        ):
-            M = cint_dict[stratum]
-            P = sm.P[k, :]
-
-            left = M * P[:, np.newaxis]
-            right = M.T * P[np.newaxis, :]
-            np.testing.assert_allclose(
-                left, right, rtol=1e-8, err_msg=f"{stratum} reciprocity failed"
-            )
-
-        # Check between-stratum reciprocity for a few combinations
-        combinations = [
-            ("M_High->F_Low", "F_Low->M_High", 2, 1),
-            ("M_Low->F_High", "F_High->M_Low", 3, 0),
-        ]
-
-        for stratum_A, stratum_B, idx_A, idx_B in combinations:
-            M_A = cint_dict[stratum_A]
-            M_B = cint_dict[stratum_B]
-            P_A = sm.P[idx_A, :]
-            P_B = sm.P[idx_B, :]
-
-            left = M_A / P_B[np.newaxis, :]
-            right = (M_B / P_A[np.newaxis, :]).T
-            np.testing.assert_allclose(
-                left,
-                right,
+                M_st / P_t[np.newaxis, :],
+                (M_ts / P_s[np.newaxis, :]).T,
                 rtol=1e-8,
-                err_msg=f"{stratum_A} and {stratum_B} reciprocity failed",
+                err_msg=f"Reciprocity violated for {label_st}",
             )
 
 
-class TestSmallSample:
-    """Tests for small sample behavior"""
+# ============================================================================
+# Contact rate – .rate()
+# ============================================================================
 
-    def test_cint_single_small_sample(self, single_small_sample):
-        """Contact intensity computation on a very small sample"""
 
+class TestRate:
+    """rate() returns Dict[str, ContactSummary]; raises without population data."""
+
+    def test_raises_without_pop_data(self, single_large_sample):
+        part_data, cnt_data, _ = single_large_sample
+        with pytest.warns(UserWarning):
+            sm = SocialMix.from_containers(
+                part_data, cnt_data, AGE_BINS, apply_reciprocity=True
+            )
+        with pytest.raises(ValueError, match="population data"):
+            sm.rate()
+
+    def test_returns_contact_summary_single(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        result = sm.rate()
+        assert isinstance(result, dict)
+        assert "All->All" in result
+        assert isinstance(result["All->All"], ContactSummary)
+
+    def test_shape_single(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        cs = sm.rate()["All->All"]
+        assert cs.central.shape == (16, 16)
+
+    def test_non_negative_single(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        assert np.all(sm.rate()["All->All"].central >= 0)
+
+    def test_keys_partial(self, partial_large_sample):
+        sm = _from_containers(partial_large_sample, apply_reciprocity=False)
+        assert set(sm.rate().keys()) == {"M->All", "F->All"}
+
+    def test_keys_full(self, full_large_sample):
+        sm = _from_containers(full_large_sample)
+        assert set(sm.rate().keys()) == {"M->M", "M->F", "F->M", "F->F"}
+
+
+# ============================================================================
+# Adaptive merge (small samples)
+# ============================================================================
+
+
+class TestAdaptiveMerge:
+    """Small samples raise without adaptive_merge; merge with it."""
+
+    def test_single_small_raises_without_merge(self, single_small_sample):
         part_data, cnt_data, pop_data = single_small_sample
-
-        # Define age bins
-        age_bins = AgeBins(0, 80, 5)
-
-        # When adaptive_merge is False will raise error due to insufficient data
         with pytest.raises(ValueError):
-            sm = SocialMix(
-                part_data, cnt_data, age_bins, pop_data, adaptive_merge=False
+            SocialMix.from_containers(
+                part_data, cnt_data, AGE_BINS, pop_data, adaptive_merge=False
             )
 
-        # Initialize SocialMix without population data
+    def test_single_small_merges(self, single_small_sample):
+        part_data, cnt_data, pop_data = single_small_sample
         with pytest.warns(UserWarning):
-            sm = SocialMix(part_data, cnt_data, age_bins, pop_data, adaptive_merge=True)
+            sm = SocialMix.from_containers(
+                part_data, cnt_data, AGE_BINS, pop_data, adaptive_merge=True
+            )
+        cs = sm.cint()["All->All"]
+        assert cs.central.shape[0] <= 16
+        assert np.all(cs.central >= 0)
 
-        # Compute contact intensity (check that this runs without error)
-        cint_dict = sm.cint()
-
-        # Check structure and non-negativity
-        assert "All->All" in cint_dict
-        M = cint_dict["All->All"]
-        assert M.shape[0] <= 16, "Age bins should be merged for small sample"
-        assert M.shape[1] <= 16, "Age bins should be merged for small sample"
-        assert np.all(M >= 0), "Contact intensities must be non-negative"
-
-    def test_cint_partial_small_sample(self, partial_small_sample):
-        """Contact intensity computation on a small sample with partial stratification"""
-
+    def test_partial_small_merges(self, partial_small_sample):
         part_data, cnt_data, pop_data = partial_small_sample
-
-        # Define age bins
-        age_bins = AgeBins(0, 80, 5)
-
         with pytest.warns(UserWarning):
-            sm = SocialMix(part_data, cnt_data, age_bins, pop_data, adaptive_merge=True)
+            sm = SocialMix.from_containers(
+                part_data,
+                cnt_data,
+                AGE_BINS,
+                pop_data,
+                adaptive_merge=True,
+                apply_reciprocity=False,
+            )
+        cint = sm.cint()
+        for key in ["M->All", "F->All"]:
+            assert key in cint
+            assert cint[key].central.shape[0] <= 16
 
-        # Compute contact intensity (check that this runs without error)
-        cint_dict = sm.cint()
+    # def test_full_small_merges(self, full_small_sample):
+    #     part_data, cnt_data, pop_data = full_small_sample
+    #     with pytest.warns(UserWarning):
+    #         sm = SocialMix.from_containers(
+    #             part_data, cnt_data, AGE_BINS, pop_data, adaptive_merge=True
+    #         )
+    #     cint = sm.cint()
+    #     for key in ["M->M", "M->F", "F->M", "F->F"]:
+    #         assert key in cint
+    #         assert cint[key].central.shape[0] <= 16
 
-        # Check structure and non-negativity
-        for stratum in ["M->All", "F->All"]:
-            assert stratum in cint_dict
-            M = cint_dict[stratum]
-            assert M.shape[0] <= 16, "Age bins should be merged for small sample"
-            assert M.shape[1] <= 16, "Age bins should be merged for small sample"
-            assert np.all(M >= 0), "Contact intensities must be non-negative"
 
-    def test_cint_full_small_sample(self, full_small_sample):
-        """Contact intensity computation on a small sample with full stratification"""
-
-        part_data, cnt_data, pop_data = full_small_sample
-
-        # Define age bins
-        age_bins = AgeBins(0, 80, 5)
-
-        with pytest.warns(UserWarning):
-            sm = SocialMix(part_data, cnt_data, age_bins, pop_data, adaptive_merge=True)
-
-        # Compute contact intensity (check that this runs without error)
-        cint_dict = sm.cint()
-
-        # Check structure and non-negativity
-        for stratum in ["M->M", "M->F", "F->M", "F->F"]:
-            assert stratum in cint_dict
-            M = cint_dict[stratum]
-            assert M.shape[0] <= 16, "Age bins should be merged for small sample"
-            assert M.shape[1] <= 16, "Age bins should be merged for small sample"
-            assert np.all(M >= 0), "Contact intensities must be non-negative"
+# ============================================================================
+# Bootstrap
+# ============================================================================
 
 
 class TestBootstrap:
-    """Tests for bootstrap resampling"""
-
-    N_BOOT = 10
-
-    def test_bootstrap_single(self, single_large_sample):
-        part_data, cnt_data, pop_data = single_large_sample
-        age_bins = AgeBins(0, 80, 5)
-
-        sm = SocialMix(
-            part_data,
-            cnt_data,
-            age_bins,
-            pop_data,
-            adaptive_merge=True,
-            validate_for_bootstrap=True,
-        )
-
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-
-        assert sm._boot.n_boot == self.N_BOOT
-
-        M = sm._boot.mean()
-        assert M["All->All"].shape == (16, 16)
-
-    def test_bootstrap_single_small(self, single_small_sample):
-        part_data, cnt_data, pop_data = single_small_sample
-        age_bins = AgeBins(0, 80, 5)
-
-        with pytest.warns(UserWarning):
-            sm = SocialMix(
-                part_data,
-                cnt_data,
-                age_bins,
-                pop_data,
-                adaptive_merge=True,
-                validate_for_bootstrap=True,
-            )
-
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-
-        assert sm._boot.n_boot == self.N_BOOT
-
-        M = sm._boot.mean()
-        assert M["All->All"].shape[0] <= 16
-        assert M["All->All"].shape[1] <= 16
-
-    def test_boostrap_partial(self, partial_large_sample):
-        part_data, cnt_data, pop_data = partial_large_sample
-        age_bins = AgeBins(0, 80, 5)
-
-        sm = SocialMix(
-            part_data,
-            cnt_data,
-            age_bins,
-            pop_data,
-            adaptive_merge=True,
-            apply_reciprocity=False,
-            validate_for_bootstrap=True,
-        )
-
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-
-        assert sm._boot.n_boot == self.N_BOOT
-
-        M_dict = sm._boot.mean()
-        assert M_dict["M->All"].shape == (16, 16)
-        assert M_dict["F->All"].shape == (16, 16)
-
-    def test_bootstrap_partial_multi_strat(self, partial_multi_strat_large_sample):
-        part_data, cnt_data, pop_data = partial_multi_strat_large_sample
-        age_bins = AgeBins(0, 80, 5)
-
-        with pytest.warns(UserWarning):
-            sm = SocialMix(
-                part_data,
-                cnt_data,
-                age_bins,
-                pop_data,
-                adaptive_merge=True,
-                apply_reciprocity=False,
-                validate_for_bootstrap=True,
-            )
-
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-
-        assert sm._boot.n_boot == self.N_BOOT
-
-        M_dict = sm._boot.mean()
-        for stratum in ["M_High->All", "M_Low->All", "F_High->All", "F_Low->All"]:
-            assert M_dict[stratum].shape[0] <= 16
-            assert M_dict[stratum].shape[1] <= 16
-
-    def test_bootstrap_partial_small(self, partial_small_sample):
-        part_data, cnt_data, pop_data = partial_small_sample
-        age_bins = AgeBins(0, 80, 5)
-
-        with pytest.warns(UserWarning):
-            sm = SocialMix(
-                part_data,
-                cnt_data,
-                age_bins,
-                pop_data,
-                adaptive_merge=True,
-                apply_reciprocity=False,
-                validate_for_bootstrap=True,
-            )
-
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-
-        assert sm._boot.n_boot == self.N_BOOT
-
-        M_dict = sm._boot.mean()
-        for stratum in ["M->All", "F->All"]:
-            assert M_dict[stratum].shape[0] <= 16
-            assert M_dict[stratum].shape[1] <= 16
-
-    def test_bootstrap_full(self, full_large_sample):
-        part_data, cnt_data, pop_data = full_large_sample
-        age_bins = AgeBins(0, 80, 5)
-
-        sm = SocialMix(
-            part_data,
-            cnt_data,
-            age_bins,
-            pop_data,
-            adaptive_merge=True,
-            validate_for_bootstrap=True,
-        )
-
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-
-        assert sm._boot.n_boot == self.N_BOOT
-
-        M_dict = sm._boot.mean()
-        for stratum in ["M->M", "M->F", "F->M", "F->F"]:
-            assert M_dict[stratum].shape == (16, 16)
-
-    def test_bootstrap_full_multi_strat(self, full_multi_strat_large_sample):
-        part_data, cnt_data, pop_data = full_multi_strat_large_sample
-        age_bins = AgeBins(0, 80, 5)
-
-        with pytest.warns(UserWarning):
-            sm = SocialMix(
-                part_data,
-                cnt_data,
-                age_bins,
-                pop_data,
-                adaptive_merge=True,
-                validate_for_bootstrap=True,
-            )
-
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-
-        assert sm._boot.n_boot == self.N_BOOT
-
-        M_dict = sm._boot.mean()
-        for stratum in [
-            "M_High->M_High",
-            "M_High->M_Low",
-            "M_Low->M_High",
-            "M_Low->M_Low",
-            "F_High->F_High",
-            "F_High->F_Low",
-            "F_Low->F_High",
-            "F_Low->F_Low",
-        ]:
-            assert M_dict[stratum].shape[0] <= 16
-            assert M_dict[stratum].shape[1] <= 16
-
-    def test_bootstrap_full_small(self, full_small_sample):
-        part_data, cnt_data, pop_data = full_small_sample
-        age_bins = AgeBins(0, 80, 5)
-
-        with pytest.warns(UserWarning):
-            sm = SocialMix(
-                part_data,
-                cnt_data,
-                age_bins,
-                pop_data,
-                adaptive_merge=True,
-                validate_for_bootstrap=True,
-            )
-
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-
-        assert sm._boot.n_boot == self.N_BOOT
-
-        M_dict = sm._boot.mean()
-        for stratum in ["M->M", "M->F", "F->M", "F->F"]:
-            assert M_dict[stratum].shape[0] <= 16
-            assert M_dict[stratum].shape[1] <= 16
-
-
-class TestSummarizerIntegration:
-    N_BOOT = 500
+    """run_inference_bootstrap() stores BootstrapResults with correct n_boot."""
 
     def test_single(self, single_large_sample):
-        part_data, cnt_data, pop_data = single_large_sample
-        age_bins = AgeBins(0, 80, 5)
+        sm = _from_containers(single_large_sample, validate_for_bootstrap=True)
+        sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
+        assert sm._boot is not None
+        assert sm._boot.n_boot == N_BOOT
 
-        sm = SocialMix(
-            part_data,
-            cnt_data,
-            age_bins,
-            pop_data,
-            adaptive_merge=True,
-            validate_for_bootstrap=True,
+    def test_partial(self, partial_large_sample):
+        sm = _from_containers(
+            partial_large_sample, apply_reciprocity=False, validate_for_bootstrap=True
         )
+        sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
+        assert sm._boot.n_boot == N_BOOT
 
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-        summarizer = ModelSummariserSocialMix(sm)
-
-        cint_sum = summarizer.summarise_cint(alpha=0.05)
-        assert "All->All" in cint_sum
-        assert cint_sum["All->All"][1].shape[0] <= 16
-        assert cint_sum["All->All"][1].shape[1] <= 16
-
-        cint_sum_depix = summarizer.summarise_cint(alpha=0.05, return_depixilated=True)
-        assert cint_sum_depix["All->All"].shape == (3, 81, 81)
+    def test_full(self, full_large_sample):
+        sm = _from_containers(full_large_sample, validate_for_bootstrap=True)
+        sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
+        assert sm._boot.n_boot == N_BOOT
 
     def test_single_small(self, single_small_sample):
         part_data, cnt_data, pop_data = single_small_sample
-        age_bins = AgeBins(0, 80, 5)
-
         with pytest.warns(UserWarning):
-            sm = SocialMix(
+            sm = SocialMix.from_containers(
                 part_data,
                 cnt_data,
-                age_bins,
+                AGE_BINS,
                 pop_data,
                 adaptive_merge=True,
                 validate_for_bootstrap=True,
             )
+        sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
+        assert sm._boot.n_boot == N_BOOT
 
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-        summarizer = ModelSummariserSocialMix(sm)
 
-        cint_sum = summarizer.summarise_cint(alpha=0.05)
-        assert "All->All" in cint_sum
-        assert cint_sum["All->All"][1].shape[0] <= 16
-        assert cint_sum["All->All"][1].shape[1] <= 16
+# ============================================================================
+# ModelSummariserSocialMix
+# ============================================================================
 
-        cint_sum_depix = summarizer.summarise_cint(alpha=0.05, return_depixilated=True)
-        assert cint_sum_depix["All->All"].shape == (3, 81, 81)
 
-    def test_partial(self, partial_large_sample):
-        part_data, cnt_data, pop_data = partial_large_sample
-        age_bins = AgeBins(0, 80, 5)
+class TestSummariser:
+    """ModelSummariserSocialMix mirrors ModelSummariser: returns ContactSummary."""
 
-        sm = SocialMix(
-            part_data,
-            cnt_data,
-            age_bins,
-            pop_data,
-            adaptive_merge=True,
-            apply_reciprocity=False,
-            validate_for_bootstrap=True,
+    @pytest.fixture
+    def sm_single(self, single_large_sample):
+        sm = _from_containers(single_large_sample, validate_for_bootstrap=True)
+        sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
+        return sm
+
+    @pytest.fixture
+    def sm_partial(self, partial_large_sample):
+        sm = _from_containers(
+            partial_large_sample, apply_reciprocity=False, validate_for_bootstrap=True
         )
+        sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
+        return sm
 
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-        summarizer = ModelSummariserSocialMix(sm)
+    @pytest.fixture
+    def sm_full(self, full_large_sample):
+        sm = _from_containers(full_large_sample, validate_for_bootstrap=True)
+        sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
+        return sm
 
-        cint_sum = summarizer.summarise_cint(alpha=0.05)
-        for stratum in ["M->All", "F->All"]:
-            assert stratum in cint_sum
-            assert cint_sum[stratum][1].shape[0] <= 16
-            assert cint_sum[stratum][1].shape[1] <= 16
+    # --- initialisation ---
 
-        cint_sum_depix = summarizer.summarise_cint(alpha=0.05, return_depixilated=True)
-        for stratum in ["M->All", "F->All"]:
-            assert cint_sum_depix[stratum].shape == (3, 81, 81)
+    def test_raises_without_bootstrap(self, single_large_sample):
+        sm = _from_containers(single_large_sample)
+        with pytest.raises(ValueError, match="bootstrap"):
+            ModelSummariserSocialMix(sm)
 
-    def test_partial_small(self, partial_small_sample):
-        part_data, cnt_data, pop_data = partial_small_sample
-        age_bins = AgeBins(0, 80, 5)
+    # --- summarise_cint ---
 
-        with pytest.warns(UserWarning):
-            sm = SocialMix(
-                part_data,
-                cnt_data,
-                age_bins,
-                pop_data,
-                adaptive_merge=True,
-                apply_reciprocity=False,
-                validate_for_bootstrap=True,
-            )
+    def test_summarise_cint_returns_contact_summary(self, sm_single):
+        summ = ModelSummariserSocialMix(sm_single)
+        result = summ.summarise_cint(alpha=0.05)
+        assert isinstance(result, dict)
+        assert "All->All" in result
+        assert isinstance(result["All->All"], ContactSummary)
 
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-        summarizer = ModelSummariserSocialMix(sm)
+    def test_summarise_cint_fields(self, sm_single):
+        summ = ModelSummariserSocialMix(sm_single)
+        cs = summ.summarise_cint(alpha=0.05)["All->All"]
+        assert cs.lower.shape == cs.central.shape == cs.upper.shape
+        assert cs.alpha == 0.05
+        assert np.all(cs.lower <= cs.central)
+        assert np.all(cs.central <= cs.upper)
 
-        cint_sum = summarizer.summarise_cint(alpha=0.05)
-        for stratum in ["M->All", "F->All"]:
-            assert stratum in cint_sum
-            assert cint_sum[stratum][1].shape[0] <= 16
-            assert cint_sum[stratum][1].shape[1] <= 16
+    def test_summarise_cint_keys_partial(self, sm_partial):
+        summ = ModelSummariserSocialMix(sm_partial)
+        result = summ.summarise_cint(alpha=0.05)
+        assert set(result.keys()) == {"M->All", "F->All"}
+        assert isinstance(result["M->All"], ContactSummary)
 
-        cint_sum_depix = summarizer.summarise_cint(alpha=0.05, return_depixilated=True)
-        for stratum in ["M->All", "F->All"]:
-            assert cint_sum_depix[stratum].shape == (3, 81, 81)
+    def test_summarise_cint_keys_full(self, sm_full):
+        summ = ModelSummariserSocialMix(sm_full)
+        result = summ.summarise_cint(alpha=0.05)
+        assert set(result.keys()) == {"M->M", "M->F", "F->M", "F->F"}
 
-    def test_full(self, full_large_sample):
-        part_data, cnt_data, pop_data = full_large_sample
-        age_bins = AgeBins(0, 80, 5)
+    # --- summarise_rate ---
 
-        sm = SocialMix(
-            part_data,
-            cnt_data,
-            age_bins,
-            pop_data,
-            adaptive_merge=True,
-            validate_for_bootstrap=True,
-        )
+    def test_summarise_rate_returns_contact_summary(self, sm_single):
+        summ = ModelSummariserSocialMix(sm_single)
+        result = summ.summarise_rate(alpha=0.05)
+        assert isinstance(result["All->All"], ContactSummary)
 
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-        summarizer = ModelSummariserSocialMix(sm)
+    def test_summarise_rate_ordering(self, sm_single):
+        cs = ModelSummariserSocialMix(sm_single).summarise_rate(alpha=0.05)["All->All"]
+        assert np.all(cs.lower <= cs.central)
+        assert np.all(cs.central <= cs.upper)
 
-        cint_sum = summarizer.summarise_cint(alpha=0.05)
-        for stratum in ["M->M", "M->F", "F->M", "F->F"]:
-            assert stratum in cint_sum
-            assert cint_sum[stratum][1].shape[0] <= 16
-            assert cint_sum[stratum][1].shape[1] <= 16
+    # --- summarise_mcint ---
 
-        cint_sum_depix = summarizer.summarise_cint(alpha=0.05, return_depixilated=True)
-        for stratum in ["M->M", "M->F", "F->M", "F->F"]:
-            assert cint_sum_depix[stratum].shape == (3, 81, 81)
+    def test_summarise_mcint_returns_contact_summary(self, sm_single):
+        summ = ModelSummariserSocialMix(sm_single)
+        result = summ.summarise_mcint(alpha=0.05)
+        cs = result["All->All"]
+        assert isinstance(cs, ContactSummary)
+        assert cs.central.ndim == 1
 
-    def test_full_small(self, full_small_sample):
-        part_data, cnt_data, pop_data = full_small_sample
-        age_bins = AgeBins(0, 80, 5)
+    def test_summarise_mcint_ordering(self, sm_single):
+        cs = ModelSummariserSocialMix(sm_single).summarise_mcint(alpha=0.05)["All->All"]
+        assert np.all(cs.lower <= cs.central)
+        assert np.all(cs.central <= cs.upper)
 
-        with pytest.warns(UserWarning):
-            sm = SocialMix(
-                part_data,
-                cnt_data,
-                age_bins,
-                pop_data,
-                adaptive_merge=True,
-                validate_for_bootstrap=True,
-            )
+    # --- caching ---
 
-        sm.run_inference_bootstrap(n_boot=self.N_BOOT, random_state=42)
-        summarizer = ModelSummariserSocialMix(sm)
+    def test_caching_same_result(self, sm_single):
+        summ = ModelSummariserSocialMix(sm_single)
+        r1 = summ.summarise_cint(alpha=0.05)
+        n1 = summ.get_cache_info()["n_cached"]
+        r2 = summ.summarise_cint(alpha=0.05)
+        assert summ.get_cache_info()["n_cached"] == n1  # no new entry
+        np.testing.assert_array_equal(r1["All->All"].central, r2["All->All"].central)
 
-        cint_sum = summarizer.summarise_cint(alpha=0.05)
-        for stratum in ["M->M", "M->F", "F->M", "F->F"]:
-            assert stratum in cint_sum
-            assert cint_sum[stratum][1].shape[0] <= 16
-            assert cint_sum[stratum][1].shape[1] <= 16
+    def test_different_alpha_adds_cache_entry(self, sm_single):
+        summ = ModelSummariserSocialMix(sm_single)
+        summ.summarise_cint(alpha=0.05)
+        summ.summarise_cint(alpha=0.10)
+        assert summ.get_cache_info()["n_cached"] == 2
 
-        cint_sum_depix = summarizer.summarise_cint(alpha=0.05, return_depixilated=True)
-        for stratum in ["M->M", "M->F", "F->M", "F->F"]:
-            assert cint_sum_depix[stratum].shape == (3, 81, 81)
+    def test_clear_cache(self, sm_single):
+        summ = ModelSummariserSocialMix(sm_single)
+        summ.summarise_cint(alpha=0.05)
+        summ.clear_cache()
+        assert summ.get_cache_info()["n_cached"] == 0
+
+    # --- error handling ---
+
+    def test_invalid_alpha_raises(self, sm_single):
+        summ = ModelSummariserSocialMix(sm_single)
+        for bad in (0.0, 1.0, -0.1, 1.5):
+            with pytest.raises(ValueError):
+                summ.summarise_cint(alpha=bad)

@@ -161,21 +161,21 @@ def make_train_data(
         )
         data["y"] = 1
 
-    if "age_cnt" in data.columns:
-        age_vars = ["age_part", "age_cnt"]
-    elif "age_grp_cnt" in data.columns:
-        age_vars = ["age_part", "age_grp_cnt"]
+    if "cnt_age" in data.columns:
+        age_vars = ["part_age", "cnt_age"]
+    elif "cnt_age_grp" in data.columns:
+        age_vars = ["part_age", "cnt_age_grp"]
     else:
-        raise ValueError('data must contain a column "age_cnt" or "age_grp_cnt"')
+        raise ValueError('data must contain a column "cnt_age" or "cnt_age_grp"')
 
     if strat_vars is None:
         selected_vars = [id_var] + age_vars + ["y"]
-        strat_vars_part = ["age_part"]
+        strat_vars_part = ["part_age"]
         strat_vars_cnt = age_vars
     else:
         strat_vars = [strat_vars] if isinstance(strat_vars, str) else strat_vars
         selected_vars = [id_var] + age_vars + strat_vars + ["y"]
-        strat_vars_part = ["age_part"] + strat_vars
+        strat_vars_part = ["part_age"] + strat_vars
         strat_vars_cnt = age_vars + strat_vars
 
     data = data[selected_vars]
@@ -217,16 +217,16 @@ def make_train_data(
     df["y"] = df["y"].fillna(0)
     df["y"] = df["y"].astype(int)
     df["N"] = df["N"].astype(int)
-    df["age_part"] = df["age_part"].astype(int)
-    if "age_cnt" in df.columns:
-        df["age_cnt"] = df["age_cnt"].astype(int)
+    df["part_age"] = df["part_age"].astype(int)
+    if "cnt_age" in df.columns:
+        df["cnt_age"] = df["cnt_age"].astype(int)
 
-    # Bring ['age_part', 'age_cnt'] to the front
-    age_part = df.pop("age_part")
-    df.insert(0, "age_part", age_part)
+    # Bring ['part_age', 'cnt_age'] to the front
+    part_age = df.pop("part_age")
+    df.insert(0, "part_age", part_age)
 
-    age_cnt = df.pop(age_vars[1])
-    df.insert(1, age_vars[1], age_cnt)
+    cnt_age = df.pop(age_vars[1])
+    df.insert(1, age_vars[1], cnt_age)
     df.sort_values(age_vars, inplace=True)
 
     # Convert to categorical
@@ -291,10 +291,10 @@ def add_grp_cnt_offsets(
         )
 
     if strat_vars is None:
-        strat_vars = ["age_part"]
+        strat_vars = ["part_age"]
     else:
         strat_vars = [strat_vars] if isinstance(strat_vars, str) else strat_vars
-        strat_vars = ["age_part"] + strat_vars
+        strat_vars = ["part_age"] + strat_vars
 
     df_cnt_part = (
         df_cnt.groupby(strat_vars, observed=False).agg({"y": "sum"}).reset_index()

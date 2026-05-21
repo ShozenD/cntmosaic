@@ -89,10 +89,10 @@ def check_required_columns(data: pd.DataFrame):
         raise ValueError("data must contain a column contact count column 'y'")
     if "N" not in data.columns:
         raise ValueError("data must contain a column sample size column 'N'")
-    if "age_part" not in data.columns:
-        raise ValueError("data must contain a column 'age_part'")
-    if ("age_cnt" not in data.columns) and ("age_grp_cnt" not in data.columns):
-        raise ValueError("data must contain a column 'age_cnt' or 'age_grp_cnt'")
+    if "part_age" not in data.columns:
+        raise ValueError("data must contain a column 'part_age'")
+    if ("cnt_age" not in data.columns) and ("cnt_age_grp" not in data.columns):
+        raise ValueError("data must contain a column 'cnt_age' or 'cnt_age_grp'")
 
     print("Necessary columns exist, proceed to model selection")
 
@@ -130,15 +130,15 @@ def make_full_grid(
 
     data_dict = {k: data[k].unique() for k in strat_vars_all}
 
-    if "age_cnt" == age_vars[1]:
+    if "cnt_age" == age_vars[1]:
 
-        min_age = np.min([data_dict["age_part"].min(), data_dict["age_cnt"].min()])
-        max_age = np.max([data_dict["age_part"].max(), data_dict["age_cnt"].max()])
+        min_age = np.min([data_dict["part_age"].min(), data_dict["cnt_age"].min()])
+        max_age = np.max([data_dict["part_age"].max(), data_dict["cnt_age"].max()])
 
-        data_dict["age_part"] = np.arange(min_age, max_age + 1)
-        data_dict["age_cnt"] = np.arange(min_age, max_age + 1)
+        data_dict["part_age"] = np.arange(min_age, max_age + 1)
+        data_dict["cnt_age"] = np.arange(min_age, max_age + 1)
 
-    elif "age_grp_cnt" == age_vars[1]:
-        data_dict["age_grp_cnt"] = data["age_grp_cnt"].cat.categories
+    elif "cnt_age_grp" == age_vars[1]:
+        data_dict["cnt_age_grp"] = data["cnt_age_grp"].cat.categories
 
     return expand_grid(data_dict)

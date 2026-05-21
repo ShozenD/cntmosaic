@@ -172,14 +172,14 @@ class TestInputValidation:
             )
 
     def test_missing_age_grp_column(self):
-        """Missing age_grp_col raises KeyError."""
+        """Missing pop_age_grp_col raises KeyError."""
         df = pd.DataFrame({"age": [0, 1, 2], "population": [1000, 1100, 1200]})
         with pytest.raises(KeyError, match="Missing population age group column"):
             PopulationData(
                 data=df,
                 age_col="age",
                 size_col="population",
-                age_grp_col="age_group",
+                pop_age_grp_col="age_group",
             )
 
     def test_negative_ages(self):
@@ -302,14 +302,14 @@ class TestEdgeCases:
     """Test genuine boundary conditions."""
 
     def test_age_group_col_preserved(self, df_pop_age_grps):
-        """age_grp_col is preserved as 'age_grp_pop' in the processed data."""
+        """pop_age_grp_col is preserved as 'pop_age_grp' in the processed data."""
         pop_data = PopulationData(
             data=df_pop_age_grps,
             age_col="age",
             size_col="P",
-            age_grp_col="age_grp",
+            pop_age_grp_col="age_grp",
         )
-        assert "age_grp_pop" in pop_data.data.columns
+        assert "pop_age_grp" in pop_data.data.columns
         assert pop_data.n_ages == 3
 
     def test_age_min_max_form(self, df_pop_age_min_max):

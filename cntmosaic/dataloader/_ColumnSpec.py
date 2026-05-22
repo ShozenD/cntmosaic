@@ -286,7 +286,7 @@ class ColumnSpec:
         """
         if part_data.strat_var_cols:
             part_strat_vars = [
-                var if var.endswith("_part") else f"{var}_part"
+                var if var.startswith("part_") else f"part_{var}"
                 for var in part_data.strat_var_cols
             ]
         else:
@@ -319,7 +319,7 @@ class ColumnSpec:
             cnt_strat_vars=cnt_strat_vars,
             part_repeat="part_repeat" if part_data.repeat_col else None,
             pop_age="age" if pop_data.age_col else None,
-            pop_age_grp="pop_age_grp" if pop_data.pop_age_grp_col else None,
+            pop_age_grp="pop_age_grp" if pop_data.age_grp_col else None,
             P="P",
             pop_strat_vars=pop_data.strat_var_cols if pop_data.strat_var_cols else None,
         )

@@ -62,7 +62,7 @@ class PopulationData:
     -------
     validate()
         Performs comprehensive validation of the population data.
-    get_strat_vars(suffix=False)
+    get_strat_vars(prefix=False)
         Returns list of stratification variable names, optionally with '_pop' suffix.
     get_strat_var_schema()
         Returns dictionary mapping stratification variables to their categories and codes.
@@ -138,7 +138,7 @@ class PopulationData:
     ...     data=df,
     ...     age_col='age',
     ...     size_col='population',
-    ...     pop_age_grp_col='age_group'
+    ...     age_grp_col='age_group'
     ... )
     >>> 'pop_age_grp' in pop_data.data.columns
     True
@@ -187,7 +187,7 @@ class PopulationData:
     age_col: Optional[str] = None
     age_min_col: Optional[str] = None
     age_max_col: Optional[str] = None
-    pop_age_grp_col: Optional[str] = None
+    age_grp_col: Optional[str] = None
     strat_var_cols: Optional[Union[List[str], str]] = None
 
     def __post_init__(self) -> None:
@@ -229,14 +229,14 @@ class PopulationData:
         # age_col and age_min/max are mutually exclusive.
         # age_grp_col and age_min/max are mutually exclusive.
         _has_exact = self.age_col is not None
-        _has_grp = self.pop_age_grp_col is not None
+        _has_grp = self.age_grp_col is not None
         _has_range = self.age_min_col is not None or self.age_max_col is not None
 
         if not _has_exact and not _has_grp and not _has_range:
             raise ValueError(
                 "Must specify an age representation:\n"
                 "  'age_col' for exact integer ages (e.g., 25, 34, 45),\n"
-                "  'pop_age_grp_col' for age groups (e.g., pd.IntervalIndex or categorical),\n"
+                "  'age_grp_col' for age groups (e.g., pd.IntervalIndex or categorical),\n"
                 "  or both 'age_min_col' and 'age_max_col' for age ranges."
             )
         if _has_exact and _has_range:
@@ -249,8 +249,8 @@ class PopulationData:
         if _has_grp and _has_range:
             raise ValueError(
                 "Age specification forms are mutually exclusive — provide exactly one:\n"
-                "  'pop_age_grp_col' or 'age_min_col'/'age_max_col'.\n"
-                f"  Got: pop_age_grp_col={self.pop_age_grp_col!r}, "
+                "  'age_grp_col' or 'age_min_col'/'age_max_col'.\n"
+                f"  Got: age_grp_col={self.age_grp_col!r}, "
                 f"age_min_col={self.age_min_col!r}, age_max_col={self.age_max_col!r}"
             )
         if _has_range and (self.age_min_col is None or self.age_max_col is None):
@@ -267,7 +267,7 @@ class PopulationData:
                 self.data,
                 self.age_col,
                 self.size_col,
-                self.pop_age_grp_col,
+                self.age_grp_col,
                 self.strat_var_cols,  # type: ignore
                 self.age_min_col,
                 self.age_max_col,
@@ -396,32 +396,22 @@ class PopulationData:
         """
         return self.strat_var_cols if self.strat_var_cols else []  # type: ignore
 
-    def get_strat_vars(self, suffix: bool = False) -> List[str]:
+    def get_strat_vars(self, prefix: bool = False) -> List[str]:
         """
-        Return list of stratification variable names, optionally with suffix.
+        Return list of stratification variable names.
 
         Parameters
         ----------
-        suffix : bool, default=False
-            If True, appends '_pop' suffix to each stratification variable name.
+        prefix : bool, default=False
+            Unused for population data (no prefix convention); kept for API
+            consistency with ParticipantData and ContactData.
 
         Returns
         -------
         List[str]
-            List of stratification variable column names (with optional suffix).
-
-        Examples
-        --------
-        >>> pop_data = PopulationData(df, 'age', 'population', strat_var_cols=['gender', 'region'])
-        >>> pop_data.get_strat_vars(suffix=True)
-        ['gender_pop', 'region_pop']
+            List of stratification variable column names.
         """
-        if not self.strat_var_cols:
-            return []
-        if suffix:
-            return [var + "_pop" for var in self.strat_var_cols]
-        else:
-            return [var.removesuffix("_pop") for var in self.strat_var_cols]
+        return self.strat_var_cols if self.strat_var_cols else []
 
     def get_strat_var_schema(self) -> Dict[str, Dict[str, List[Union[str, int]]]]:
         """

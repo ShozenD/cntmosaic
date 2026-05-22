@@ -531,7 +531,7 @@ class SocialMixBootstrap:
             self.P = pop_sizes.values.astype(np.float64)
         else:
             # With stratification
-            strat_vars_pop = self.pop_data.get_strat_vars(suffix=False)
+            strat_vars_pop = self.pop_data.get_strat_vars(prefix=False)
             group_cols = strat_vars_pop + ["age_grp"]
             pop_sizes = self.pop_data.data.groupby(group_cols, observed=False)[
                 "P"

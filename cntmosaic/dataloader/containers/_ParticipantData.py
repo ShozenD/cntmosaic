@@ -44,7 +44,7 @@ class ParticipantData:
     strat_var_cols : Optional[Union[List[str], str]], default=None
         Stratification variable column name(s) for participants.
         Can be a single string or list of strings. Examples: 'gender', ['gender', 'region'].
-        Each variable is renamed with '_part' suffix (e.g., 'gender' → 'gender_part').
+        Each variable is renamed with 'part_' prefix (e.g., 'gender' → 'part_gender').
     repeat_col : Optional[str], default=None
         Name of the column indicating repeat interviews/waves.
         Used to track longitudinal data where participants are surveyed multiple times.
@@ -69,7 +69,7 @@ class ParticipantData:
     validate()
         Performs comprehensive validation of the participant data.
         Called automatically during initialization.
-    get_strat_vars(suffix=False)
+    get_strat_vars(prefix=False)
         Returns stratification variable names, optionally with '_part' suffix.
     get_sample_sizes(stratify=False)
         Returns DataFrame with participant counts, optionally stratified by all variables.
@@ -96,8 +96,8 @@ class ParticipantData:
     (25.0, 52.0)
     >>> # Columns are renamed with standardized names
     >>> list(part_data.data.columns)
-    ['id', 'part_age', 'gender_part']
-    >>> part_data.data['gender_part'].dtype.name
+    ['id', 'part_age', 'part_gender']
+    >>> part_data.data['part_gender'].dtype.name
     'category'
     >>>
     >>> # With age groups and multiple stratification variables
@@ -118,15 +118,15 @@ class ParticipantData:
     ... )
     >>> part_data.strat_vars
     ['gender', 'region']
-    >>> part_data.get_strat_vars(suffix=True)
-    ['gender_part', 'region_part']
+    >>> part_data.get_strat_vars(prefix=True)
+    ['part_gender', 'part_region']
     >>> list(part_data.data.columns)
-    ['id', 'part_age_grp', 'gender_part', 'region_part']
+    ['id', 'part_age_grp', 'part_gender', 'part_region']
     >>>
     >>> # Get sample sizes
     >>> sample_sizes = part_data.get_sample_sizes(stratify=True)
     >>> sample_sizes.columns.tolist()
-    ['part_age_grp', 'gender_part', 'region_part', 'N']
+    ['part_age_grp', 'part_gender', 'part_region', 'N']
 
     Notes
     -----
@@ -372,14 +372,14 @@ class ParticipantData:
         """
         return self.strat_var_cols if self.strat_var_cols else []
 
-    def get_strat_vars(self, suffix: bool = False) -> List[str]:
+    def get_strat_vars(self, prefix: bool = False) -> List[str]:
         """
-        Return list of stratification variable names, optionally with '_part' suffix.
+        Return list of stratification variable names, optionally with 'part_' prefix.
 
         Parameters
         ----------
-        suffix : bool, default=False
-            If True, returns stratification variable names with '_part' suffix.
+        prefix : bool, default=False
+            If True, returns stratification variable names with 'part_' prefix.
             If False, returns original stratification variable names.
 
         Returns
@@ -390,19 +390,19 @@ class ParticipantData:
         Examples
         --------
         >>> part_data = ParticipantData(df, 'id', age_col='age', strat_var_cols=['gender', 'region'])
-        >>> part_data.get_strat_vars(suffix=True)
-        ['gender_part', 'region_part']
+        >>> part_data.get_strat_vars(prefix=True)
+        ['part_gender', 'part_region']
         """
         if not self.strat_var_cols:
             return []
 
-        if suffix:
+        if prefix:
             return [
-                f"{var}_part" if not var.endswith("_part") else var
+                f"part_{var}" if not var.startswith("part_") else var
                 for var in self.strat_var_cols
             ]
         else:
-            return [var.removesuffix("_part") for var in self.strat_var_cols]
+            return [var.removeprefix("part_") for var in self.strat_var_cols]
 
     def get_strat_var_schema(self) -> Dict[str, Dict[str, List[str | int]]]:
         """
@@ -420,17 +420,12 @@ class ParticipantData:
         if self.strat_var_cols is not None:
             schema = {}
             for var in self.strat_var_cols:
-                var_part = f"{var}_part" if not var.endswith("_part") else var
-                if var_part in self.data.columns:
-                    categories = self.data[var_part].cat.categories.tolist()
-                    codes = sorted(self.data[var_part].cat.codes.unique().tolist())
-
-                    # Remove suffix
-                    var = (
-                        var.removesuffix("_part") if var.endswith("_part") else var
-                    )  # Remove suffix
-
-                    schema[var] = {"categories": categories, "codes": codes}
+                col = f"part_{var}" if not var.startswith("part_") else var
+                if col in self.data.columns:
+                    categories = self.data[col].cat.categories.tolist()
+                    codes = sorted(self.data[col].cat.codes.unique().tolist())
+                    base = var.removeprefix("part_")
+                    schema[base] = {"categories": categories, "codes": codes}
 
             return schema
         else:
@@ -465,7 +460,7 @@ class ParticipantData:
         """
         age_column = "part_age" if self.age_col else "part_age_grp"
         if stratify and self.strat_var_cols:
-            group_cols = [age_column] + [f"{var}_part" for var in self.strat_var_cols]
+            group_cols = [age_column] + [f"part_{var}" for var in self.strat_var_cols]
             return (
                 self.data.groupby(group_cols, observed=False)
                 .agg(N=("id", "count"))

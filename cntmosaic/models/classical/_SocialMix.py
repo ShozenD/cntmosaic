@@ -225,36 +225,36 @@ class SocialMix(DeterministicContactModel):
         ]
 
         if "part_age" in df_part.columns:
-            part_age_kwargs: dict = {"part_age_col": "part_age"}
+            part_age_kwargs: dict = {"age_col": "part_age"}
         elif "part_age_grp" in df_part.columns:
-            part_age_kwargs = {"part_age_grp_col": "part_age_grp"}
+            part_age_kwargs = {"age_grp_col": "part_age_grp"}
         else:
             raise ValueError("df_part must contain 'part_age' or 'part_age_grp' column.")
 
         if "cnt_age" in df_cnt.columns:
-            cnt_age_kwargs: dict = {"cnt_age_col": "cnt_age"}
+            cnt_age_kwargs: dict = {"age_col": "cnt_age"}
         elif "cnt_age_grp" in df_cnt.columns:
-            cnt_age_kwargs = {"cnt_age_grp_col": "cnt_age_grp"}
+            cnt_age_kwargs = {"age_grp_col": "cnt_age_grp"}
         else:
             raise ValueError("df_cnt must contain 'cnt_age' or 'cnt_age_grp' column.")
 
         part_data = ParticipantData(
             df_part,
             id_col="id",
-            part_strat_var_cols=part_strat or None,
+            strat_var_cols=part_strat or None,
             **part_age_kwargs,
         )
         cnt_data = ContactData(
             df_cnt,
             id_col="id",
-            cnt_strat_var_cols=cnt_strat or None,
+            strat_var_cols=cnt_strat or None,
             **cnt_age_kwargs,
         )
 
         pop_data = None
         if df_pop is not None:
             if "pop_age_grp" in df_pop.columns:
-                pop_age_kwargs: dict = {"pop_age_grp_col": "pop_age_grp"}
+                pop_age_kwargs: dict = {"age_grp_col": "pop_age_grp"}
             else:
                 pop_age_kwargs = {"age_col": "age"}
             pop_strat = [c for c in df_pop.columns if c not in _CORE_POP]
@@ -354,7 +354,7 @@ class SocialMix(DeterministicContactModel):
         self.strat_vars_part = self.part_data.get_strat_vars(prefix=False)
         self.strat_vars_cnt = self.cnt_data.get_strat_vars(prefix=False)
         self.strat_vars_pop = (
-            self.pop_data.get_strat_vars(suffix=False)
+            self.pop_data.get_strat_vars(prefix=False)
             if self.pop_data is not None
             else []
         )

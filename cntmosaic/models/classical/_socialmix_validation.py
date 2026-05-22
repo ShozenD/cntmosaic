@@ -132,7 +132,7 @@ class SocialMixValidator:
         self.strat_vars_part = self.part_data.get_strat_vars(prefix=False)
         self.strat_vars_cnt = self.cnt_data.get_strat_vars(prefix=False)
         self.strat_vars_pop = (
-            self.pop_data.get_strat_vars(suffix=False)
+            self.pop_data.get_strat_vars(prefix=False)
             if self.pop_data is not None
             else []
         )
@@ -442,19 +442,20 @@ class SocialMixValidator:
                     )
 
                     # Update data containers
+                    # Use standardized 'id' column name — containers rename id_col to 'id' on init
                     self.part_data = ParticipantData(
                         df_part_updated,
-                        id_col=self.part_data.id_col,
-                        part_age_grp_col="part_age_grp",
-                        part_strat_var_cols=self.part_data.get_strat_vars(prefix=True),
+                        id_col="id",
+                        age_grp_col="part_age_grp",
+                        strat_var_cols=self.part_data.get_strat_vars(prefix=True),
                     )
 
                     self.cnt_data = ContactData(
                         df_cnt_updated,
-                        id_col=self.cnt_data.id_col,
-                        cnt_age_grp_col="cnt_age_grp",
+                        id_col="id",
+                        age_grp_col="cnt_age_grp",
                         cnt_col=self.cnt_data.cnt_col,
-                        cnt_strat_var_cols=self.cnt_data.get_strat_vars(prefix=True),
+                        strat_var_cols=self.cnt_data.get_strat_vars(prefix=True),
                     )
 
                     # Update age bins
@@ -747,16 +748,16 @@ class SocialMixValidator:
             self.part_data = ParticipantData(
                 df_part_updated,
                 id_col=self.part_data.id_col,
-                part_age_grp_col="part_age_grp",
-                part_strat_var_cols=[f"part_{var}" for var in self.strat_vars_part],
+                age_grp_col="part_age_grp",
+                strat_var_cols=[f"part_{var}" for var in self.strat_vars_part],
             )
 
             self.cnt_data = ContactData(
                 df_cnt_updated,
                 id_col=self.cnt_data.id_col,
-                cnt_age_grp_col="cnt_age_grp",
+                age_grp_col="cnt_age_grp",
                 cnt_col=self.cnt_data.cnt_col,
-                cnt_strat_var_cols=[f"cnt_{var}" for var in self.strat_vars_cnt],
+                strat_var_cols=[f"cnt_{var}" for var in self.strat_vars_cnt],
             )
 
             # Update validator's stratification tracking to match new containers

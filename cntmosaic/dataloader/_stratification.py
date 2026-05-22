@@ -27,7 +27,7 @@ def infer_strat_modes(col_spec: ColumnSpec) -> Dict[str, StratMode]:
     strat_modes: Dict[str, StratMode] = {}
 
     part_strat_vars = (
-        [var.replace("_part", "") for var in col_spec.part_strat_vars]
+        [var.removeprefix("part_") for var in col_spec.part_strat_vars]
         if col_spec.part_strat_vars
         else []
     )
@@ -53,7 +53,7 @@ def infer_strat_dims(
     strat_dims: Dict[str, int] = {}
 
     for var, mode in strat_modes.items():
-        categories = df_full[var + "_part"].cat.categories
+        categories = df_full["part_" + var].cat.categories
         if mode == StratMode.PARTIAL:
             strat_dims[var] = len(categories)
         elif mode == StratMode.FULL:
@@ -69,7 +69,7 @@ def infer_strat_labels(
     strat_labels: Dict[str, List[str]] = {}
 
     for var, mode in strat_modes.items():
-        categories = df_full[var + "_part"].cat.categories
+        categories = df_full["part_" + var].cat.categories
 
         if mode == StratMode.PARTIAL:
             labels = [f"{cat}->All" for cat in categories]
@@ -116,11 +116,11 @@ def infer_strat_ixs(
 
     for var, mode in strat_modes.items():
         if mode == StratMode.PARTIAL:
-            strat_ixs[var] = df_full[var + "_part"].cat.codes.to_numpy()
+            strat_ixs[var] = df_full["part_" + var].cat.codes.to_numpy()
         elif mode == StratMode.FULL:
-            part_codes = df_full[var + "_part"].cat.codes.to_numpy()
+            part_codes = df_full["part_" + var].cat.codes.to_numpy()
             cnt_codes = df_full["cnt_" + var].cat.codes.to_numpy()
-            n_categories = len(df_full[var + "_part"].cat.categories)
+            n_categories = len(df_full["part_" + var].cat.categories)
             strat_ixs[var] = part_codes * n_categories + cnt_codes
 
     return strat_ixs

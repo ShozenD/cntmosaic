@@ -144,10 +144,10 @@ def mock_prem_stratified_full(age_bins):
     strata_labels = ["M->M", "M->F", "F->M", "F->F"]
     prem.data = pd.DataFrame({"stratum": np.repeat(strata_labels, 10)})
 
-    # Mock part_data with gender_part column for validation
+    # Mock part_data with part_gender column for validation
     part_data_mock = type("ParticipantData", (), {})()
     part_data_mock.data = pd.DataFrame({
-        "gender_part": pd.Categorical(["M", "F"] * 20, categories=["M", "F"])
+        "part_gender": pd.Categorical(["M", "F"] * 20, categories=["M", "F"])
     })
     prem.part_data = part_data_mock
 

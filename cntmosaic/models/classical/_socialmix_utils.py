@@ -247,7 +247,12 @@ class SocialMixDataLoader:
         if "age_grp" in self.sm.pop_data.data.columns:
             return  # Already assigned
 
-        # Use same bins as participant/contact data
+        if "pop_age_grp" in self.sm.pop_data.data.columns:
+            # Population was provided with pre-grouped ages — use them directly
+            self.sm.pop_data.data["age_grp"] = self.sm.pop_data.data["pop_age_grp"]
+            return
+
+        # Bin raw ages using age_group_specs
         bin_edges = self.sm.age_group_specs.left + [self.sm.age_group_specs.right[-1] + 1]
         intervals = [
             pd.Interval(left=l, right=r + 1, closed="left")

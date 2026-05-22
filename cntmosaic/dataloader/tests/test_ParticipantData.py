@@ -57,15 +57,15 @@ class TestCoreContracts:
         assert part_data.data["part_age_grp"].cat.ordered
 
     def test_column_renaming_single_strat_var(self, df_part_one_year):
-        """A string strat_var_col is normalised to a list and renamed with '_part' suffix."""
+        """A string strat_var_col is normalised to a list and renamed with 'part_' prefix."""
         part_data = ParticipantData(
             df_part_one_year, id_col="id", age_col="age", strat_var_cols="sex"
         )
         assert part_data.strat_vars == ["sex"]
-        assert part_data.data.columns.tolist() == ["id", "part_age", "sex_part"]
+        assert part_data.data.columns.tolist() == ["id", "part_age", "part_sex"]
 
     def test_column_renaming_multiple_strat_vars(self, df_part_one_year):
-        """Multiple strat_var_cols are all renamed with '_part' suffix."""
+        """Multiple strat_var_cols are all renamed with 'part_' prefix."""
         part_data = ParticipantData(
             df_part_one_year,
             id_col="id",
@@ -76,8 +76,8 @@ class TestCoreContracts:
         assert part_data.data.columns.tolist() == [
             "id",
             "part_age",
-            "sex_part",
-            "hhsize_part",
+            "part_sex",
+            "part_hhsize",
         ]
 
     def test_column_renaming_with_repeat_col(self, df_part_one_year):
@@ -95,8 +95,8 @@ class TestCoreContracts:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        assert part_data.data["sex_part"].dtype.name == "category"
-        assert part_data.data["hhsize_part"].dtype.name == "category"
+        assert part_data.data["part_sex"].dtype.name == "category"
+        assert part_data.data["part_hhsize"].dtype.name == "category"
 
     @pytest.mark.parametrize(
         "nan_col, df_factory",
@@ -340,16 +340,16 @@ class TestAccessorMethods:
             "codes": [0, 1, 2, 3, 4],
         }
 
-    def test_get_strat_vars_with_suffix(self, df_part_one_year):
-        """get_strat_vars(suffix=True) returns names with '_part' appended."""
+    def test_get_strat_vars_with_prefix(self, df_part_one_year):
+        """get_strat_vars(prefix=True) returns names with 'part_' prepended."""
         part_data = ParticipantData(
             df_part_one_year,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        assert part_data.get_strat_vars(suffix=True) == ["sex_part", "hhsize_part"]
-        assert part_data.get_strat_vars(suffix=False) == ["sex", "hhsize"]
+        assert part_data.get_strat_vars(prefix=True) == ["part_sex", "part_hhsize"]
+        assert part_data.get_strat_vars(prefix=False) == ["sex", "hhsize"]
 
     def test_get_strat_vars_empty(self):
         """get_strat_vars() returns empty list when no stratification variables specified."""

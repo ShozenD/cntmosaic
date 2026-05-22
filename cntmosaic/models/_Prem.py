@@ -25,10 +25,10 @@ class Prem(PremNumPyroMixin, ContactModel):
     ----------
     part_data : ParticipantData
         Validated participant data container. Should include age groups
-        (age_grp_part) and optional stratification variables.
+        (part_age_grp) and optional stratification variables.
     cnt_data : ContactData
         Validated contact data container. Should include contact age groups
-        (age_grp_cnt) and matching stratification variables.
+        (cnt_age_grp) and matching stratification variables.
     age_bins : AgeGroupSpecs
         Age binning scheme to categorize ages into age groups.
         Used to assign age groups if raw ages are provided in the containers.
@@ -252,7 +252,7 @@ class Prem(PremNumPyroMixin, ContactModel):
 
         cnt_vars = self.cnt_data.get_strat_vars()
         if cnt_vars:
-            self.strat_vars_cnt = [var.removesuffix("_cnt") for var in cnt_vars]
+            self.strat_vars_cnt = [var.removeprefix("cnt_") for var in cnt_vars]
         else:
             self.strat_vars_cnt = []
 
@@ -282,14 +282,14 @@ class Prem(PremNumPyroMixin, ContactModel):
         self.strat_dims_part = {}
         if self.strat_vars_part:
             for var in self.strat_vars_part:
-                col_name = f"{var}_part"
+                col_name = f"part_{var}"
                 self.strat_dims_part[var] = self.part_data.data[col_name].nunique()
 
         # Calculate stratification dimensions for contact variables
         self.strat_dims_cnt = {}
         if self.strat_vars_cnt:
             for var in self.strat_vars_cnt:
-                col_name = f"{var}_cnt"
+                col_name = f"cnt_{var}"
                 self.strat_dims_cnt[var] = self.cnt_data.data[col_name].nunique()
 
         # For backward compatibility, maintain strat_dims attribute
@@ -320,8 +320,8 @@ class Prem(PremNumPyroMixin, ContactModel):
         """
         for var in self.strat_vars_shared:
             # Get column names
-            col_part = f"{var}_part"
-            col_cnt = f"{var}_cnt"
+            col_part = f"part_{var}"
+            col_cnt = f"cnt_{var}"
 
             # Get categories from both sides
             part_col = self.part_data.data[col_part]
@@ -413,37 +413,37 @@ class Prem(PremNumPyroMixin, ContactModel):
         ]
 
         # Assign age groups to participants if not present
-        if "age_grp_part" not in self.part_data.data.columns:
-            if "age_part" in self.part_data.data.columns:
+        if "part_age_grp" not in self.part_data.data.columns:
+            if "part_age" in self.part_data.data.columns:
                 # Create age groups from raw ages
-                ages = self.part_data.data["age_part"]
+                ages = self.part_data.data["part_age"]
                 age_grps = pd.cut(
                     ages,
                     bins=bin_edges,
                     right=False,
                     labels=intervals,
                 )
-                self.part_data.data["age_grp_part"] = age_grps
+                self.part_data.data["part_age_grp"] = age_grps
             else:
                 raise ValueError(
-                    "ParticipantData must have either 'age_part' or 'age_grp_part' column."
+                    "ParticipantData must have either 'age_part' or 'part_age_grp' column."
                 )
 
         # Assign age groups to contacts if not present
-        if "age_grp_cnt" not in self.cnt_data.data.columns:
-            if "age_cnt" in self.cnt_data.data.columns:
+        if "cnt_age_grp" not in self.cnt_data.data.columns:
+            if "cnt_age" in self.cnt_data.data.columns:
                 # Create age groups from raw ages
-                ages = self.cnt_data.data["age_cnt"]
+                ages = self.cnt_data.data["cnt_age"]
                 age_grps = pd.cut(
                     ages,
                     bins=bin_edges,
                     right=False,
                     labels=intervals,
                 )
-                self.cnt_data.data["age_grp_cnt"] = age_grps
+                self.cnt_data.data["cnt_age_grp"] = age_grps
             else:
                 raise ValueError(
-                    "ContactData must have either 'age_cnt' or 'age_grp_cnt' column."
+                    "ContactData must have either 'age_cnt' or 'cnt_age_grp' column."
                 )
 
     def _create_composite_stratum(
@@ -523,21 +523,21 @@ class Prem(PremNumPyroMixin, ContactModel):
         df_part = self.part_data.data
         df_cnt = self.cnt_data.data
 
-        # Ensure age_grp_cnt is categorical
-        if not isinstance(df_cnt["age_grp_cnt"].dtype, pd.CategoricalDtype):
-            df_cnt["age_grp_cnt"] = pd.Categorical(df_cnt["age_grp_cnt"], ordered=True)
+        # Ensure cnt_age_grp is categorical
+        if not isinstance(df_cnt["cnt_age_grp"].dtype, pd.CategoricalDtype):
+            df_cnt["cnt_age_grp"] = pd.Categorical(df_cnt["cnt_age_grp"], ordered=True)
 
         # Create complete contact matrix structure
         coords = {
             "id": df_cnt["id"].unique(),
-            "age_grp_cnt": df_cnt["age_grp_cnt"].cat.categories,
+            "cnt_age_grp": df_cnt["cnt_age_grp"].cat.categories,
         }
 
         # For stratified models, include contact stratification variables in Cartesian product
         # This ensures zero records for all (participant, contact_stratum, contact_age) combinations
         if self.strat_vars_cnt:
             for var in self.strat_vars_cnt:
-                col_name = f"{var}_cnt"
+                col_name = f"cnt_{var}"
                 if col_name in df_cnt.columns:
                     # Ensure categorical
                     if not isinstance(df_cnt[col_name].dtype, pd.CategoricalDtype):
@@ -553,10 +553,10 @@ class Prem(PremNumPyroMixin, ContactModel):
             index.to_frame(index=False), columns=list(coords.keys())
         )
 
-        # Determine merge keys (id, age_grp_cnt, and any contact strat vars)
-        merge_keys = ["id", "age_grp_cnt"]
+        # Determine merge keys (id, cnt_age_grp, and any contact strat vars)
+        merge_keys = ["id", "cnt_age_grp"]
         if self.strat_vars_cnt:
-            merge_keys.extend([f"{var}_cnt" for var in self.strat_vars_cnt])
+            merge_keys.extend([f"cnt_{var}" for var in self.strat_vars_cnt])
 
         # Merge with actual contact data
         df_cnt_full = pd.merge(df_cnt_full, df_cnt, on=merge_keys, how="left")
@@ -565,16 +565,16 @@ class Prem(PremNumPyroMixin, ContactModel):
         df_cnt_full["y"] = df_cnt_full["y"].fillna(0).astype(int)
 
         # Restore categorical information for age groups
-        df_cnt_full["age_grp_cnt"] = pd.Categorical(
-            df_cnt_full["age_grp_cnt"],
-            categories=df_cnt["age_grp_cnt"].cat.categories,
+        df_cnt_full["cnt_age_grp"] = pd.Categorical(
+            df_cnt_full["cnt_age_grp"],
+            categories=df_cnt["cnt_age_grp"].cat.categories,
             ordered=True,
         )
 
         # Restore categorical information for contact stratification variables
         if self.strat_vars_cnt:
             for var in self.strat_vars_cnt:
-                col_name = f"{var}_cnt"
+                col_name = f"cnt_{var}"
                 if col_name in df_cnt.columns and col_name in df_cnt_full.columns:
                     df_cnt_full[col_name] = pd.Categorical(
                         df_cnt_full[col_name],
@@ -586,23 +586,23 @@ class Prem(PremNumPyroMixin, ContactModel):
         self.data = pd.merge(df_cnt_full, df_part, on="id", how="left")
 
         # Check for missing participants
-        if self.data["age_grp_part"].isnull().any():
-            missing_ids = self.data[self.data["age_grp_part"].isna()]["id"].unique()
+        if self.data["part_age_grp"].isnull().any():
+            missing_ids = self.data[self.data["part_age_grp"].isna()]["id"].unique()
             raise ValueError(f"Missing participant data for IDs: {missing_ids}.")
 
-        # Ensure age_grp_part is categorical
-        if not isinstance(self.data["age_grp_part"].dtype, pd.CategoricalDtype):
-            self.data["age_grp_part"] = pd.Categorical(
-                self.data["age_grp_part"], ordered=True
+        # Ensure part_age_grp is categorical
+        if not isinstance(self.data["part_age_grp"].dtype, pd.CategoricalDtype):
+            self.data["part_age_grp"] = pd.Categorical(
+                self.data["part_age_grp"], ordered=True
             )
 
         # Build groupby columns based on stratification
-        groupby_cols = ["id", "age_grp_part", "age_grp_cnt"]
+        groupby_cols = ["id", "part_age_grp", "cnt_age_grp"]
 
         # Add stratification columns if present
         if self.strat_vars:
-            strat_cols_part = [f"{v}_part" for v in self.strat_vars]
-            strat_cols_cnt = [f"{v}_cnt" for v in self.strat_vars]
+            strat_cols_part = [f"part_{v}" for v in self.strat_vars]
+            strat_cols_cnt = [f"cnt_{v}" for v in self.strat_vars]
             # Only add columns that exist in the merged data
             for col in strat_cols_part + strat_cols_cnt:
                 if col in self.data.columns and col not in groupby_cols:
@@ -615,8 +615,8 @@ class Prem(PremNumPyroMixin, ContactModel):
 
         # Create stratification encoding
         if self.strat_vars_part or self.strat_vars_cnt:
-            strat_cols_part = [f"{v}_part" for v in self.strat_vars_part]
-            strat_cols_cnt = [f"{v}_cnt" for v in self.strat_vars_cnt]
+            strat_cols_part = [f"part_{v}" for v in self.strat_vars_part]
+            strat_cols_cnt = [f"cnt_{v}" for v in self.strat_vars_cnt]
 
             # Create composite stratification variable
             self.data["stratum"] = self._create_composite_stratum(
@@ -642,13 +642,13 @@ class Prem(PremNumPyroMixin, ContactModel):
         # Extract arrays
         self.y = np.array(self.data["y"].values)
         self.iix = np.array(self.data["iix"].values, dtype=np.int32)
-        self.cix = np.array(self.data["age_grp_part"].cat.codes, dtype=np.int32)
-        self.dix = np.array(self.data["age_grp_cnt"].cat.codes, dtype=np.int32)
+        self.cix = np.array(self.data["part_age_grp"].cat.codes, dtype=np.int32)
+        self.dix = np.array(self.data["cnt_age_grp"].cat.codes, dtype=np.int32)
 
         # Store dimensions and data sizes
         self.N = self.data["id"].nunique()
-        self.C = self.data["age_grp_part"].cat.categories.size
-        self.D = self.data["age_grp_cnt"].cat.categories.size
+        self.C = self.data["part_age_grp"].cat.categories.size
+        self.D = self.data["cnt_age_grp"].cat.categories.size
 
     def get_samples_svi(
         self,

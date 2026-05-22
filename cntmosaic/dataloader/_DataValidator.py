@@ -90,17 +90,17 @@ class DataValidator:
         Computes variable name sets once and caches them for reuse. This method
         populates the part_vars, cnt_vars, pop_vars, and strat_vars attributes.
         """
-        self.part_vars = set(self.part_data.get_strat_vars(suffix=False))
+        self.part_vars = set(self.part_data.get_strat_vars(prefix=False))
         self.cnt_vars = set(self.cnt_data.get_strat_vars(prefix=False))
-        self.pop_vars = set(self.pop_data.get_strat_vars(suffix=False))
+        self.pop_vars = set(self.pop_data.get_strat_vars(prefix=False))
         if self.strat_data:
             self.strat_vars = set(self.strat_data.get_strat_vars())
         else:
             self.strat_vars = set()
 
-        self.part_vars_list = self.part_data.get_strat_vars(suffix=False)
+        self.part_vars_list = self.part_data.get_strat_vars(prefix=False)
         self.cnt_vars_list = self.cnt_data.get_strat_vars(prefix=False)
-        self.pop_vars_list = self.pop_data.get_strat_vars(suffix=False)
+        self.pop_vars_list = self.pop_data.get_strat_vars(prefix=False)
 
         if self.strat_data:
             self.strat_vars_list = self.strat_data.get_strat_vars()

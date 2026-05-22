@@ -243,8 +243,8 @@ def _preprocess(
         rename_map[age_grp_col] = "part_age_grp"
 
     for var in strat_var_cols:
-        if not var.endswith("_part"):
-            rename_map[var] = f"{var}_part"
+        if not var.startswith("part_"):
+            rename_map[var] = f"part_{var}"
 
     if repeat_col and not repeat_col.startswith("part_"):
         rename_map[repeat_col] = "part_repeat"

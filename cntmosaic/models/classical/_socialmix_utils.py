@@ -265,8 +265,8 @@ class SocialMixDataLoader:
 
         bin_edges = self.sm.age_group_specs.left + [self.sm.age_group_specs.right[-1] + 1]
         intervals = [
-            pd.Interval(left=l, right=r + 1, closed="left")
-            for l, r in zip(self.sm.age_group_specs.left, self.sm.age_group_specs.right)
+            pd.Interval(left=l, right=r, closed="left")
+            for l, r in zip(bin_edges[:-1], bin_edges[1:])
         ]
 
         ages = self.sm.pop_data.data["age"]

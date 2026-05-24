@@ -511,8 +511,8 @@ class SocialMixBootstrap:
         """Load and process population data for reciprocity adjustment."""
         bin_edges = self.age_group_specs.left + [self.age_group_specs.right[-1] + 1]
         intervals = [
-            pd.Interval(left=l, right=r + 1, closed="left")
-            for l, r in zip(self.age_group_specs.left, self.age_group_specs.right)
+            pd.Interval(left=l, right=r, closed="left")
+            for l, r in zip(bin_edges[:-1], bin_edges[1:])
         ]
 
         if "age_grp" not in self.pop_data.data.columns:

@@ -17,6 +17,7 @@ from numpy.typing import NDArray
 from ...dataloader import ContactData, ParticipantData, PopulationData
 from ...utils import AgeGroupSpecs
 from ._socialmix_age_processing import AgeBinProcessor
+from ._socialmix_helpers import infer_strat_mode
 
 
 class SocialMixValidator:
@@ -146,23 +147,8 @@ class SocialMixValidator:
         self._infer_strat_mode()
 
     def _infer_strat_mode(self) -> None:
-        """
-        Infer the stratification mode based on the stratification variables.
-
-        Sets self.strat_mode to one of:
-        - 'single': No stratification
-        - 'partial': Only participant stratification
-        - 'full': Same stratification on both sides
-        - 'mixed': Some overlap but not identical
-        """
-        if len(self.strat_vars_part) == 0 and len(self.strat_vars_cnt) == 0:
-            self.strat_mode = "single"
-        elif len(self.strat_vars_cnt) == 0:
-            self.strat_mode = "partial"
-        elif set(self.strat_vars_part) == set(self.strat_vars_cnt):
-            self.strat_mode = "full"
-        else:
-            self.strat_mode = "mixed"
+        """Infer and cache the stratification mode."""
+        self.strat_mode = infer_strat_mode(self.strat_vars_part, self.strat_vars_cnt)
 
     def _validate_reciprocity_requirements(self) -> bool:
         """
@@ -348,6 +334,27 @@ class SocialMixValidator:
         This validation must run before bootstrap validation since it may
         modify the age bins.
         """
+        # Verify that the number of bins in age_group_specs matches the actual
+        # number of age-group categories in the data.  A mismatch typically means
+        # the data was pre-binned with pd.cut(..., bins=range(0, N, step)) whose
+        # N is an *exclusive* upper edge, while AgeGroupSpecs(0, N, step) treats
+        # N as an *inclusive* maximum age, producing one extra bin.
+        n_bins = len(self.age_group_specs.left)
+        n_part_cats = len(self.part_data.data["part_age_grp"].cat.categories)
+        n_cnt_cats = len(self.cnt_data.data["cnt_age_grp"].cat.categories)
+        if n_part_cats != n_bins or n_cnt_cats != n_bins:
+            raise ValueError(
+                f"age_group_specs defines {n_bins} age bins, but the data has "
+                f"{n_part_cats} participant age group(s) and {n_cnt_cats} contact "
+                f"age group(s). "
+                f"If you pre-binned the data with "
+                f"pd.cut(..., bins=range(0, {self.age_group_specs.max + 1}, {self.age_group_specs.step or 'step'}), right=False), "
+                f"note that AgeGroupSpecs treats 'max' as an inclusive upper bound. "
+                f"Use AgeGroupSpecs(0, {self.age_group_specs.max - (self.age_group_specs.step or 1)}, "
+                f"{self.age_group_specs.step or 'step'}) so that the last bin ends at "
+                f"{self.age_group_specs.max - 1}."
+            )
+
         # Determine grouping columns based on stratification
         group_cols = [f"part_{var}" for var in self.strat_vars_part] + ["part_age_grp"]
 
@@ -461,8 +468,9 @@ class SocialMixValidator:
                     # Update age bins
                     new_left = [interval.left for interval in merged_intervals]
                     new_right = [interval.right for interval in merged_intervals]
-                    object.__setattr__(self.age_group_specs, "left", new_left)
-                    object.__setattr__(self.age_group_specs, "right", new_right)
+                    self.age_group_specs = self.age_group_specs.replace(
+                        age_min=new_left, age_max=new_right
+                    )
 
                     # Check for remaining empty groups
                     if self.strat_vars_part:
@@ -600,16 +608,16 @@ class SocialMixValidator:
             else:
                 strata_info = ""
                 if self.strat_vars_part:
-                    strata_info = f" (considering {len(self.strat_vars_part)} stratification variable(s))"
+                    strata_info = f" across {len(self.strat_vars_part)} stratification variable(s)"
 
-                warnings.warn(
-                    f"Participant data has empty age groups{strata_info}: {empty_groups}. "
-                    "Bootstrap will fail unless age groups are merged. "
-                    f"Consider enabling adaptive_merge to automatically merge "
-                    f"empty age groups.",
-                    UserWarning,
+                raise ValueError(
+                    f"\nCannot run bootstrap: found empty participant age group(s){strata_info}: {empty_groups}. "
+                    f"\nEmpty age groups cause division by zero during bootstrap resampling. "
+                    f"\nPlease either:\n"
+                    f"  1. Set adaptive_merge=True to automatically merge empty age groups, or\n"
+                    f"  2. Use coarser age bins that avoid empty groups, or\n"
+                    f"  3. Collect more participant data to fill all age groups."
                 )
-                return
 
         # Calculate failure probability using Bonferroni union bound
         if self.strat_vars_part:
@@ -679,12 +687,12 @@ class SocialMixValidator:
             strat_var_cols=self.cnt_data.strat_var_cols,
         )
 
-        # Update age bins by directly modifying attributes
+        # Replace age bins with a new AgeGroupSpecs built from merged bounds
         new_left = [interval.left for interval in merged_intervals]
         new_right = [interval.right for interval in merged_intervals]
-
-        object.__setattr__(self.age_group_specs, "left", new_left)
-        object.__setattr__(self.age_group_specs, "right", new_right)
+        self.age_group_specs = self.age_group_specs.replace(
+            age_min=new_left, age_max=new_right
+        )
 
     def _adaptive_merge_for_stability(
         self,
@@ -744,17 +752,20 @@ class SocialMixValidator:
                 new_group_col="cnt_age_grp",
             )
 
-            # Create new data containers with updated dataframes
+            # Create new data containers with updated dataframes.
+            # The updated DataFrames are derived from already-preprocessed .data,
+            # so the ID column is the standardized "id" name, not the original
+            # user-supplied id_col (which may have been renamed during preprocessing).
             self.part_data = ParticipantData(
                 df_part_updated,
-                id_col=self.part_data.id_col,
+                id_col="id",
                 age_grp_col="part_age_grp",
                 strat_var_cols=[f"part_{var}" for var in self.strat_vars_part],
             )
 
             self.cnt_data = ContactData(
                 df_cnt_updated,
-                id_col=self.cnt_data.id_col,
+                id_col="id",
                 age_grp_col="cnt_age_grp",
                 cnt_col=self.cnt_data.cnt_col,
                 strat_var_cols=[f"cnt_{var}" for var in self.strat_vars_cnt],
@@ -809,14 +820,13 @@ class SocialMixValidator:
 
             merge_iterations += 1
 
-        # Update age bins to reflect final merged state
+        # Replace age bins with a new AgeGroupSpecs built from merged bounds
         if merge_iterations > 0:
             new_left = [interval.left for interval in merged_intervals]
             new_right = [interval.right for interval in merged_intervals]
-
-            # Modify the existing age_bins object's internal lists
-            object.__setattr__(self.age_group_specs, "left", new_left)
-            object.__setattr__(self.age_group_specs, "right", new_right)
+            self.age_group_specs = self.age_group_specs.replace(
+                age_min=new_left, age_max=new_right
+            )
 
             # Format age bins for display
             left_str = ", ".join(str(x) for x in self.age_group_specs.left)

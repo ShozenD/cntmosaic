@@ -9,7 +9,7 @@ import altair as alt
 import numpy as np
 import pandas as pd
 
-from ..utils import AgeGroupSpecs, depixilate
+from ..utils import AgeGroupSpecs
 from ._utils import _default_style, _merge_style, generate_vega_expression, ravel_matrix
 
 
@@ -264,7 +264,15 @@ def plot_mosaic_pixilated(
     default_config = _default_style(label_angle_x=-45)
     _merge_style(default_config, style_config)
 
-    expanded_matrix = depixilate(matrix, age_group_specs)
+    # Tile each coarse-bin value into its single-year block so the plotted
+    # color reflects the actual intensity. Bin width is encoded visually by
+    # block size, not by rescaling the value.
+    expanded_matrix = np.zeros((age_group_specs.range, age_group_specs.range))
+    for i in range(len(age_group_specs.left)):
+        x0, x1 = age_group_specs.left[i], age_group_specs.right[i] + 1
+        for j in range(len(age_group_specs.left)):
+            y0, y1 = age_group_specs.left[j], age_group_specs.right[j] + 1
+            expanded_matrix[x0:x1, y0:y1] = matrix[i, j]
 
     x_indices, y_indices, values = ravel_matrix(expanded_matrix)
     source = pd.DataFrame({"x": x_indices, "y": y_indices, "z": values})

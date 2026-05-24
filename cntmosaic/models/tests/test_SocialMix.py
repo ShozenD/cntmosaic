@@ -2,19 +2,13 @@
 Unit tests for SocialMix classical contact matrix estimation.
 
 Tests are organised by concern:
-  TestInstantiation   – constructor paths: .from_containers() and .from_dataframes()
+  TestInstantiation   – constructor paths: SocialMix() and .from_dataframes()
   TestStratification  – strat_mode and K inferred correctly for each data layout
   TestCint            – .cint() output type (ContactSummary), shape, reciprocity
   TestRate            – .rate() output type (ContactSummary), shape, error handling
   TestAdaptiveMerge   – small-sample behaviour with adaptive_merge=True/False
   TestBootstrap       – run_inference_bootstrap() stores BootstrapResults (N_BOOT=10)
   TestSummariser      – ModelSummariserSocialMix mirrors ModelSummariser interface
-
-Upcoming changes tested here (not yet implemented):
-  - SocialMix.from_containers() and SocialMix.from_dataframes() class methods
-  - .cint() and .rate() returning Dict[str, ContactSummary] instead of Dict[str, NDArray]
-  - ModelSummariserSocialMix.summarise_cint/rate/mcint() returning Dict[str, ContactSummary]
-  - ModelSummariserSocialMix.clear_cache() and .get_cache_info()
 """
 
 import numpy as np
@@ -44,9 +38,9 @@ AGE_BINS = AgeGroupSpecs(0, 80, 5)  # 16 age groups
 
 
 def _from_containers(fixture, **kwargs):
-    """Build SocialMix via .from_containers() with default 5-year age bins."""
+    """Build SocialMix with default 5-year age bins."""
     part_data, cnt_data, pop_data = fixture
-    return SocialMix.from_containers(part_data, cnt_data, AGE_BINS, pop_data, **kwargs)
+    return SocialMix(part_data, cnt_data, AGE_BINS, pop_data, **kwargs)
 
 
 # ============================================================================
@@ -90,9 +84,7 @@ class TestInstantiation:
             UserWarning,
             match="Reciprocity adjustment requested but no population data",
         ):
-            sm = SocialMix.from_containers(
-                part_data, cnt_data, AGE_BINS, apply_reciprocity=True
-            )
+            sm = SocialMix(part_data, cnt_data, AGE_BINS, apply_reciprocity=True)
         assert sm.apply_reciprocity is False
 
     def test_partial_warns_reciprocity_not_applicable(
@@ -235,9 +227,7 @@ class TestRate:
     def test_raises_without_pop_data(self, single_large_sample):
         part_data, cnt_data, _ = single_large_sample
         with pytest.warns(UserWarning):
-            sm = SocialMix.from_containers(
-                part_data, cnt_data, AGE_BINS, apply_reciprocity=True
-            )
+            sm = SocialMix(part_data, cnt_data, AGE_BINS, apply_reciprocity=True)
         with pytest.raises(ValueError, match="population data"):
             sm.rate()
 
@@ -277,16 +267,12 @@ class TestAdaptiveMerge:
     def test_single_small_raises_without_merge(self, single_small_sample):
         part_data, cnt_data, pop_data = single_small_sample
         with pytest.raises(ValueError):
-            SocialMix.from_containers(
-                part_data, cnt_data, AGE_BINS, pop_data, adaptive_merge=False
-            )
+            SocialMix(part_data, cnt_data, AGE_BINS, pop_data, adaptive_merge=False)
 
     def test_single_small_merges(self, single_small_sample):
         part_data, cnt_data, pop_data = single_small_sample
         with pytest.warns(UserWarning):
-            sm = SocialMix.from_containers(
-                part_data, cnt_data, AGE_BINS, pop_data, adaptive_merge=True
-            )
+            sm = SocialMix(part_data, cnt_data, AGE_BINS, pop_data, adaptive_merge=True)
         cs = sm.cint()["All->All"]
         assert cs.central.shape[0] <= 16
         assert np.all(cs.central >= 0)
@@ -294,7 +280,7 @@ class TestAdaptiveMerge:
     def test_partial_small_merges(self, partial_small_sample):
         part_data, cnt_data, pop_data = partial_small_sample
         with pytest.warns(UserWarning):
-            sm = SocialMix.from_containers(
+            sm = SocialMix(
                 part_data,
                 cnt_data,
                 AGE_BINS,
@@ -328,33 +314,30 @@ class TestBootstrap:
     """run_inference_bootstrap() stores BootstrapResults with correct n_boot."""
 
     def test_single(self, single_large_sample):
-        sm = _from_containers(single_large_sample, validate_for_bootstrap=True)
+        sm = _from_containers(single_large_sample)
         sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
         assert sm._boot is not None
         assert sm._boot.n_boot == N_BOOT
 
     def test_partial(self, partial_large_sample):
-        sm = _from_containers(
-            partial_large_sample, apply_reciprocity=False, validate_for_bootstrap=True
-        )
+        sm = _from_containers(partial_large_sample, apply_reciprocity=False)
         sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
         assert sm._boot.n_boot == N_BOOT
 
     def test_full(self, full_large_sample):
-        sm = _from_containers(full_large_sample, validate_for_bootstrap=True)
+        sm = _from_containers(full_large_sample)
         sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
         assert sm._boot.n_boot == N_BOOT
 
     def test_single_small(self, single_small_sample):
         part_data, cnt_data, pop_data = single_small_sample
         with pytest.warns(UserWarning):
-            sm = SocialMix.from_containers(
+            sm = SocialMix(
                 part_data,
                 cnt_data,
                 AGE_BINS,
                 pop_data,
                 adaptive_merge=True,
-                validate_for_bootstrap=True,
             )
         sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
         assert sm._boot.n_boot == N_BOOT
@@ -370,21 +353,19 @@ class TestSummariser:
 
     @pytest.fixture
     def sm_single(self, single_large_sample):
-        sm = _from_containers(single_large_sample, validate_for_bootstrap=True)
+        sm = _from_containers(single_large_sample)
         sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
         return sm
 
     @pytest.fixture
     def sm_partial(self, partial_large_sample):
-        sm = _from_containers(
-            partial_large_sample, apply_reciprocity=False, validate_for_bootstrap=True
-        )
+        sm = _from_containers(partial_large_sample, apply_reciprocity=False)
         sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
         return sm
 
     @pytest.fixture
     def sm_full(self, full_large_sample):
-        sm = _from_containers(full_large_sample, validate_for_bootstrap=True)
+        sm = _from_containers(full_large_sample)
         sm.run_inference_bootstrap(n_boot=N_BOOT, random_state=42, progress=False)
         return sm
 

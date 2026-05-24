@@ -145,7 +145,7 @@ class AgeMixCC(AgeMixCCNumPyroMixin, GenMix):
     """
 
     # Default priors
-    default_priors = {"rate": vdKassteele2D(prior_type="global")}
+    default_priors = {"rate": vdKassteele2D(prior_type="global", order=1)}
 
     def __init__(
         self,

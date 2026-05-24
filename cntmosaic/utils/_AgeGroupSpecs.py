@@ -150,3 +150,20 @@ class AgeGroupSpecs:
     def get_cuts(self):
         """Return bin left boundaries plus the exclusive upper bound of the last bin."""
         return self.left + [self.right[-1] + 1]
+
+    def replace(self, *, age_min: list, age_max: list) -> "AgeGroupSpecs":
+        """Return a new AgeGroupSpecs with updated bounds, leaving this instance unchanged.
+
+        Parameters
+        ----------
+        age_min : list of int
+            New inclusive lower bounds for each bin.
+        age_max : list of int
+            New inclusive upper bounds for each bin.
+
+        Returns
+        -------
+        AgeGroupSpecs
+            A fresh instance constructed from the provided bounds.
+        """
+        return AgeGroupSpecs(age_min=age_min, age_max=age_max)

@@ -5,6 +5,7 @@ This module provides bootstrap resampling for contact matrix estimation.
 Uses efficient NumPy operations for maximum performance.
 """
 
+import itertools
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -15,6 +16,13 @@ from tqdm import tqdm
 
 from ...dataloader import ContactData, ParticipantData, PopulationData
 from ...utils import AgeGroupSpecs
+from ._socialmix_helpers import (
+    apply_reciprocity,
+    contact_labels,
+    create_stratum_labels,
+    infer_strat_mode,
+    participant_labels,
+)
 
 
 @dataclass
@@ -343,14 +351,7 @@ class SocialMixBootstrap:
         self.strat_vars_cnt = self.cnt_data.get_strat_vars(prefix=False)
 
         # Determine stratification mode
-        if len(self.strat_vars_part) == 0 and len(self.strat_vars_cnt) == 0:
-            self.strat_mode = "single"
-        elif len(self.strat_vars_cnt) == 0:
-            self.strat_mode = "partial"
-        elif set(self.strat_vars_part) == set(self.strat_vars_cnt):
-            self.strat_mode = "full"
-        else:
-            self.strat_mode = "mixed"
+        self.strat_mode = infer_strat_mode(self.strat_vars_part, self.strat_vars_cnt)
 
         # Get dimensions
         self.C = len(self.part_data.data["part_age_grp"].cat.categories)
@@ -455,26 +456,27 @@ class SocialMixBootstrap:
         return Y_raw
 
     def _get_participant_stratum_codes(self) -> NDArray:
-        """Get stratum codes for each participant."""
-        # Build mapping from stratum tuple to code
-        strat_mapping = self._get_participant_stratum_mapping()
+        """Get stratum codes for each participant.
 
-        # Extract stratum for each participant
-        N = len(self.part_data.data)
-        codes = np.zeros(N, dtype=np.int32)
+        Returns a composite integer code in the same order as
+        ``itertools.product(*category_lists)`` — i.e. row-major over the
+        cartesian product of per-variable categories.
+        """
+        if not self.strat_vars_part:
+            return np.zeros(len(self.part_data.data), dtype=np.int32)
 
-        for i in range(N):
-            strat_tuple = tuple(
-                self.part_data.data.iloc[i][f"part_{v}"] for v in self.strat_vars_part
-            )
-            codes[i] = strat_mapping[strat_tuple]
-
-        return codes
+        code_arrays = [
+            self.part_data.data[f"part_{v}"].cat.codes.values
+            for v in self.strat_vars_part
+        ]
+        dims = tuple(
+            len(self.part_data.data[f"part_{v}"].cat.categories)
+            for v in self.strat_vars_part
+        )
+        return np.ravel_multi_index(code_arrays, dims=dims).astype(np.int32)
 
     def _get_participant_stratum_mapping(self) -> Dict:
         """Create mapping from participant stratum tuple to integer code."""
-        import itertools
-
         # Get all category combinations
         categories = []
         for var in self.strat_vars_part:
@@ -491,8 +493,6 @@ class SocialMixBootstrap:
 
     def _get_contact_stratum_mapping(self) -> Dict:
         """Create mapping from contact stratum tuple to integer code."""
-        import itertools
-
         # Get all category combinations
         categories = []
         for var in self.strat_vars_cnt:
@@ -592,7 +592,7 @@ class SocialMixBootstrap:
 
         # Apply reciprocity if requested
         if self.apply_reciprocity and self.pop_data is not None:
-            cint_boot = self._apply_reciprocity(cint_boot)
+            cint_boot = apply_reciprocity(cint_boot, self.strat_mode, self.K_cnt, self.P)
 
         # Compute rates
         rate_boot = self._compute_rate_from_cint(cint_boot)
@@ -644,15 +644,10 @@ class SocialMixBootstrap:
 
         if self.strat_mode == "single":
             label = "All->All"
-            # Aggregate: Y_boot[c, d] = sum over i where age_sampled[i] == c
-            Y_boot_dict[label] = np.zeros((self.C, self.D), dtype=np.float64)
-            N_boot_dict[label] = np.zeros(self.C, dtype=np.int32)
-
-            for i in range(len(boot_idx)):
-                c = age_sampled[i]
-                Y_boot_dict[label][c, :] += Y_sampled[i, 0, :]  # K_cnt=1
-                N_boot_dict[label][c] += 1
-
+            Y_boot = np.zeros((self.C, self.D), dtype=np.float64)
+            np.add.at(Y_boot, age_sampled, Y_sampled[:, 0, :])
+            Y_boot_dict[label] = Y_boot
+            N_boot_dict[label] = np.bincount(age_sampled, minlength=self.C).astype(np.int32)
             return Y_boot_dict, N_boot_dict
 
         # Stratified cases
@@ -664,21 +659,19 @@ class SocialMixBootstrap:
         strat_labels = self._create_stratum_labels()
 
         if self.strat_mode == "partial":
-            # Only participant stratification: Y[p][c, d]
             for p in range(self.K_part):
-                label = f"{strat_labels[p]}->All"
-                Y_boot_dict[label] = np.zeros((self.C, self.D), dtype=np.float64)
-                N_boot_dict[label] = np.zeros(self.C, dtype=np.int32)
+                Y_boot_dict[strat_labels[p]] = np.zeros((self.C, self.D), dtype=np.float64)
+                N_boot_dict[strat_labels[p]] = np.zeros(self.C, dtype=np.int32)
 
-            for i in range(len(boot_idx)):
-                c = age_sampled[i]
-                p = part_strat_sampled[i]
-                label = f"{strat_labels[p]}->All"
-                Y_boot_dict[label][c, :] += Y_sampled[i, 0, :]  # K_cnt=1
-                N_boot_dict[label][c] += 1
+            for p in range(self.K_part):
+                mask = part_strat_sampled == p
+                age_p = age_sampled[mask]
+                np.add.at(Y_boot_dict[strat_labels[p]], age_p, Y_sampled[mask, 0, :])
+                N_boot_dict[strat_labels[p]] = np.bincount(
+                    age_p, minlength=self.C
+                ).astype(np.int32)
 
         elif self.strat_mode == "full":
-            # Both sides stratified, same categories: Y[p,q][c, d]
             part_labels = self._create_participant_stratum_labels()
             cnt_labels = self._create_contact_stratum_labels()
 
@@ -688,18 +681,18 @@ class SocialMixBootstrap:
                     Y_boot_dict[label] = np.zeros((self.C, self.D), dtype=np.float64)
                     N_boot_dict[label] = np.zeros(self.C, dtype=np.int32)
 
-            for i in range(len(boot_idx)):
-                c = age_sampled[i]
-                p = part_strat_sampled[i]
+            for p in range(self.K_part):
+                mask = part_strat_sampled == p
+                age_p = age_sampled[mask]
+                Y_p = Y_sampled[mask]  # (N_p, K_cnt, D)
                 for q in range(self.K_cnt):
                     label = f"{part_labels[p]}->{cnt_labels[q]}"
-                    Y_boot_dict[label][c, :] += Y_sampled[i, q, :]
-                    N_boot_dict[label][c] += 1
+                    np.add.at(Y_boot_dict[label], age_p, Y_p[:, q, :])
+                    N_boot_dict[label] = np.bincount(
+                        age_p, minlength=self.C
+                    ).astype(np.int32)
 
         else:  # mixed
-            # General case: build labels from actual data
-            # For simplicity, we'll use the same logic as full mode
-            # but handle K_part != K_cnt cases
             part_labels = self._create_participant_stratum_labels()
             cnt_labels = self._create_contact_stratum_labels()
 
@@ -711,75 +704,39 @@ class SocialMixBootstrap:
                     Y_boot_dict[label] = np.zeros((self.C, self.D), dtype=np.float64)
                     N_boot_dict[label] = np.zeros(self.C, dtype=np.int32)
 
-            for i in range(len(boot_idx)):
-                c = age_sampled[i]
-                p = part_strat_sampled[i] if part_strat_sampled is not None else 0
-
+            for p in range(max(1, self.K_part)):
+                mask = (part_strat_sampled == p) if part_strat_sampled is not None else np.ones(len(age_sampled), dtype=bool)
+                age_p = age_sampled[mask]
+                Y_p = Y_sampled[mask]
                 for q in range(self.K_cnt):
                     p_label = part_labels[p] if self.K_part > 1 else "All"
                     q_label = cnt_labels[q] if self.K_cnt > 1 else "All"
                     label = f"{p_label}->{q_label}"
-                    Y_boot_dict[label][c, :] += Y_sampled[i, q, :]
-                    N_boot_dict[label][c] += 1
+                    np.add.at(Y_boot_dict[label], age_p, Y_p[:, q, :])
+                    N_boot_dict[label] = np.bincount(
+                        age_p, minlength=self.C
+                    ).astype(np.int32)
 
         return Y_boot_dict, N_boot_dict
 
     def _create_stratum_labels(self) -> List[str]:
-        """Create human-readable stratum labels (for backward compatibility)."""
-        if self.K_part > 1:
-            return self._create_participant_stratum_labels()
-        elif self.K_cnt > 1:
-            return self._create_contact_stratum_labels()
-        else:
-            return ["All"]
+        """Create ``"source->target"`` labels for all strata."""
+        return create_stratum_labels(
+            self.K_part,
+            self.K_cnt,
+            self.strat_vars_part,
+            self.strat_vars_cnt,
+            self.part_data,
+            self.cnt_data,
+        )
 
     def _create_participant_stratum_labels(self) -> List[str]:
-        """Create human-readable labels for participant strata."""
-        import itertools
-
-        if self.K_part == 1:
-            return ["All"]
-
-        # Get category combinations for participant strata
-        categories = []
-        for var in self.strat_vars_part:
-            col_name = f"part_{var}"
-            cats = self.part_data.data[col_name].cat.categories.tolist()
-            categories.append(cats)
-
-        # Build labels
-        labels = []
-        for combo in itertools.product(*categories):
-            if len(combo) == 1:
-                labels.append(str(combo[0]))
-            else:
-                labels.append("_".join(str(c) for c in combo))
-
-        return labels
+        """Bare source-side labels, e.g. ``["M", "F"]``."""
+        return participant_labels(self.strat_vars_part, self.part_data)
 
     def _create_contact_stratum_labels(self) -> List[str]:
-        """Create human-readable labels for contact strata."""
-        import itertools
-
-        if self.K_cnt == 1:
-            return ["All"]
-
-        # Get category combinations for contact strata
-        categories = []
-        for var in self.strat_vars_cnt:
-            col_name = f"cnt_{var}"
-            cats = self.cnt_data.data[col_name].cat.categories.tolist()
-            categories.append(cats)
-
-        # Build labels
-        labels = []
-        for combo in itertools.product(*categories):
-            if len(combo) == 1:
-                labels.append(str(combo[0]))
-            else:
-                labels.append("_".join(str(c) for c in combo))
-
-        return labels
+        """Bare target-side labels, e.g. ``["M", "F"]``."""
+        return contact_labels(self.strat_vars_cnt, self.cnt_data)
 
     def _compute_cint_from_YN(
         self,
@@ -808,101 +765,6 @@ class SocialMixBootstrap:
             cint_boot[label] = cint
 
         return cint_boot
-
-    def _apply_reciprocity(self, cint: Dict[str, NDArray]) -> Dict[str, NDArray]:
-        """
-        Apply reciprocity adjustment to contact intensities.
-
-        Parameters
-        ----------
-        cint : Dict[str, NDArray]
-            Contact intensity matrices
-
-        Returns
-        -------
-        cint_adj : Dict[str, NDArray]
-            Reciprocity-adjusted contact intensity matrices
-        """
-        if self.strat_mode == "single":
-            # Within-stratum reciprocity: m†[c,d] = (m[c,d]·P[c] + m[d,c]·P[d]) / (2·P[c])
-            m = cint["All->All"]
-            P = self.P
-
-            numerator = m * P[:, np.newaxis] + m.T * P[np.newaxis, :]
-            denominator = 2 * P[:, np.newaxis]
-            m_adj = numerator / denominator
-            m_adj = np.nan_to_num(m_adj, nan=0.0, posinf=0.0, neginf=0.0)
-
-            return {"All->All": m_adj}
-
-        # Stratified cases
-        cint_adj = {}
-
-        # Get stratum label mappings
-        part_labels = self._create_participant_stratum_labels()
-        cnt_labels = self._create_contact_stratum_labels()
-
-        for label, m in cint.items():
-            source, target = label.split("->")
-            reverse_label = f"{target}->{source}"
-
-            if source == target and source != "All":
-                # Within-stratum (but not "All->All" which is handled above)
-                if self.P.ndim == 1:
-                    P = self.P
-                else:
-                    # Get stratum index using contact labels
-                    k = cnt_labels.index(source)
-                    P = self.P[k, :]
-
-                numerator = m * P[:, np.newaxis] + m.T * P[np.newaxis, :]
-                denominator = 2 * P[:, np.newaxis]
-                m_adj = numerator / denominator
-                m_adj = np.nan_to_num(m_adj, nan=0.0, posinf=0.0, neginf=0.0)
-                cint_adj[label] = m_adj
-
-            elif target == "All":
-                # Partial stratification (source->All)
-                # Within-stratum reciprocity
-                if self.P.ndim == 1:
-                    P = self.P
-                else:
-                    # Get stratum index using participant labels
-                    k = part_labels.index(source)
-                    P = self.P[k, :]
-
-                numerator = m * P[:, np.newaxis] + m.T * P[np.newaxis, :]
-                denominator = 2 * P[:, np.newaxis]
-                m_adj = numerator / denominator
-                m_adj = np.nan_to_num(m_adj, nan=0.0, posinf=0.0, neginf=0.0)
-                cint_adj[label] = m_adj
-
-            else:
-                # Between-stratum
-                if reverse_label in cint:
-                    m_reverse = cint[reverse_label]
-
-                    # Get population for each stratum using contact labels
-                    k_source = cnt_labels.index(source)
-                    k_target = cnt_labels.index(target)
-
-                    if self.P.ndim == 1:
-                        P_source = self.P
-                        P_target = self.P
-                    else:
-                        P_source = self.P[k_source, :]
-                        P_target = self.P[k_target, :]
-
-                    # m†[c,d] = (m[c,d] + m_reverse[d,c]·P[d]/P[c]) / 2
-                    ratio = P_target[np.newaxis, :] / P_source[:, np.newaxis]
-                    m_adj = (m + m_reverse.T * ratio) / 2
-                    m_adj = np.nan_to_num(m_adj, nan=0.0, posinf=0.0, neginf=0.0)
-                    cint_adj[label] = m_adj
-                else:
-                    # No reverse matrix, keep original
-                    cint_adj[label] = m
-
-        return cint_adj
 
     def _compute_rate_from_cint(self, cint: Dict[str, NDArray]) -> Dict[str, NDArray]:
         """

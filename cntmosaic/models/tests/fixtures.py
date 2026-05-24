@@ -30,7 +30,7 @@ def single_large_sample():
 
     # Construct population
     popcon = PopulationConstructor(strat)
-    df_pop = popcon.df_P
+    df_pop = popcon.df_P.drop(columns="general")
 
     # Generate contact matrix
     cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
@@ -100,7 +100,7 @@ def single_small_sample():
 
     # Construct population
     popcon = PopulationConstructor(strat)
-    df_pop = popcon.df_P
+    df_pop = popcon.df_P.drop(columns="general")
 
     # Generate contact matrix
     cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
@@ -343,6 +343,7 @@ def partial_small_sample():
     # Construct population
     popcon = PopulationConstructor(strat)
     df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
 
     # Generate contact matrix
     cnt_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
@@ -432,6 +433,8 @@ def partial_multi_strat_large_sample():
     # Construct population
     popcon = PopulationConstructor([strat_sex, strat_ses])
     df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
+    df_pop["ses"] = pd.Categorical(df_pop["ses"], categories=["Low", "High"], ordered=True)
 
     # Generate contact matrices
     cint_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
@@ -527,6 +530,7 @@ def full_large_sample():
     # Construct population
     popcon = PopulationConstructor(strat)
     df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["F", "M"], ordered=True)
 
     # Generate contact matrices
     cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
@@ -661,6 +665,8 @@ def full_multi_strat_large_sample():
     # Construct population
     popcon = PopulationConstructor([strat_sex, strat_ses])
     df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["F", "M"], ordered=True)
+    df_pop["ses"] = pd.Categorical(df_pop["ses"], categories=["High", "Low"], ordered=True)
 
     # Generate contact matrices
     cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)

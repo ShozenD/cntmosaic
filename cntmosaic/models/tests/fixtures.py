@@ -30,7 +30,7 @@ def single_large_sample():
 
     # Construct population
     popcon = PopulationConstructor(strat)
-    df_pop = popcon.df_P
+    df_pop = popcon.df_P.drop(columns="general")
 
     # Generate contact matrix
     cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
@@ -44,7 +44,7 @@ def single_large_sample():
     ).generate(seed=42)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age")
-    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
     pop_data = PopulationData(df_pop, age_col="age", size_col="P")
 
     return part_data, cnt_data, pop_data
@@ -75,16 +75,16 @@ def single_coarse_large_sample():
     ).generate(seed=42)
 
     # Simulate coarse age group reporting
-    df_cnt["age_grp_cnt"] = pd.cut(
-        df_cnt["age_cnt"],
+    df_cnt["cnt_age_grp"] = pd.cut(
+        df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
         right=False,
     )
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age")
-    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="cnt_age_grp")
     pop_data = PopulationData(df_pop, age_col="age", size_col="P")
 
     return part_data, cnt_data, pop_data
@@ -100,7 +100,7 @@ def single_small_sample():
 
     # Construct population
     popcon = PopulationConstructor(strat)
-    df_pop = popcon.df_P
+    df_pop = popcon.df_P.drop(columns="general")
 
     # Generate contact matrix
     cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
@@ -114,7 +114,7 @@ def single_small_sample():
     ).generate(seed=42)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age")
-    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
     pop_data = PopulationData(df_pop, age_col="age", size_col="P")
 
     return part_data, cnt_data, pop_data
@@ -132,13 +132,13 @@ def single_coarse_coarse_small():
     popcon = PopulationConstructor(strat)
     df_pop = popcon.df_P
     df_pop.drop(columns="general", inplace=True)
-    df_pop["age_grp_pop"] = pd.cut(
+    df_pop["pop_age_grp"] = pd.cut(
         df_pop["age"],
         bins=[0, 10, 20, 30, 40, 50, 60, 70, 80],
         right=False,
     )
-    df_pop.dropna(subset=["age_grp_pop"], inplace=True)
-    df_pop = df_pop.groupby("age_grp_pop", observed=False)["P"].sum().reset_index()
+    df_pop.dropna(subset=["pop_age_grp"], inplace=True)
+    df_pop = df_pop.groupby("pop_age_grp", observed=False)["P"].sum().reset_index()
 
     # Generate contact matrix
     cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
@@ -146,12 +146,12 @@ def single_coarse_coarse_small():
     # Generate participants
     df_part = ParticipantGenerator(popcon, n_part=50).generate(seed=42)
 
-    df_part["age_grp_part"] = pd.cut(
+    df_part["part_age_grp"] = pd.cut(
         df_part["age"],
         bins=[0, 10, 20, 30, 40, 50, 60, 70, 80],
         right=False,
     )
-    df_part.dropna(subset=["age_grp_part"], inplace=True)
+    df_part.dropna(subset=["part_age_grp"], inplace=True)
 
     # Generate contacts
     df_cnt = ContactGenerator(
@@ -159,17 +159,17 @@ def single_coarse_coarse_small():
     ).generate(seed=42)
 
     # Simulate coarse age group reporting
-    df_cnt["age_grp_cnt"] = pd.cut(
-        df_cnt["age_cnt"],
+    df_cnt["cnt_age_grp"] = pd.cut(
+        df_cnt["cnt_age"],
         bins=[0, 10, 20, 30, 40, 50, 60, 70, 80],
         right=False,
     )
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
-    part_data = ParticipantData(df_part, id_col="id", age_grp_col="age_grp_part")
-    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
-    pop_data = PopulationData(df_pop, age_grp_col="age_grp_pop", size_col="P")
+    part_data = ParticipantData(df_part, id_col="id", age_grp_col="part_age_grp")
+    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="cnt_age_grp")
+    pop_data = PopulationData(df_pop, age_grp_col="pop_age_grp", size_col="P")
 
     return part_data, cnt_data, pop_data
 
@@ -200,16 +200,16 @@ def single_coarse_large_sample_with_repeats():
     ).generate(seed=42)
 
     # Simulate coarse age group reporting
-    df_cnt["age_grp_cnt"] = pd.cut(
-        df_cnt["age_cnt"],
+    df_cnt["cnt_age_grp"] = pd.cut(
+        df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
         right=False,
     )
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age", repeat_col="rid")
-    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="cnt_age_grp")
     pop_data = PopulationData(df_pop, age_col="age", size_col="P")
 
     return part_data, cnt_data, pop_data
@@ -240,7 +240,7 @@ def single_large_sample_with_repeats():
     ).generate(seed=42)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age", repeat_col="rid")
-    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
     pop_data = PopulationData(df_pop, age_col="age", size_col="P")
 
     return part_data, cnt_data, pop_data
@@ -278,7 +278,7 @@ def partial_large_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_col="age_cnt",
+        age_col="cnt_age",
     )
     pop_data = PopulationData(df_pop, age_col="age", size_col="P", strat_var_cols="sex")
 
@@ -310,13 +310,13 @@ def partial_coarse_large_sample():
     df_cnt = ContactGenerator(
         df_part, cint_matrices=cnt_matrices, model="poisson"
     ).generate(seed=42)
-    df_cnt["age_grp_cnt"] = pd.cut(
-        df_cnt["age_cnt"],
+    df_cnt["cnt_age_grp"] = pd.cut(
+        df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
         right=False,
     )
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
     part_data = ParticipantData(
         df_part, id_col="id", age_col="age", strat_var_cols="sex"
@@ -324,7 +324,7 @@ def partial_coarse_large_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_grp_col="age_grp_cnt",
+        age_grp_col="cnt_age_grp",
     )
     pop_data = PopulationData(df_pop, age_col="age", size_col="P", strat_var_cols="sex")
 
@@ -343,6 +343,7 @@ def partial_small_sample():
     # Construct population
     popcon = PopulationConstructor(strat)
     df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
 
     # Generate contact matrix
     cnt_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
@@ -362,7 +363,7 @@ def partial_small_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_col="age_cnt",
+        age_col="cnt_age",
     )
     pop_data = PopulationData(df_pop, age_col="age", size_col="P", strat_var_cols="sex")
 
@@ -393,13 +394,13 @@ def partial_coarse_small_sample():
     df_cnt = ContactGenerator(
         df_part, cint_matrices=cnt_matrices, model="poisson"
     ).generate(seed=42)
-    df_cnt["age_grp_cnt"] = pd.cut(
-        df_cnt["age_cnt"],
+    df_cnt["cnt_age_grp"] = pd.cut(
+        df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
         right=False,
     )
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
     part_data = ParticipantData(
         df_part, id_col="id", age_col="age", strat_var_cols="sex"
@@ -407,7 +408,7 @@ def partial_coarse_small_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_grp_col="age_grp_cnt",
+        age_grp_col="cnt_age_grp",
     )
     pop_data = PopulationData(df_pop, age_col="age", size_col="P", strat_var_cols="sex")
 
@@ -432,6 +433,8 @@ def partial_multi_strat_large_sample():
     # Construct population
     popcon = PopulationConstructor([strat_sex, strat_ses])
     df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
+    df_pop["ses"] = pd.Categorical(df_pop["ses"], categories=["Low", "High"], ordered=True)
 
     # Generate contact matrices
     cint_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
@@ -452,7 +455,7 @@ def partial_multi_strat_large_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_col="age_cnt",
+        age_col="cnt_age",
     )
     pop_data = PopulationData(
         df_pop, age_col="age", size_col="P", strat_var_cols=["sex", "ses"]
@@ -492,13 +495,13 @@ def partial_coarse_multi_strat_large_sample():
 
     # Generate contacts
     df_cnt = ContactGenerator(df_part, cint_matrices=cint_matrices).generate(seed=42)
-    df_cnt["age_grp_cnt"] = pd.cut(
-        df_cnt["age_cnt"],
+    df_cnt["cnt_age_grp"] = pd.cut(
+        df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
         right=False,
     )
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
     part_data = ParticipantData(
         df_part, id_col="id", age_col="age", strat_var_cols=["sex", "ses"]
@@ -506,7 +509,7 @@ def partial_coarse_multi_strat_large_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_grp_col="age_grp_cnt",
+        age_grp_col="cnt_age_grp",
     )
     pop_data = PopulationData(
         df_pop, age_col="age", size_col="P", strat_var_cols=["sex", "ses"]
@@ -527,6 +530,7 @@ def full_large_sample():
     # Construct population
     popcon = PopulationConstructor(strat)
     df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["F", "M"], ordered=True)
 
     # Generate contact matrices
     cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
@@ -537,8 +541,8 @@ def full_large_sample():
 
     # Generate contacts
     df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
-    df_cnt["sex_cnt"] = pd.Categorical(
-        df_cnt["sex_cnt"], categories=["F", "M"], ordered=True
+    df_cnt["cnt_sex"] = pd.Categorical(
+        df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
 
     part_data = ParticipantData(
@@ -547,8 +551,8 @@ def full_large_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_col="age_cnt",
-        strat_var_cols="sex_cnt",
+        age_col="cnt_age",
+        strat_var_cols="cnt_sex",
     )
     pop_data = PopulationData(df_pop, age_col="age", size_col="P", strat_var_cols="sex")
 
@@ -577,16 +581,16 @@ def full_coarse_large_sample():
 
     # Generate contacts
     df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
-    df_cnt["sex_cnt"] = pd.Categorical(
-        df_cnt["sex_cnt"], categories=["F", "M"], ordered=True
+    df_cnt["cnt_sex"] = pd.Categorical(
+        df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
-    df_cnt["age_grp_cnt"] = pd.cut(
-        df_cnt["age_cnt"],
+    df_cnt["cnt_age_grp"] = pd.cut(
+        df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
         right=False,
     )
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
     part_data = ParticipantData(
         df_part, id_col="id", age_col="age", strat_var_cols="sex"
@@ -594,8 +598,8 @@ def full_coarse_large_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_grp_col="age_grp_cnt",
-        strat_var_cols="sex_cnt",
+        age_grp_col="cnt_age_grp",
+        strat_var_cols="cnt_sex",
     )
     pop_data = PopulationData(df_pop, age_col="age", size_col="P", strat_var_cols="sex")
 
@@ -625,8 +629,8 @@ def full_small_sample():
 
     # Generate contacts
     df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
-    df_cnt["sex_cnt"] = pd.Categorical(
-        df_cnt["sex_cnt"], categories=["F", "M"], ordered=True
+    df_cnt["cnt_sex"] = pd.Categorical(
+        df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
 
     part_data = ParticipantData(
@@ -635,8 +639,8 @@ def full_small_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_col="age_cnt",
-        strat_var_cols="sex_cnt",
+        age_col="cnt_age",
+        strat_var_cols="cnt_sex",
     )
     pop_data = PopulationData(df_pop, age_col="age", size_col="P", strat_var_cols="sex")
 
@@ -661,6 +665,8 @@ def full_multi_strat_large_sample():
     # Construct population
     popcon = PopulationConstructor([strat_sex, strat_ses])
     df_pop = popcon.df_P
+    df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["F", "M"], ordered=True)
+    df_pop["ses"] = pd.Categorical(df_pop["ses"], categories=["High", "Low"], ordered=True)
 
     # Generate contact matrices
     cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
@@ -674,11 +680,11 @@ def full_multi_strat_large_sample():
 
     # Generate contacts
     df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
-    df_cnt["sex_cnt"] = pd.Categorical(
-        df_cnt["sex_cnt"], categories=["F", "M"], ordered=True
+    df_cnt["cnt_sex"] = pd.Categorical(
+        df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
-    df_cnt["ses_cnt"] = pd.Categorical(
-        df_cnt["ses_cnt"], categories=["High", "Low"], ordered=True
+    df_cnt["cnt_ses"] = pd.Categorical(
+        df_cnt["cnt_ses"], categories=["High", "Low"], ordered=True
     )
 
     part_data = ParticipantData(
@@ -687,8 +693,8 @@ def full_multi_strat_large_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_col="age_cnt",
-        strat_var_cols=["sex_cnt", "ses_cnt"],
+        age_col="cnt_age",
+        strat_var_cols=["cnt_sex", "cnt_ses"],
     )
     pop_data = PopulationData(
         df_pop, age_col="age", size_col="P", strat_var_cols=["sex", "ses"]
@@ -721,26 +727,26 @@ def partial_coarse_coarse_large_sample():
 
     df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
-    df_part["age_grp_part"] = pd.cut(df_part["age"], bins=_CC_BINS, right=False)
-    df_part.dropna(subset=["age_grp_part"], inplace=True)
+    df_part["part_age_grp"] = pd.cut(df_part["age"], bins=_CC_BINS, right=False)
+    df_part.dropna(subset=["part_age_grp"], inplace=True)
 
     df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices, model="poisson").generate(seed=42)
-    df_cnt["age_grp_cnt"] = pd.cut(df_cnt["age_cnt"], bins=_CC_BINS, right=False)
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt["cnt_age_grp"] = pd.cut(df_cnt["cnt_age"], bins=_CC_BINS, right=False)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
-    df_pop["age_grp_pop"] = pd.cut(df_pop["age"], bins=_CC_BINS, right=False)
-    df_pop.dropna(subset=["age_grp_pop"], inplace=True)
+    df_pop["pop_age_grp"] = pd.cut(df_pop["age"], bins=_CC_BINS, right=False)
+    df_pop.dropna(subset=["pop_age_grp"], inplace=True)
     df_pop_coarse = (
-        df_pop.groupby(["age_grp_pop", "sex"], observed=False)["P"].sum().reset_index()
+        df_pop.groupby(["pop_age_grp", "sex"], observed=False)["P"].sum().reset_index()
     )
 
     part_data = ParticipantData(
-        df_part, id_col="id", age_grp_col="age_grp_part", strat_var_cols="sex"
+        df_part, id_col="id", age_grp_col="part_age_grp", strat_var_cols="sex"
     )
-    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="age_grp_cnt")
+    cnt_data = ContactData(df_cnt, id_col="id", age_grp_col="cnt_age_grp")
     pop_data = PopulationData(
-        df_pop_coarse, age_grp_col="age_grp_pop", size_col="P", strat_var_cols="sex"
+        df_pop_coarse, age_grp_col="pop_age_grp", size_col="P", strat_var_cols="sex"
     )
 
     return part_data, cnt_data, pop_data
@@ -762,34 +768,34 @@ def full_coarse_coarse_large_sample():
 
     df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["F", "M"], ordered=True)
-    df_part["age_grp_part"] = pd.cut(df_part["age"], bins=_CC_BINS, right=False)
-    df_part.dropna(subset=["age_grp_part"], inplace=True)
+    df_part["part_age_grp"] = pd.cut(df_part["age"], bins=_CC_BINS, right=False)
+    df_part.dropna(subset=["part_age_grp"], inplace=True)
 
     df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
-    df_cnt["sex_cnt"] = pd.Categorical(
-        df_cnt["sex_cnt"], categories=["F", "M"], ordered=True
+    df_cnt["cnt_sex"] = pd.Categorical(
+        df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
-    df_cnt["age_grp_cnt"] = pd.cut(df_cnt["age_cnt"], bins=_CC_BINS, right=False)
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt["cnt_age_grp"] = pd.cut(df_cnt["cnt_age"], bins=_CC_BINS, right=False)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
-    df_pop["age_grp_pop"] = pd.cut(df_pop["age"], bins=_CC_BINS, right=False)
-    df_pop.dropna(subset=["age_grp_pop"], inplace=True)
+    df_pop["pop_age_grp"] = pd.cut(df_pop["age"], bins=_CC_BINS, right=False)
+    df_pop.dropna(subset=["pop_age_grp"], inplace=True)
     df_pop_coarse = (
-        df_pop.groupby(["age_grp_pop", "sex"], observed=False)["P"].sum().reset_index()
+        df_pop.groupby(["pop_age_grp", "sex"], observed=False)["P"].sum().reset_index()
     )
 
     part_data = ParticipantData(
-        df_part, id_col="id", age_grp_col="age_grp_part", strat_var_cols="sex"
+        df_part, id_col="id", age_grp_col="part_age_grp", strat_var_cols="sex"
     )
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_grp_col="age_grp_cnt",
-        strat_var_cols="sex_cnt",
+        age_grp_col="cnt_age_grp",
+        strat_var_cols="cnt_sex",
     )
     pop_data = PopulationData(
-        df_pop_coarse, age_grp_col="age_grp_pop", size_col="P", strat_var_cols="sex"
+        df_pop_coarse, age_grp_col="pop_age_grp", size_col="P", strat_var_cols="sex"
     )
 
     return part_data, cnt_data, pop_data
@@ -826,19 +832,19 @@ def full_coarse_multi_strat_large_sample():
 
     # Generate contacts
     df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
-    df_cnt["sex_cnt"] = pd.Categorical(
-        df_cnt["sex_cnt"], categories=["F", "M"], ordered=True
+    df_cnt["cnt_sex"] = pd.Categorical(
+        df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
-    df_cnt["ses_cnt"] = pd.Categorical(
-        df_cnt["ses_cnt"], categories=["High", "Low"], ordered=True
+    df_cnt["cnt_ses"] = pd.Categorical(
+        df_cnt["cnt_ses"], categories=["High", "Low"], ordered=True
     )
-    df_cnt["age_grp_cnt"] = pd.cut(
-        df_cnt["age_cnt"],
+    df_cnt["cnt_age_grp"] = pd.cut(
+        df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
         right=False,
     )
-    df_cnt.drop(columns="age_cnt", inplace=True)
-    df_cnt.dropna(subset=["age_grp_cnt"], inplace=True)
+    df_cnt.drop(columns="cnt_age", inplace=True)
+    df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
 
     part_data = ParticipantData(
         df_part, id_col="id", age_col="age", strat_var_cols=["sex", "ses"]
@@ -846,8 +852,8 @@ def full_coarse_multi_strat_large_sample():
     cnt_data = ContactData(
         df_cnt,
         id_col="id",
-        age_grp_col="age_grp_cnt",
-        strat_var_cols=["sex_cnt", "ses_cnt"],
+        age_grp_col="cnt_age_grp",
+        strat_var_cols=["cnt_sex", "cnt_ses"],
     )
     pop_data = PopulationData(
         df_pop, age_col="age", size_col="P", strat_var_cols=["sex", "ses"]

@@ -63,7 +63,7 @@ def build_contact_offsets(
 
     if smooth:
         smooth_group_vars = [
-            var for var in col_spec.strat_vars_n if var != col_spec.age_part
+            var for var in col_spec.strat_vars_n if var != col_spec.part_age
         ]
         if len(smooth_group_vars) > 0:
             df_V = gaussian_smooth_by_group(
@@ -71,11 +71,11 @@ def build_contact_offsets(
                 group_by=smooth_group_vars,
                 target="V",
                 cv=True,
-                sort_by=col_spec.age_part,
+                sort_by=col_spec.part_age,
             )
         else:
             df_V = gaussian_smooth_by_group(
-                df_V, group_by=None, target="V", cv=True, sort_by=col_spec.age_part
+                df_V, group_by=None, target="V", cv=True, sort_by=col_spec.part_age
             )
         df_V["V"] = df_V["V_gs"]
 
@@ -117,15 +117,15 @@ def build_observation_grid(
         Pre-computed participant counts, contact counts, and offsets.
     """
     unique_coords = {var: data[var].unique() for var in col_spec.strat_vars_y}
-    if col_spec.age_grp_part:
-        unique_coords[col_spec.age_part] = data[col_spec.age_grp_part].cat.categories
+    if col_spec.part_age_grp:
+        unique_coords[col_spec.part_age] = data[col_spec.part_age_grp].cat.categories
     else:
-        unique_coords[col_spec.age_part] = np.arange(age_min, age_max + 1, dtype=int)
+        unique_coords[col_spec.part_age] = np.arange(age_min, age_max + 1, dtype=int)
 
-    if col_spec.age_cnt:
-        unique_coords[col_spec.age_cnt] = np.arange(age_min, age_max + 1, dtype=int)
-    elif col_spec.age_grp_cnt:
-        unique_coords[col_spec.age_grp_cnt] = data[col_spec.age_grp_cnt].cat.categories
+    if col_spec.cnt_age:
+        unique_coords[col_spec.cnt_age] = np.arange(age_min, age_max + 1, dtype=int)
+    elif col_spec.cnt_age_grp:
+        unique_coords[col_spec.cnt_age_grp] = data[col_spec.cnt_age_grp].cat.categories
 
     index = pd.MultiIndex.from_product(
         unique_coords.values(), names=unique_coords.keys()
@@ -136,26 +136,26 @@ def build_observation_grid(
     df_full = pd.merge(df_full, df_V, on=col_spec.strat_vars_n, how="left")
 
     # Restore categorical dtypes after merges
-    if col_spec.age_grp_cnt:
-        df_full[col_spec.age_grp_cnt] = pd.Categorical(
-            df_full[col_spec.age_grp_cnt],
-            categories=data[col_spec.age_grp_cnt].cat.categories,
+    if col_spec.cnt_age_grp:
+        df_full[col_spec.cnt_age_grp] = pd.Categorical(
+            df_full[col_spec.cnt_age_grp],
+            categories=data[col_spec.cnt_age_grp].cat.categories,
             ordered=True,
         )
-    if col_spec.age_grp_part:
-        df_full[col_spec.age_grp_part] = pd.Categorical(
-            df_full[col_spec.age_grp_part],
-            categories=data[col_spec.age_grp_part].cat.categories,
+    if col_spec.part_age_grp:
+        df_full[col_spec.part_age_grp] = pd.Categorical(
+            df_full[col_spec.part_age_grp],
+            categories=data[col_spec.part_age_grp].cat.categories,
             ordered=True,
         )
-    if col_spec.strat_vars_part:
-        for var in col_spec.strat_vars_part:
+    if col_spec.part_strat_vars:
+        for var in col_spec.part_strat_vars:
             categories = data[var].cat.categories
             df_full[var] = pd.Categorical(
                 df_full[var], categories=categories, ordered=True
             )
-    if col_spec.strat_vars_cnt:
-        for var in col_spec.strat_vars_cnt:
+    if col_spec.cnt_strat_vars:
+        for var in col_spec.cnt_strat_vars:
             categories = data[var].cat.categories
             df_full[var] = pd.Categorical(
                 df_full[var], categories=categories, ordered=True
@@ -177,11 +177,11 @@ def construct_log_P(pop_df: pd.DataFrame, col_spec: ColumnSpec) -> NDArray:
     Returns shape (1, A) for unstratified or (K, A) for stratified cases.
     A may be fine-age count or coarse-group count depending on population resolution.
     """
-    if col_spec.strat_vars_pop:
-        age_dim = col_spec.age_pop or col_spec.age_grp_pop
+    if col_spec.pop_strat_vars:
+        age_dim = col_spec.pop_age or col_spec.pop_age_grp
         P = (
             pop_df.pivot(
-                index=col_spec.strat_vars_pop,
+                index=col_spec.pop_strat_vars,
                 columns=age_dim,
                 values=col_spec.P,
             )
@@ -205,26 +205,26 @@ def align_age_range(
     Returns a (possibly filtered) copy of data plus the aligned min and max ages.
     Emits UserWarning when the sample age range differs from the population age range.
     """
-    if col_spec.age_grp_part:
-        cats = data[col_spec.age_part].cat.categories
+    if col_spec.part_age_grp:
+        cats = data[col_spec.part_age].cat.categories
         part_min_age = int(cats.left.min())
         part_max_age = int(cats.right.max() - 1)
     else:
-        part_min_age = int(data[col_spec.age_part].min())
-        part_max_age = int(data[col_spec.age_part].max())
+        part_min_age = int(data[col_spec.part_age].min())
+        part_max_age = int(data[col_spec.part_age].max())
 
-    if col_spec.age_cnt:
-        cnt_min_age = int(data[col_spec.age_cnt].min())
-        cnt_max_age = int(data[col_spec.age_cnt].max())
+    if col_spec.cnt_age:
+        cnt_min_age = int(data[col_spec.cnt_age].min())
+        cnt_max_age = int(data[col_spec.cnt_age].max())
     else:
-        cnt_min_age = int(data[col_spec.age_grp_cnt].min().left)
-        cnt_max_age = int(data[col_spec.age_grp_cnt].max().right - 1)
+        cnt_min_age = int(data[col_spec.cnt_age_grp].min().left)
+        cnt_max_age = int(data[col_spec.cnt_age_grp].max().right - 1)
 
-    if col_spec.age_pop:
-        pop_min_age = int(pop_df[col_spec.age_pop].min())
-        pop_max_age = int(pop_df[col_spec.age_pop].max())
-    elif col_spec.age_grp_pop:
-        grp_cats = pop_df[col_spec.age_grp_pop].cat.categories
+    if col_spec.pop_age:
+        pop_min_age = int(pop_df[col_spec.pop_age].min())
+        pop_max_age = int(pop_df[col_spec.pop_age].max())
+    elif col_spec.pop_age_grp:
+        grp_cats = pop_df[col_spec.pop_age_grp].cat.categories
         pop_min_age = int(grp_cats.left.min())
         pop_max_age = int(grp_cats.right.max()) - 1
 
@@ -238,11 +238,11 @@ def align_age_range(
             UserWarning,
             stacklevel=3,
         )
-        if col_spec.age_grp_part:
-            mask = data[col_spec.age_part].apply(lambda iv: iv.left) >= pop_min_age
+        if col_spec.part_age_grp:
+            mask = data[col_spec.part_age].apply(lambda iv: iv.left) >= pop_min_age
             data = data[mask].copy()
         else:
-            data = data[data[col_spec.age_part] >= pop_min_age].copy()
+            data = data[data[col_spec.part_age] >= pop_min_age].copy()
         if data.empty:
             raise ValueError(
                 f"After filtering to age >= {pop_min_age}, no data remains. "

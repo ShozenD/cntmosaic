@@ -60,7 +60,7 @@ def validate_participant_data(
         _validate_ages(data)
 
     if age_min_col and age_max_col:
-        _validate_age_groups(data, "age_grp_part")
+        _validate_age_groups(data, "part_age_grp")
 
     if age_grp_col:
         _validate_age_groups(data, age_grp_col)
@@ -91,12 +91,12 @@ def _validate_unique_ids(data: pd.DataFrame) -> None:
 
 
 def _validate_ages(data: pd.DataFrame) -> None:
-    """Raise ValueError if 'age_part' is non-numeric or contains negative values."""
-    ages = data["age_part"]
+    """Raise ValueError if 'part_age' is non-numeric or contains negative values."""
+    ages = data["part_age"]
 
     if not pd.api.types.is_numeric_dtype(ages):
         raise ValueError(
-            f"Age column 'age_part' must contain numeric values.\n"
+            f"Age column 'part_age' must contain numeric values.\n"
             f"  Current dtype: {ages.dtype}\n"
             f"  Hint: convert age to integer or float type."
         )
@@ -104,15 +104,15 @@ def _validate_ages(data: pd.DataFrame) -> None:
     if (ages < 0).any():
         negative_indices = data[ages < 0].index[:5].tolist()
         raise ValueError(
-            f"Age column 'age_part' contains negative values.\n"
+            f"Age column 'part_age' contains negative values.\n"
             f"  Rows with negative ages: {negative_indices}\n"
             f"  Values: {ages[ages < 0].head().tolist()}"
         )
 
 
 def _validate_age_groups(data: pd.DataFrame, age_grp_col: str) -> None:
-    """Raise TypeError if 'age_grp_part' is not categorical with IntervalIndex categories."""
-    col = data["age_grp_part"]
+    """Raise TypeError if 'part_age_grp' is not categorical with IntervalIndex categories."""
+    col = data["part_age_grp"]
 
     if not isinstance(col.dtype, pd.CategoricalDtype):
         raise TypeError(
@@ -128,12 +128,12 @@ def _validate_age_groups(data: pd.DataFrame, age_grp_col: str) -> None:
 
 
 def _validate_repeat(data: pd.DataFrame) -> None:
-    """Raise ValueError if 'repeat_part' is non-numeric or contains negative values."""
-    repeats = data["repeat_part"]
+    """Raise ValueError if 'part_repeat' is non-numeric or contains negative values."""
+    repeats = data["part_repeat"]
 
     if not pd.api.types.is_numeric_dtype(repeats):
         raise ValueError(
-            f"Repeat interview column 'repeat_part' must contain numeric values.\n"
+            f"Repeat interview column 'part_repeat' must contain numeric values.\n"
             f"  Current dtype: {repeats.dtype}\n"
             f"  Hint: convert repeat interview to integer type."
         )
@@ -141,7 +141,7 @@ def _validate_repeat(data: pd.DataFrame) -> None:
     if (repeats < 0).any():
         negative_indices = data[repeats < 0].index[:5].tolist()
         raise ValueError(
-            f"Repeat interview column 'repeat_part' contains negative values.\n"
+            f"Repeat interview column 'part_repeat' contains negative values.\n"
             f"  Rows with negative values: {negative_indices}\n"
             f"  Values: {repeats[repeats < 0].head().tolist()}"
         )

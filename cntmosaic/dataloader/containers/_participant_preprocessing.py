@@ -230,31 +230,31 @@ def _preprocess(
     if id_col != "id":
         rename_map[id_col] = "id"
 
-    if age_col and not age_col.endswith("_part"):
-        rename_map[age_col] = "age_part"
+    if age_col and not age_col.startswith("part_"):
+        rename_map[age_col] = "part_age"
 
-    if age_min_col and not age_min_col.endswith("_part"):
-        rename_map[age_min_col] = "age_min_part"
+    if age_min_col and not age_min_col.startswith("part_"):
+        rename_map[age_min_col] = "part_age_min"
 
-    if age_max_col and not age_max_col.endswith("_part"):
-        rename_map[age_max_col] = "age_max_part"
+    if age_max_col and not age_max_col.startswith("part_"):
+        rename_map[age_max_col] = "part_age_max"
 
-    if age_grp_col and not age_grp_col.endswith("_part"):
-        rename_map[age_grp_col] = "age_grp_part"
+    if age_grp_col and not age_grp_col.startswith("part_"):
+        rename_map[age_grp_col] = "part_age_grp"
 
     for var in strat_var_cols:
-        if not var.endswith("_part"):
-            rename_map[var] = f"{var}_part"
+        if not var.startswith("part_"):
+            rename_map[var] = f"part_{var}"
 
-    if repeat_col and not repeat_col.endswith("_part"):
-        rename_map[repeat_col] = "repeat_part"
+    if repeat_col and not repeat_col.startswith("part_"):
+        rename_map[repeat_col] = "part_repeat"
 
     df = df.rename(columns=rename_map)
 
     # --- synthesise age_grp_part from age_min_part / age_max_part -----------
     if age_min_col and age_max_col:
-        df["age_grp_part"] = _build_age_grp_from_min_max(df, "age_min_part", "age_max_part")
-        _warn_if_overlapping(df["age_grp_part"].cat.categories)
+        df["part_age_grp"] = _build_age_grp_from_min_max(df, "part_age_min", "part_age_max")
+        _warn_if_overlapping(df["part_age_grp"].cat.categories)
 
     return df
 

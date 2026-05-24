@@ -112,7 +112,7 @@ def sample_dataloader():
     df_cnt = cnt_gen.generate(seed=42)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age")
-    cnt_data = ContactData(df_cnt, id_col="id", age_col="age_cnt")
+    cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
     pop_data = PopulationData(df_age_dist, age_col="age", size_col="P")
     dataloader = ContactSurveyLoader.from_containers(part_data, cnt_data, pop_data)
 

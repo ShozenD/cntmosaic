@@ -142,34 +142,34 @@ class ContactSurveyLoader:
         df_full = self._df_full_cache
 
         # Build required observation arrays
-        if self.col_map.age_grp_part:
+        if self.col_map.part_age_grp:
             aid = None
         else:
-            aid = df_full[self.col_map.age_part].to_numpy()
+            aid = df_full[self.col_map.part_age].to_numpy()
 
         # cid: coarse participant age group index
         cid = None
-        if self.col_map.age_grp_part:
-            cid = df_full[self.col_map.age_part].cat.codes.to_numpy()
+        if self.col_map.part_age_grp:
+            cid = df_full[self.col_map.part_age].cat.codes.to_numpy()
 
         # did: coarse contact age group index
         did = None
-        if self.col_map.age_grp_cnt:
-            did = df_full[self.col_map.age_grp_cnt].cat.codes.to_numpy()
+        if self.col_map.cnt_age_grp:
+            did = df_full[self.col_map.cnt_age_grp].cat.codes.to_numpy()
 
         bid = None
         aid_exp = None
         bid_pad = None
-        if self.col_map.age_cnt:
-            bid = df_full[self.col_map.age_cnt].to_numpy()
-        elif self.col_map.age_grp_cnt:
+        if self.col_map.cnt_age:
+            bid = df_full[self.col_map.cnt_age].to_numpy()
+        elif self.col_map.cnt_age_grp:
             # aid_exp uses aid for fine-participant case; cid for coarse-participant case
-            _aid_for_exp: np.ndarray = cid if self.col_map.age_grp_part else aid  # type: ignore[assignment]
+            _aid_for_exp: np.ndarray = cid if self.col_map.part_age_grp else aid  # type: ignore[assignment]
             aid_exp, bid_pad = make_idarrs_for_intervals(
-                df_full, self.col_map.age_grp_cnt, _aid_for_exp
+                df_full, self.col_map.cnt_age_grp, _aid_for_exp
             )
 
-        if self.col_map.age_grp_part and self.col_map.age_cnt:
+        if self.col_map.part_age_grp and self.col_map.cnt_age:
             warnings.warn(
                 "Coarse participant age groups combined with fine-resolution contact ages "
                 "is not currently supported by any model. Consider binning contact ages "
@@ -179,14 +179,14 @@ class ContactSurveyLoader:
             )
 
         rid = None
-        if self.col_map.repeat_part is not None:
-            rid = df_full[self.col_map.repeat_part].astype(int).to_numpy()
+        if self.col_map.part_repeat is not None:
+            rid = df_full[self.col_map.part_repeat].astype(int).to_numpy()
 
         # Build stratification kwargs
         strat_kwargs: Dict = {}
-        if len(self.col_map.strat_vars_part) > 0:
+        if len(self.col_map.part_strat_vars) > 0:
             strat_kwargs = assemble_strat_kwargs(df_full, self.col_map, self.strat_data)
-            if self.col_map.age_grp_cnt:
+            if self.col_map.cnt_age_grp:
                 strat_kwargs["flat_ix_exp"] = expand_ix_array(
                     strat_kwargs["flat_ix"], bid_pad.shape[1]
                 )

@@ -206,28 +206,28 @@ def _preprocess(
     if id_col != "id":
         rename_map[id_col] = "id"
 
-    if age_col and not age_col.endswith("_cnt"):
-        rename_map[age_col] = "age_cnt"
+    if age_col and not age_col.startswith("cnt_"):
+        rename_map[age_col] = "cnt_age"
 
-    if age_min_col and not age_min_col.endswith("_cnt"):
-        rename_map[age_min_col] = "age_min_cnt"
+    if age_min_col and not age_min_col.startswith("cnt_"):
+        rename_map[age_min_col] = "cnt_age_min"
 
-    if age_max_col and not age_max_col.endswith("_cnt"):
-        rename_map[age_max_col] = "age_max_cnt"
+    if age_max_col and not age_max_col.startswith("cnt_"):
+        rename_map[age_max_col] = "cnt_age_max"
 
-    if age_grp_col and not age_grp_col.endswith("_cnt"):
-        rename_map[age_grp_col] = "age_grp_cnt"
+    if age_grp_col and not age_grp_col.startswith("cnt_"):
+        rename_map[age_grp_col] = "cnt_age_grp"
 
     for var in strat_var_cols:
-        if not var.endswith("_cnt"):
-            rename_map[var] = f"{var}_cnt"
+        if not var.startswith("cnt_"):
+            rename_map[var] = f"cnt_{var}"
 
     df = df.rename(columns=rename_map)
 
-    # --- synthesise age_grp_cnt from age_min_cnt / age_max_cnt --------------
+    # --- synthesise cnt_age_grp from cnt_age_min / cnt_age_max --------------
     if age_min_col and age_max_col:
-        df["age_grp_cnt"] = _build_age_grp_from_min_max(df, "age_min_cnt", "age_max_cnt")
-        _warn_if_overlapping(df["age_grp_cnt"].cat.categories)
+        df["cnt_age_grp"] = _build_age_grp_from_min_max(df, "cnt_age_min", "cnt_age_max")
+        _warn_if_overlapping(df["cnt_age_grp"].cat.categories)
 
     # --- contact-count indicator column --------------------------------------
     if cnt_col not in df.columns:

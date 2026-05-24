@@ -30,35 +30,35 @@ class TestCoreContracts:
     """Test the fundamental data-pipeline guarantees of ContactData."""
 
     def test_column_renaming_with_age_col(self):
-        """Columns are renamed: id_col→'id', age_col→'age_cnt'."""
+        """Columns are renamed: id_col→'id', age_col→'cnt_age'."""
         df = pd.DataFrame({"pid": [1, 2, 3], "contact_age": [25, 34, 45]})
         cnt_data = ContactData(data=df, id_col="pid", age_col="contact_age")
         assert "id" in cnt_data.data.columns
-        assert "age_cnt" in cnt_data.data.columns
+        assert "cnt_age" in cnt_data.data.columns
         assert "pid" not in cnt_data.data.columns
         assert "contact_age" not in cnt_data.data.columns
 
     def test_column_renaming_with_age_grp_col(self, df_cnt_age_grps):
-        """age_grp_col is renamed to 'age_grp_cnt'."""
-        cnt_data = ContactData(data=df_cnt_age_grps, id_col="id", age_grp_col="age_grp_cnt")
-        assert "age_grp_cnt" in cnt_data.data.columns
+        """age_grp_col is renamed to 'cnt_age_grp'."""
+        cnt_data = ContactData(data=df_cnt_age_grps, id_col="id", age_grp_col="cnt_age_grp")
+        assert "cnt_age_grp" in cnt_data.data.columns
 
     def test_column_renaming_with_age_min_max_cols(self, df_cnt_age_min_max):
-        """age_min_col/age_max_col are renamed to 'age_min_cnt'/'age_max_cnt'."""
+        """age_min_col/age_max_col are renamed to 'cnt_age_min'/'cnt_age_max'."""
         cnt_data = ContactData(
             data=df_cnt_age_min_max,
             id_col="id",
             age_min_col="age_min",
             age_max_col="age_max",
         )
-        assert "age_min_cnt" in cnt_data.data.columns
-        assert "age_max_cnt" in cnt_data.data.columns
+        assert "cnt_age_min" in cnt_data.data.columns
+        assert "cnt_age_max" in cnt_data.data.columns
         assert "age_min" not in cnt_data.data.columns
         assert "age_max" not in cnt_data.data.columns
         assert "y" in cnt_data.data.columns
 
     def test_column_renaming_strat_vars(self):
-        """Stratification variables are renamed with '_cnt' suffix."""
+        """Stratification variables are renamed with 'cnt_' prefix."""
         df = pd.DataFrame(
             {
                 "id": [1, 2, 3],
@@ -69,13 +69,13 @@ class TestCoreContracts:
         cnt_data = ContactData(
             data=df, id_col="id", age_col="contact_age", strat_var_cols="setting"
         )
-        assert "setting_cnt" in cnt_data.data.columns
+        assert "cnt_setting" in cnt_data.data.columns
         assert "setting" not in cnt_data.data.columns
 
     def test_y_column_added_automatically(self):
         """'y' column is added with value 1 when not present in input."""
-        df = pd.DataFrame({"id": [1, 2, 3], "age_cnt": [25, 34, 45]})
-        cnt_data = ContactData(data=df, id_col="id", age_col="age_cnt")
+        df = pd.DataFrame({"id": [1, 2, 3], "age_raw": [25, 34, 45]})
+        cnt_data = ContactData(data=df, id_col="id", age_col="age_raw")
         assert "y" in cnt_data.data.columns
         assert (cnt_data.data["y"] == 1).all()
 
@@ -84,32 +84,32 @@ class TestCoreContracts:
         df = pd.DataFrame(
             {
                 "id": [1, 2, 3],
-                "age_cnt": [25, 34, 45],
+                "age_raw": [25, 34, 45],
                 "setting": ["home", "work", "school"],
             }
         )
         cnt_data = ContactData(
-            data=df, id_col="id", age_col="age_cnt", strat_var_cols="setting"
+            data=df, id_col="id", age_col="age_raw", strat_var_cols="setting"
         )
-        assert cnt_data.data["setting_cnt"].dtype.name == "category"
+        assert cnt_data.data["cnt_setting"].dtype.name == "category"
 
     @pytest.mark.parametrize(
         "nan_col, df_factory",
         [
             (
                 "id",
-                lambda: pd.DataFrame({"id": [1, 2, np.nan, 4], "age_cnt": [25, 34, 45, 52]}),
+                lambda: pd.DataFrame({"id": [1, 2, np.nan, 4], "age_raw": [25, 34, 45, 52]}),
             ),
             (
-                "age_cnt",
-                lambda: pd.DataFrame({"id": [1, 2, 3, 4], "age_cnt": [25, np.nan, 45, 52]}),
+                "age_raw",
+                lambda: pd.DataFrame({"id": [1, 2, 3, 4], "age_raw": [25, np.nan, 45, 52]}),
             ),
             (
                 "setting",
                 lambda: pd.DataFrame(
                     {
                         "id": [1, 2, 3, 4],
-                        "age_cnt": [25, 34, 45, 52],
+                        "age_raw": [25, 34, 45, 52],
                         "setting": ["home", np.nan, "work", "school"],
                     }
                 ),
@@ -119,7 +119,7 @@ class TestCoreContracts:
     def test_nan_rows_dropped_with_warning(self, nan_col, df_factory):
         """Rows with NaN in any required column are dropped with a UserWarning."""
         df = df_factory()
-        kwargs = dict(id_col="id", age_col="age_cnt")
+        kwargs = dict(id_col="id", age_col="age_raw")
         if nan_col == "setting":
             kwargs["strat_var_cols"] = "setting"
 
@@ -134,8 +134,8 @@ class TestCoreContracts:
         ContactData(
             data=df_cnt_one_year,
             id_col="id",
-            age_col="age_cnt",
-            strat_var_cols=["sex_cnt", "hhsize_cnt"],
+            age_col="cnt_age",
+            strat_var_cols=["cnt_sex", "cnt_hhsize"],
         )
         assert df_cnt_one_year.columns.tolist() == original_cols
         assert df_cnt_one_year.shape == original_shape
@@ -164,14 +164,14 @@ class TestInputValidation:
         df = pd.DataFrame(
             {
                 "id": [1, 2, 3],
-                "age_cnt": [25, 34, 45],
-                "age_grp_cnt": pd.IntervalIndex.from_tuples(
+                "age_raw": [25, 34, 45],
+                "age_grp_raw": pd.IntervalIndex.from_tuples(
                     [(20, 30), (30, 40), (40, 50)]
                 ),
             }
         )
         with pytest.raises(ValueError, match="Age specification forms are mutually exclusive"):
-            ContactData(data=df, id_col="id", age_col="age_cnt", age_grp_col="age_grp_cnt")
+            ContactData(data=df, id_col="id", age_col="age_raw", age_grp_col="age_grp_raw")
 
     def test_age_min_without_age_max(self):
         """age_min_col without age_max_col raises ValueError."""
@@ -187,9 +187,9 @@ class TestInputValidation:
 
     def test_missing_id_column(self):
         """Missing ID column raises KeyError with informative message."""
-        df = pd.DataFrame({"pid": [1, 2, 3], "age_cnt": [25, 34, 45]})
+        df = pd.DataFrame({"pid": [1, 2, 3], "age_raw": [25, 34, 45]})
         with pytest.raises(KeyError, match="Missing participant ID column 'id'"):
-            ContactData(data=df, id_col="id", age_col="age_cnt")
+            ContactData(data=df, id_col="id", age_col="age_raw")
 
     def test_missing_age_column(self):
         """Missing age column raises KeyError with informative message."""
@@ -203,8 +203,8 @@ class TestInputValidation:
             ContactData(
                 data=df_cnt_one_year,
                 id_col="id",
-                age_col="age_cnt",
-                strat_var_cols=["sex_cnt", "workstat_cnt"],  # 'workstat' doesn't exist
+                age_col="cnt_age",
+                strat_var_cols=["cnt_sex", "cnt_workstat"],  # 'cnt_workstat' doesn't exist
             )
 
     def test_negative_ages(self):
@@ -230,44 +230,44 @@ class TestAccessorMethods:
 
     def test_basic_counts(self, df_cnt_one_year):
         """n and n_part return total contacts and unique participants respectively."""
-        cnt_data = ContactData(data=df_cnt_one_year, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(data=df_cnt_one_year, id_col="id", age_col="cnt_age")
         assert cnt_data.n == 6
         assert cnt_data.n_part == 5
 
     def test_age_range(self, df_cnt_one_year):
         """age_range returns correct (min, max) tuple."""
-        cnt_data = ContactData(df_cnt_one_year, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(df_cnt_one_year, id_col="id", age_col="cnt_age")
         assert cnt_data.age_range == (30, 80)
 
     def test_age_range_raises_with_age_groups(self, df_cnt_age_grps):
         """age_range raises ValueError when age_grp_col is used."""
-        cnt_data = ContactData(data=df_cnt_age_grps, id_col="id", age_grp_col="age_grp_cnt")
+        cnt_data = ContactData(data=df_cnt_age_grps, id_col="id", age_grp_col="cnt_age_grp")
         with pytest.raises(ValueError, match="only available when using 'age_col'"):
             _ = cnt_data.age_range
 
     def test_get_strat_vars_empty(self, df_cnt_one_year):
         """get_strat_vars() returns empty list when no stratification variables specified."""
-        cnt_data = ContactData(data=df_cnt_one_year, id_col="id", age_col="age_cnt")
+        cnt_data = ContactData(data=df_cnt_one_year, id_col="id", age_col="cnt_age")
         assert cnt_data.get_strat_vars() == []
 
-    def test_get_strat_vars_with_suffix(self, df_cnt_one_year):
-        """get_strat_vars() returns names with and without '_cnt' suffix correctly."""
+    def test_get_strat_vars_with_prefix(self, df_cnt_one_year):
+        """get_strat_vars() returns names with and without 'cnt_' prefix correctly."""
         cnt_data = ContactData(
             data=df_cnt_one_year,
             id_col="id",
-            age_col="age_cnt",
-            strat_var_cols=["sex_cnt", "hhsize_cnt"],
+            age_col="cnt_age",
+            strat_var_cols=["cnt_sex", "cnt_hhsize"],
         )
-        assert cnt_data.get_strat_vars(suffix=False) == ["sex", "hhsize"]
-        assert cnt_data.get_strat_vars(suffix=True) == ["sex_cnt", "hhsize_cnt"]
+        assert cnt_data.get_strat_vars(prefix=False) == ["sex", "hhsize"]
+        assert cnt_data.get_strat_vars(prefix=True) == ["cnt_sex", "cnt_hhsize"]
 
     def test_get_strat_var_schema(self, df_cnt_one_year):
         """get_strat_var_schema() returns correct categories and integer codes."""
         cnt_data = ContactData(
             df_cnt_one_year,
             id_col="id",
-            age_col="age_cnt",
-            strat_var_cols=["sex_cnt", "hhsize_cnt"],
+            age_col="cnt_age",
+            strat_var_cols=["cnt_sex", "cnt_hhsize"],
         )
         schema = cnt_data.get_strat_var_schema()
         assert schema["sex"] == {"categories": ["F", "M"], "codes": [0, 1]}

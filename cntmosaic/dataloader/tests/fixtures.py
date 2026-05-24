@@ -71,9 +71,9 @@ def df_cnt_one_year() -> pd.DataFrame:
     df_cnt = pd.DataFrame(
         {
             "id": [1, 1, 2, 3, 4, 5],
-            "age_cnt": [30, 40, 50, 60, 70, 80],
-            "sex_cnt": ["M", "F", "M", "F", "M", "F"],
-            "hhsize_cnt": ["1", "2", "3", "4", "5+", "1"],
+            "cnt_age": [30, 40, 50, 60, 70, 80],
+            "cnt_sex": ["M", "F", "M", "F", "M", "F"],
+            "cnt_hhsize": ["1", "2", "3", "4", "5+", "1"],
             "y": [1, 2, 3, 4, 5, 6],
         }
     )
@@ -105,7 +105,7 @@ def df_cnt_age_grps() -> pd.DataFrame:
     df_cnt = pd.DataFrame(
         {
             "id": [1, 1, 2, 3, 4, 5],
-            "age_grp_cnt": pd.IntervalIndex.from_tuples(
+            "cnt_age_grp": pd.IntervalIndex.from_tuples(
                 [(0, 5), (5, 10), (10, 15), (15, 20), (20, 35), (35, 50)]
             ),
             "sex": ["M", "F", "M", "F", "M", "F"],
@@ -113,7 +113,7 @@ def df_cnt_age_grps() -> pd.DataFrame:
             "y": [1, 2, 3, 4, 5, 6],
         }
     )
-    df_cnt["age_grp_cnt"] = df_cnt["age_grp_cnt"].astype("category")
+    df_cnt["cnt_age_grp"] = df_cnt["cnt_age_grp"].astype("category")
 
     return df_cnt
 

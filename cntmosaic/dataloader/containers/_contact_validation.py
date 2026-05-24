@@ -54,7 +54,7 @@ def validate_contact_data(
 
     if age_min_col and age_max_col:
         _validate_age_min_max(data)
-        _validate_age_groups(data, "age_grp_cnt")
+        _validate_age_groups(data, "cnt_age_grp")
 
     if age_grp_col:
         _validate_age_groups(data, age_grp_col)
@@ -66,12 +66,12 @@ def validate_contact_data(
 
 
 def _validate_ages(data: pd.DataFrame) -> None:
-    """Raise ValueError if 'age_cnt' is non-numeric or contains negative values."""
-    ages = data["age_cnt"]
+    """Raise ValueError if 'cnt_age' is non-numeric or contains negative values."""
+    ages = data["cnt_age"]
 
     if not pd.api.types.is_numeric_dtype(ages):
         raise ValueError(
-            f"Contact age column 'age_cnt' must contain numeric values.\n"
+            f"Contact age column 'cnt_age' must contain numeric values.\n"
             f"  Current dtype: {ages.dtype}\n"
             f"  Hint: convert contact age to integer or float type."
         )
@@ -79,7 +79,7 @@ def _validate_ages(data: pd.DataFrame) -> None:
     if (ages < 0).any():
         negative_indices = data[ages < 0].index[:5].tolist()
         raise ValueError(
-            f"Contact age column 'age_cnt' contains negative values.\n"
+            f"Contact age column 'cnt_age' contains negative values.\n"
             f"  Contact ages must be non-negative.\n"
             f"  Rows with negative ages: {negative_indices}\n"
             f"  Values: {ages[ages < 0].head().tolist()}"
@@ -87,8 +87,8 @@ def _validate_ages(data: pd.DataFrame) -> None:
 
 
 def _validate_age_min_max(data: pd.DataFrame) -> None:
-    """Raise ValueError if 'age_min_cnt'/'age_max_cnt' are non-numeric or contain negative values."""
-    for col in ("age_min_cnt", "age_max_cnt"):
+    """Raise ValueError if 'cnt_age_min'/'cnt_age_max' are non-numeric or contain negative values."""
+    for col in ("cnt_age_min", "cnt_age_max"):
         vals = data[col]
         if not pd.api.types.is_numeric_dtype(vals):
             raise ValueError(
@@ -107,8 +107,8 @@ def _validate_age_min_max(data: pd.DataFrame) -> None:
 
 
 def _validate_age_groups(data: pd.DataFrame, age_grp_col: str) -> None:
-    """Raise TypeError if 'age_grp_cnt' is not categorical with IntervalIndex categories."""
-    col = data["age_grp_cnt"]
+    """Raise TypeError if 'cnt_age_grp' is not categorical with IntervalIndex categories."""
+    col = data["cnt_age_grp"]
 
     if not isinstance(col.dtype, pd.CategoricalDtype):
         raise TypeError(

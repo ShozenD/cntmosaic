@@ -71,7 +71,7 @@ class ContactSummary:
             ages = participant_ages if participant_ages is not None else list(range(A))
             return pd.DataFrame(
                 {
-                    "age_part": ages,
+                    "part_age": ages,
                     "lower": self.lower,
                     "central": self.central,
                     "upper": self.upper,
@@ -83,8 +83,8 @@ class ContactSummary:
         c_ages = contact_ages if contact_ages is not None else list(range(A_c))
         rows = [
             {
-                "age_part": p_ages[i],
-                "age_cnt": c_ages[j],
+                "part_age": p_ages[i],
+                "cnt_age": c_ages[j],
                 "lower": self.lower[i, j],
                 "central": self.central[i, j],
                 "upper": self.upper[i, j],
@@ -123,10 +123,10 @@ class ContactSummary:
             p_ages = participant_ages if participant_ages is not None else list(range(A))
             return xr.DataArray(
                 arr,
-                dims=["statistic", "age_part"],
+                dims=["statistic", "part_age"],
                 coords={
                     "statistic": ["lower", "central", "upper"],
-                    "age_part": p_ages,
+                    "part_age": p_ages,
                 },
             )
 
@@ -135,10 +135,10 @@ class ContactSummary:
         c_ages = contact_ages if contact_ages is not None else list(range(A_c))
         return xr.DataArray(
             arr,
-            dims=["statistic", "age_part", "age_cnt"],
+            dims=["statistic", "part_age", "cnt_age"],
             coords={
                 "statistic": ["lower", "central", "upper"],
-                "age_part": p_ages,
-                "age_cnt": c_ages,
+                "part_age": p_ages,
+                "cnt_age": c_ages,
             },
         )

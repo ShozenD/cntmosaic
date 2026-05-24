@@ -29,19 +29,19 @@ class TestCoreContracts:
     """Test the fundamental data-pipeline guarantees of ParticipantData."""
 
     def test_column_renaming_with_age_col(self, df_part_one_year):
-        """Columns are renamed: id_col→'id', age_col→'age_part'."""
+        """Columns are renamed: id_col→'id', age_col→'part_age'."""
         part_data = ParticipantData(df_part_one_year, id_col="id", age_col="age")
-        assert part_data.data.columns.tolist() == ["id", "age_part"]
+        assert part_data.data.columns.tolist() == ["id", "part_age"]
 
     def test_column_renaming_with_age_grp_col(self, df_part_age_grps):
-        """Columns are renamed: id_col→'id', age_grp_col→'age_grp_part'."""
+        """Columns are renamed: id_col→'id', age_grp_col→'part_age_grp'."""
         part_data = ParticipantData(
             df_part_age_grps, id_col="id", age_grp_col="age_grp"
         )
-        assert part_data.data.columns.tolist() == ["id", "age_grp_part"]
+        assert part_data.data.columns.tolist() == ["id", "part_age_grp"]
 
     def test_column_renaming_with_age_min_max_cols(self, df_part_age_min_max):
-        """age_min/max_col are renamed and age_grp_part is synthesised as ordered categorical."""
+        """age_min/max_col are renamed and part_age_grp is synthesised as ordered categorical."""
         part_data = ParticipantData(
             df_part_age_min_max,
             id_col="id",
@@ -49,23 +49,23 @@ class TestCoreContracts:
             age_max_col="age_max",
         )
         assert "id" in part_data.data.columns
-        assert "age_min_part" in part_data.data.columns
-        assert "age_max_part" in part_data.data.columns
-        assert "age_grp_part" in part_data.data.columns
+        assert "part_age_min" in part_data.data.columns
+        assert "part_age_max" in part_data.data.columns
+        assert "part_age_grp" in part_data.data.columns
         import pandas as pd
-        assert isinstance(part_data.data["age_grp_part"].dtype, pd.CategoricalDtype)
-        assert part_data.data["age_grp_part"].cat.ordered
+        assert isinstance(part_data.data["part_age_grp"].dtype, pd.CategoricalDtype)
+        assert part_data.data["part_age_grp"].cat.ordered
 
     def test_column_renaming_single_strat_var(self, df_part_one_year):
-        """A string strat_var_col is normalised to a list and renamed with '_part' suffix."""
+        """A string strat_var_col is normalised to a list and renamed with 'part_' prefix."""
         part_data = ParticipantData(
             df_part_one_year, id_col="id", age_col="age", strat_var_cols="sex"
         )
         assert part_data.strat_vars == ["sex"]
-        assert part_data.data.columns.tolist() == ["id", "age_part", "sex_part"]
+        assert part_data.data.columns.tolist() == ["id", "part_age", "part_sex"]
 
     def test_column_renaming_multiple_strat_vars(self, df_part_one_year):
-        """Multiple strat_var_cols are all renamed with '_part' suffix."""
+        """Multiple strat_var_cols are all renamed with 'part_' prefix."""
         part_data = ParticipantData(
             df_part_one_year,
             id_col="id",
@@ -75,17 +75,17 @@ class TestCoreContracts:
         assert part_data.strat_vars == ["sex", "hhsize"]
         assert part_data.data.columns.tolist() == [
             "id",
-            "age_part",
-            "sex_part",
-            "hhsize_part",
+            "part_age",
+            "part_sex",
+            "part_hhsize",
         ]
 
     def test_column_renaming_with_repeat_col(self, df_part_one_year):
-        """repeat_col is renamed to 'repeat_part'."""
+        """repeat_col is renamed to 'part_repeat'."""
         part_data = ParticipantData(
             df_part_one_year, id_col="id", age_col="age", repeat_col="repeat"
         )
-        assert part_data.data.columns.tolist() == ["id", "age_part", "repeat_part"]
+        assert part_data.data.columns.tolist() == ["id", "part_age", "part_repeat"]
 
     def test_categorical_conversion(self, df_part_one_year):
         """Object-type stratification columns are converted to categorical dtype."""
@@ -95,8 +95,8 @@ class TestCoreContracts:
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        assert part_data.data["sex_part"].dtype.name == "category"
-        assert part_data.data["hhsize_part"].dtype.name == "category"
+        assert part_data.data["part_sex"].dtype.name == "category"
+        assert part_data.data["part_hhsize"].dtype.name == "category"
 
     @pytest.mark.parametrize(
         "nan_col, df_factory",
@@ -273,7 +273,7 @@ class TestAccessorMethods:
         part_data = ParticipantData(data=df, id_col="id", age_col="age")
         sample_sizes = part_data.get_sample_sizes()
         assert isinstance(sample_sizes, pd.DataFrame)
-        assert np.array_equal(sample_sizes["age_part"].values, np.array([25, 34, 45]))
+        assert np.array_equal(sample_sizes["part_age"].values, np.array([25, 34, 45]))
         assert np.array_equal(sample_sizes["N"].values, np.array([2, 3, 1]))
 
     def test_get_sample_sizes_with_age_groups(self):
@@ -340,16 +340,16 @@ class TestAccessorMethods:
             "codes": [0, 1, 2, 3, 4],
         }
 
-    def test_get_strat_vars_with_suffix(self, df_part_one_year):
-        """get_strat_vars(suffix=True) returns names with '_part' appended."""
+    def test_get_strat_vars_with_prefix(self, df_part_one_year):
+        """get_strat_vars(prefix=True) returns names with 'part_' prepended."""
         part_data = ParticipantData(
             df_part_one_year,
             id_col="id",
             age_col="age",
             strat_var_cols=["sex", "hhsize"],
         )
-        assert part_data.get_strat_vars(suffix=True) == ["sex_part", "hhsize_part"]
-        assert part_data.get_strat_vars(suffix=False) == ["sex", "hhsize"]
+        assert part_data.get_strat_vars(prefix=True) == ["part_sex", "part_hhsize"]
+        assert part_data.get_strat_vars(prefix=False) == ["sex", "hhsize"]
 
     def test_get_strat_vars_empty(self):
         """get_strat_vars() returns empty list when no stratification variables specified."""

@@ -62,7 +62,7 @@ class PopulationData:
     -------
     validate()
         Performs comprehensive validation of the population data.
-    get_strat_vars(suffix=False)
+    get_strat_vars(prefix=False)
         Returns list of stratification variable names, optionally with '_pop' suffix.
     get_strat_var_schema()
         Returns dictionary mapping stratification variables to their categories and codes.
@@ -140,9 +140,9 @@ class PopulationData:
     ...     size_col='population',
     ...     age_grp_col='age_group'
     ... )
-    >>> 'age_grp_pop' in pop_data.data.columns
+    >>> 'pop_age_grp' in pop_data.data.columns
     True
-    >>> pop_data.data['age_grp_pop'].dtype
+    >>> pop_data.data['pop_age_grp'].dtype
     dtype('interval[int64, right)')
 
     Notes
@@ -396,32 +396,22 @@ class PopulationData:
         """
         return self.strat_var_cols if self.strat_var_cols else []  # type: ignore
 
-    def get_strat_vars(self, suffix: bool = False) -> List[str]:
+    def get_strat_vars(self, prefix: bool = False) -> List[str]:
         """
-        Return list of stratification variable names, optionally with suffix.
+        Return list of stratification variable names.
 
         Parameters
         ----------
-        suffix : bool, default=False
-            If True, appends '_pop' suffix to each stratification variable name.
+        prefix : bool, default=False
+            Unused for population data (no prefix convention); kept for API
+            consistency with ParticipantData and ContactData.
 
         Returns
         -------
         List[str]
-            List of stratification variable column names (with optional suffix).
-
-        Examples
-        --------
-        >>> pop_data = PopulationData(df, 'age', 'population', strat_var_cols=['gender', 'region'])
-        >>> pop_data.get_strat_vars(suffix=True)
-        ['gender_pop', 'region_pop']
+            List of stratification variable column names.
         """
-        if not self.strat_var_cols:
-            return []
-        if suffix:
-            return [var + "_pop" for var in self.strat_var_cols]
-        else:
-            return [var.removesuffix("_pop") for var in self.strat_var_cols]
+        return self.strat_var_cols if self.strat_var_cols else []
 
     def get_strat_var_schema(self) -> Dict[str, Dict[str, List[Union[str, int]]]]:
         """

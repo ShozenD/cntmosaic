@@ -94,12 +94,12 @@ def make_idarrs_for_intervals(
     >>> print(bid_pad)
     >>> print(aid_exp)
     """
-    # Extract interval bounds
-    bl = data[interval_col].apply(lambda x: x.left).to_numpy()
-    bu = data[interval_col].apply(lambda x: x.right).to_numpy()
+    # Extract interval bounds, cast to int to guard against float-typed pd.Interval boundaries
+    bl = data[interval_col].apply(lambda x: x.left).to_numpy().astype(int)
+    bu = data[interval_col].apply(lambda x: x.right).to_numpy().astype(int)
 
     # Calculate the maximum length of intervals
-    max_length = max(bu - bl)
+    max_length = int(max(bu - bl))
 
     # Create index arrays for each interval
     bid = [np.arange(start, stop) for start, stop in zip(bl, bu)]

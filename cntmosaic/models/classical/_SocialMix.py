@@ -19,11 +19,13 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from ...analysis.summariser._summary import ContactSummary
 from ...dataloader import ContactData, ParticipantData, PopulationData
 from ...utils import AgeGroupSpecs
 from ._base import DeterministicContactModel
 from ._socialmix_age_processing import AgeBinProcessor
 from ._socialmix_bootstrap import BootstrapResults, SocialMixBootstrap
+from ._socialmix_helpers import apply_reciprocity, create_stratum_labels, infer_strat_mode
 from ._socialmix_utils import SocialMixDataLoader
 from ._socialmix_validation import SocialMixValidator
 
@@ -38,83 +40,100 @@ class SocialMix(DeterministicContactModel):
 
     Implements the socialmixr algorithm (Funk et al. 2024) for computing
     contact intensity and contact rate matrices from participant and contact
-    data, with optional reciprocity adjustment and bootstrap uncertainty.
+    survey data, with optional reciprocity adjustment and bootstrap uncertainty
+    quantification.
 
     Parameters
     ----------
-    df_part : pd.DataFrame
-        Participant data with columns:
-        - 'id': unique participant identifier
-        - 'age_part': participant age (numeric)
-        - 'age_grp_part': participant age group (pd.Interval, categorical)
-    df_cnt : pd.DataFrame
-        Contact data with columns:
-        - 'id': participant identifier (links to df_part)
-        - 'age_cnt': contact age (numeric)
-        - 'age_grp_cnt': contact age group (pd.Interval, categorical)
-        - 'y': number of contacts (numeric, >= 0)
-    df_age_dist : pd.DataFrame
-        Population age distribution with columns:
-        - 'age': age value (numeric)
-        - 'P': population size at that age (numeric, > 0)
-    age_bins : AgeGroupSpecs
-        Age stratification bins defining age groups
-    symmetric : bool, default False
-        Apply reciprocity adjustment to ensure M[c,d]*P[c] = M[d,c]*P[d]
+    part_data : ParticipantData
+        Validated participant data container. Must have either a ``part_age``
+        (1-year resolution) or ``part_age_grp`` (coarse intervals) column.
+    cnt_data : ContactData
+        Validated contact data container. Must have either a ``cnt_age`` or
+        ``cnt_age_grp`` column, and a ``y`` column with contact counts.
+    age_group_specs : AgeGroupSpecs
+        Age stratification bins used to group raw ages. If participant or
+        contact ages are already binned, the bins must be consistent with
+        these specs.
+    pop_data : PopulationData, optional
+        Validated population data container. Required for contact rate
+        computation and reciprocity adjustment. When provided with 1-year
+        resolution (``age_col``), counts are silently aggregated into coarse
+        bins matching ``age_group_specs``.
+    apply_reciprocity : bool, default True
+        Apply population-weighted reciprocity adjustment so that
+        ``M[c,d] * P[c] == M[d,c] * P[d]``. Automatically disabled if
+        ``pop_data`` is not provided or stratification mode is incompatible
+        (partial/mixed).
     adaptive_merge : bool, default False
-        Automatically merge age groups with insufficient participants
-    validate_for_bootstrap : bool, default False
-        Validate data for bootstrap stability. If True, performs more aggressive
-        age group merging to ensure bootstrap resampling will succeed. If False,
-        only merges age groups necessary for contact intensity estimation.
-        Set to True if you plan to use run_bootstrap().
+        Automatically merge age groups with zero participants to prevent
+        division-by-zero errors. When ``False`` and empty groups are detected,
+        a ``ValueError`` is raised instead.
 
     Attributes
     ----------
     Y : NDArray
-        Contact count matrix, shape (B, B)
+        Aggregated contact count tensor.
+        Shape ``(C, D)`` for single mode; ``(K_part, C, D)`` for partial;
+        ``(K_part, K_cnt, C, D)`` for full/mixed.
     N : NDArray
-        Sample sizes per age group, shape (B,)
-    P : NDArray
-        Population sizes per age group, shape (B,)
-    effective_age_bins : AgeGroupSpecs
-        Age bins after any adaptive merging
+        Participant counts per age group and stratum.
+        Shape ``(C,)`` for single mode; ``(K_part, C)`` for stratified.
+    P : NDArray or None
+        Population sizes per age group (``None`` if ``pop_data`` not provided).
+        Shape ``(D,)`` for single/partial; ``(K_cnt, D)`` for full/mixed.
+    C : int
+        Number of participant age groups after any adaptive merging.
+    D : int
+        Number of contact age groups after any adaptive merging.
+    age_group_specs : AgeGroupSpecs
+        Age bins, updated in-place if adaptive merging occurred.
+    strat_mode : str
+        Stratification mode: ``"single"``, ``"partial"``, ``"full"``, or
+        ``"mixed"``.
 
     Methods
     -------
-    compute_cint(recover_bins=False)
-        Compute contact intensity matrix M
-    compute_rate(recover_bins=False)
-        Compute contact rate matrix ω
-    run_bootstrap(n_boot=1000, random_state=None, progress=True)
-        Estimate uncertainty via bootstrap
+    cint()
+        Compute the contact intensity matrix M[c,d].
+    rate()
+        Compute the contact rate matrix ω[c,d] = M[c,d] / P[d].
+    run_inference_bootstrap(n_boot, random_state, progress, min_success_rate)
+        Quantify uncertainty via bootstrap resampling.
+    predict()
+        Alias for :meth:`cint`.
 
     Examples
     --------
-    >>> # Create SocialMix instance
-    >>> sm = SocialMix(df_part, df_cnt, df_age_dist, age_bins)
+    >>> from cntmosaic.dataloader import ParticipantData, ContactData, PopulationData
+    >>> from cntmosaic.utils import AgeGroupSpecs
     >>>
-    >>> # Get contact intensity matrix
-    >>> M = sm.compute_cint()
+    >>> age_bins = AgeGroupSpecs(left=[0, 20, 40, 60], right=[19, 39, 59, 79])
+    >>> sm = SocialMix(part_data, cnt_data, age_bins, pop_data)
     >>>
-    >>> # Get contact rate matrix
-    >>> omega = sm.compute_rate()
+    >>> # Point estimates
+    >>> cint_dict = sm.cint()          # Dict[str, ContactSummary]
+    >>> M = cint_dict["All->All"].central
+    >>>
+    >>> rate_dict = sm.rate()
+    >>> omega = rate_dict["All->All"].central
     >>>
     >>> # Bootstrap uncertainty
-    >>> boot_results = sm.run_bootstrap(n_boot=1000, random_state=42)
-    >>> M_std, omega_std = boot_results.std()
-    >>> M_ci, omega_ci = boot_results.quantiles([0.025, 0.975])
+    >>> boot = sm.run_inference_bootstrap(n_boot=1000, random_state=42)
+    >>> M_mean = boot.mean(statistic="cint")["All->All"]
+    >>> M_ci = boot.quantiles(q=[0.025, 0.975], statistic="cint")["All->All"]
 
     Notes
     -----
-    Contact intensity M[c,d] represents the average number of contacts that
-    individuals in age group c have with individuals in age group d.
+    Contact intensity ``M[c,d]`` is the average number of contacts that an
+    individual in age group ``c`` has with individuals in age group ``d``
+    during the survey period.
 
-    Contact rate ω[c,d] = M[c,d] / P[d] represents the per-capita rate at
-    which individuals in age group c contact individuals in age group d.
+    Contact rate ``ω[c,d] = M[c,d] / P[d]`` is the per-capita contact rate
+    from age group ``c`` to age group ``d``.
 
-    The reciprocity adjustment (symmetric=True) ensures that the total number
-    of contacts from c to d equals the total from d to c: M[c,d]*P[c] = M[d,c]*P[d].
+    The reciprocity adjustment ensures ``M[c,d] * P[c] == M[d,c] * P[d]``,
+    i.e. total contacts are symmetric across the population.
     """
 
     def __init__(
@@ -125,7 +144,6 @@ class SocialMix(DeterministicContactModel):
         pop_data: Optional[PopulationData] = None,
         apply_reciprocity: bool = True,
         adaptive_merge: bool = False,
-        validate_for_bootstrap: bool = False,
     ):
         # Store parameters
         self.part_data = part_data
@@ -134,7 +152,6 @@ class SocialMix(DeterministicContactModel):
         self.pop_data = pop_data
         self.apply_reciprocity = apply_reciprocity
         self.adaptive_merge = adaptive_merge
-        self.validate_for_bootstrap = validate_for_bootstrap
 
         # Stratification attributes (initialized in _preprocess)
         self.strat_vars_part: List[str] = []
@@ -152,7 +169,6 @@ class SocialMix(DeterministicContactModel):
         self.age_processor = AgeBinProcessor(age_group_specs)
 
         # Computed attributes (initialized in pipeline)
-        self.effective_age_group_specs: Optional[AgeGroupSpecs] = None
         self._cint: Optional[NDArray] = None
         self._rate: Optional[NDArray] = None
         self._boot: Optional[BootstrapResults] = None
@@ -168,6 +184,109 @@ class SocialMix(DeterministicContactModel):
 
         # Run processing pipeline
         self.fit()
+
+    # ------------------------------------------------------------------
+    # Alternative constructors
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_dataframes(
+        cls,
+        df_part: pd.DataFrame,
+        df_cnt: pd.DataFrame,
+        age_group_specs: AgeGroupSpecs,
+        df_pop: Optional[pd.DataFrame] = None,
+        apply_reciprocity: bool = True,
+        adaptive_merge: bool = False,
+    ) -> "SocialMix":
+        """Construct SocialMix directly from DataFrames, bypassing manual container creation.
+
+        Use this constructor when you have raw DataFrames rather than pre-built
+        :class:`ParticipantData` / :class:`ContactData` / :class:`PopulationData`
+        containers. The constructor auto-detects age and stratification columns from
+        the ``part_*`` / ``cnt_*`` / ``pop_*`` column naming convention and wraps
+        the DataFrames in the appropriate container objects internally.
+
+        Parameters
+        ----------
+        df_part : pd.DataFrame
+            Participant DataFrame. Must contain ``id`` and either ``part_age``
+            (1-year resolution) or ``part_age_grp`` (coarse intervals).
+            Extra ``part_*`` columns are treated as stratification variables.
+        df_cnt : pd.DataFrame
+            Contact DataFrame. Must contain ``id``, ``y``, and either ``cnt_age``
+            or ``cnt_age_grp``. Extra ``cnt_*`` columns are treated as
+            stratification variables.
+        age_group_specs : AgeGroupSpecs
+            Age stratification bins.
+        df_pop : pd.DataFrame, optional
+            Population DataFrame. Must contain ``P`` and either ``age``
+            (1-year resolution) or ``pop_age_grp`` (coarse intervals).
+        apply_reciprocity : bool, default True
+            See :class:`SocialMix`.
+        adaptive_merge : bool, default False
+            See :class:`SocialMix`.
+        """
+        _CORE_PART = {"id", "part_age", "part_age_grp", "part_age_min", "part_age_max"}
+        _CORE_CNT = {"id", "cnt_age", "cnt_age_grp", "cnt_age_min", "cnt_age_max", "y"}
+        _CORE_POP = {"age", "age_min", "age_max", "P", "pop_age_grp"}
+
+        part_strat = [
+            c for c in df_part.columns if c.startswith("part_") and c not in _CORE_PART
+        ]
+        cnt_strat = [
+            c for c in df_cnt.columns if c.startswith("cnt_") and c not in _CORE_CNT
+        ]
+
+        if "part_age" in df_part.columns:
+            part_age_kwargs: dict = {"age_col": "part_age"}
+        elif "part_age_grp" in df_part.columns:
+            part_age_kwargs = {"age_grp_col": "part_age_grp"}
+        else:
+            raise ValueError("df_part must contain 'part_age' or 'part_age_grp' column.")
+
+        if "cnt_age" in df_cnt.columns:
+            cnt_age_kwargs: dict = {"age_col": "cnt_age"}
+        elif "cnt_age_grp" in df_cnt.columns:
+            cnt_age_kwargs = {"age_grp_col": "cnt_age_grp"}
+        else:
+            raise ValueError("df_cnt must contain 'cnt_age' or 'cnt_age_grp' column.")
+
+        part_data = ParticipantData(
+            df_part,
+            id_col="id",
+            strat_var_cols=part_strat or None,
+            **part_age_kwargs,
+        )
+        cnt_data = ContactData(
+            df_cnt,
+            id_col="id",
+            strat_var_cols=cnt_strat or None,
+            **cnt_age_kwargs,
+        )
+
+        pop_data = None
+        if df_pop is not None:
+            if "pop_age_grp" in df_pop.columns:
+                pop_age_kwargs: dict = {"age_grp_col": "pop_age_grp"}
+            else:
+                pop_age_kwargs = {"age_col": "age"}
+            pop_strat = [c for c in df_pop.columns if c not in _CORE_POP]
+            pop_data = PopulationData(
+                df_pop,
+                size_col="P",
+                strat_var_cols=pop_strat or None,
+                **pop_age_kwargs,
+            )
+
+        return cls(
+            part_data=part_data,
+            cnt_data=cnt_data,
+            age_group_specs=age_group_specs,
+            pop_data=pop_data,
+            apply_reciprocity=apply_reciprocity,
+            adaptive_merge=adaptive_merge,
+        )
 
     # ------------------------------------------------------------------
     # DeterministicContactModel interface
@@ -225,6 +344,7 @@ class SocialMix(DeterministicContactModel):
         self._assign_age_groups()
 
         # Use validator to handle validation logic
+        # Bootstrap stability validation runs lazily inside run_inference_bootstrap()
         validator = SocialMixValidator(
             self.part_data,
             self.cnt_data,
@@ -232,23 +352,25 @@ class SocialMix(DeterministicContactModel):
             self.pop_data,
             self.apply_reciprocity,
             self.adaptive_merge,
-            self.validate_for_bootstrap,
+            validate_for_bootstrap=False,
         )
 
         # Run all validations and get updated components
         validated = validator.validate_all()
 
-        # Update instance with validated components
+        # Update instance with validated components (age_group_specs may be a new object
+        # if adaptive merging occurred — keep age_processor in sync)
         self.part_data = validated["part_data"]
         self.cnt_data = validated["cnt_data"]
         self.age_group_specs = validated["age_group_specs"]
+        self.age_processor = AgeBinProcessor(self.age_group_specs)
         self.apply_reciprocity = validated["apply_reciprocity"]
 
         # Extract stratification variables from validated data
-        self.strat_vars_part = self.part_data.get_strat_vars(suffix=False)
-        self.strat_vars_cnt = self.cnt_data.get_strat_vars(suffix=False)
+        self.strat_vars_part = self.part_data.get_strat_vars(prefix=False)
+        self.strat_vars_cnt = self.cnt_data.get_strat_vars(prefix=False)
         self.strat_vars_pop = (
-            self.pop_data.get_strat_vars(suffix=False)
+            self.pop_data.get_strat_vars(prefix=False)
             if self.pop_data is not None
             else []
         )
@@ -268,31 +390,23 @@ class SocialMix(DeterministicContactModel):
         self.strat_dims_part = {}
         if self.strat_vars_part:
             for var in self.strat_vars_part:
-                col_name = f"{var}_part"
+                col_name = f"part_{var}"
                 self.strat_dims_part[var] = self.part_data.data[col_name].nunique()
 
         # Calculate stratification dimensions for contact variables
         self.strat_dims_cnt = {}
         if self.strat_vars_cnt:
             for var in self.strat_vars_cnt:
-                col_name = f"{var}_cnt"
+                col_name = f"cnt_{var}"
                 self.strat_dims_cnt[var] = self.cnt_data.data[col_name].nunique()
 
         # Calculate expected number of strata
         self.K = self._calculate_K()
 
-    def _infer_strat_mode(self):
-        """
-        Infer the stratification mode based on the stratification variables.
-        """
-        if len(self.strat_vars_part) == 0 and len(self.strat_vars_cnt) == 0:
-            self.strat_mode = "single"
-        elif len(self.strat_vars_cnt) == 0:
-            self.strat_mode = "partial"
-        elif set(self.strat_vars_part) == set(self.strat_vars_cnt):
-            self.strat_mode = "full"
-        else:
-            self.strat_mode = "mixed"
+    def _infer_strat_mode(self) -> str:
+        """Infer and cache the stratification mode."""
+        self.strat_mode = infer_strat_mode(self.strat_vars_part, self.strat_vars_cnt)
+        return self.strat_mode
 
     def _calculate_K(self) -> int:
         """
@@ -344,37 +458,37 @@ class SocialMix(DeterministicContactModel):
         ]
 
         # Assign age groups to participants if not present
-        if "age_grp_part" not in self.part_data.data.columns:
-            if "age_part" in self.part_data.data.columns:
+        if "part_age_grp" not in self.part_data.data.columns:
+            if "part_age" in self.part_data.data.columns:
                 # Create age groups from raw ages
-                ages = self.part_data.data["age_part"]
+                ages = self.part_data.data["part_age"]
                 age_grps = pd.cut(
                     ages,
                     bins=bin_edges,
                     right=False,
                     labels=intervals,
                 )
-                self.part_data.data["age_grp_part"] = age_grps
+                self.part_data.data["part_age_grp"] = age_grps
             else:
                 raise ValueError(
-                    "ParticipantData must have either 'age_part' or 'age_grp_part' column."
+                    "ParticipantData must have either 'part_age' or 'part_age_grp' column."
                 )
 
         # Assign age groups to contacts if not present
-        if "age_grp_cnt" not in self.cnt_data.data.columns:
-            if "age_cnt" in self.cnt_data.data.columns:
+        if "cnt_age_grp" not in self.cnt_data.data.columns:
+            if "cnt_age" in self.cnt_data.data.columns:
                 # Create age groups from raw ages
-                ages = self.cnt_data.data["age_cnt"]
+                ages = self.cnt_data.data["cnt_age"]
                 age_grps = pd.cut(
                     ages,
                     bins=bin_edges,
                     right=False,
                     labels=intervals,
                 )
-                self.cnt_data.data["age_grp_cnt"] = age_grps
+                self.cnt_data.data["cnt_age_grp"] = age_grps
             else:
                 raise ValueError(
-                    "ContactData must have either 'age_cnt' or 'age_grp_cnt' column."
+                    "ContactData must have either 'cnt_age' or 'cnt_age_grp' column."
                 )
 
     def _load(self) -> None:
@@ -417,157 +531,18 @@ class SocialMix(DeterministicContactModel):
         loader.load_data()
 
     def _create_stratum_labels(self) -> List[str]:
-        """
-        Create stratum labels following 'source->target' naming convention.
+        """Create ``"source->target"`` stratum labels matching array index order."""
+        return create_stratum_labels(
+            self.K_part,
+            self.K_cnt,
+            self.strat_vars_part,
+            self.strat_vars_cnt,
+            self.part_data,
+            self.cnt_data,
+        )
 
-        Returns
-        -------
-        List[str]
-            List of stratum labels in the order corresponding to array indices.
-            Examples: ["All->All"], ["M->All", "F->All"], ["M->M", "M->F", "F->M", "F->F"]
-        """
-        if self.K_part == 1 and self.K_cnt == 1:
-            return ["All->All"]
 
-        # Get categorical values for participant and contact strata
-        part_categories = []
-        if self.strat_vars_part:
-            # Build list of category combinations for participant side
-            for var in self.strat_vars_part:
-                col_name = f"{var}_part"
-                cats = self.part_data.data[col_name].cat.categories.tolist()
-                part_categories.append(cats)
-        else:
-            part_categories = [["All"]]
-
-        cnt_categories = []
-        if self.strat_vars_cnt:
-            # Build list of category combinations for contact side
-            for var in self.strat_vars_cnt:
-                col_name = f"{var}_cnt"
-                cats = self.cnt_data.data[col_name].cat.categories.tolist()
-                cnt_categories.append(cats)
-        else:
-            cnt_categories = [["All"]]
-
-        # Generate all combinations
-        import itertools
-
-        part_combos = list(itertools.product(*part_categories))
-        cnt_combos = list(itertools.product(*cnt_categories))
-
-        # Create labels in format "part->cnt"
-        labels = []
-        for part in part_combos:
-            for cnt in cnt_combos:
-                # Join multiple variables with underscore
-                part_str = "_".join(str(p) for p in part)
-                cnt_str = "_".join(str(c) for c in cnt)
-                labels.append(f"{part_str}->{cnt_str}")
-
-        return labels
-
-    def _apply_reciprocity(
-        self, cint_dict: Dict[str, NDArray[np.float64]], labels: List[str]
-    ) -> Dict[str, NDArray[np.float64]]:
-        """
-        Apply reciprocity adjustment to contact intensity matrices.
-
-        For single/full stratification modes, this ensures that contact patterns
-        are reciprocal according to population-weighted constraints.
-
-        Uses vectorized operations for efficiency.
-
-        Parameters
-        ----------
-        cint_dict : Dict[str, NDArray]
-            Raw contact intensity matrices before reciprocity adjustment
-        labels : List[str]
-            Stratum labels in order
-
-        Returns
-        -------
-        Dict[str, NDArray]
-            Reciprocity-adjusted contact intensity matrices
-
-        Notes
-        -----
-        For within-stratum contacts (s=s):
-            m^{s,s†}_{c,d} = (m^{s,s}_{c,d} * P^s_c + m^{s,s}_{d,c} * P^s_d) / (2 * P^s_c)
-
-        For between-stratum contacts (s≠t):
-            m^{s,t†}_{c,d} = (m^{s,t}_{c,d} + m^{t,s}_{d,c} * P^t_d / P^s_c) / 2
-        """
-        result = {}
-
-        if self.strat_mode == "single":
-            # Single stratum: apply within-stratum formula (vectorized)
-            # m†_{c,d} = (m_{c,d} * P_c + m_{d,c} * P_d) / (2 * P_c)
-            m = cint_dict["All->All"]
-            P = self.P  # Shape (D,)
-
-            # Vectorized computation:
-            # m * P[:, None] broadcasts P along columns
-            # m.T * P[None, :] transposes m and broadcasts P along rows
-            # Division by (2 * P[:, None]) normalizes by source population
-            m_adj = (m * P[:, np.newaxis] + m.T * P[np.newaxis, :]) / (
-                2 * P[:, np.newaxis]
-            )
-
-            result["All->All"] = m_adj
-
-        elif self.strat_mode == "full":
-            # Full stratification: apply both within and between-stratum formulas
-            # P has shape (K_cnt, D)
-
-            # Parse labels to identify strata
-            # Labels are like "M->M", "M->F", "F->M", "F->F"
-            for idx, label in enumerate(labels):
-                parts = label.split("->")
-                s_str = parts[0]  # Source stratum
-                t_str = parts[1]  # Target stratum
-
-                # Get matrix indices
-                k_s = idx // self.K_cnt  # Participant stratum index
-                k_t = idx % self.K_cnt  # Contact stratum index
-
-                m_st = cint_dict[label]
-                P_s = self.P[k_s, :]  # Population of source stratum
-                P_t = self.P[k_t, :]  # Population of target stratum
-
-                if s_str == t_str:
-                    # Within-stratum (vectorized)
-                    # m^{s,s†}_{c,d} = (m^{s,s}_{c,d} * P^s_c + m^{s,s}_{d,c} * P^s_d) / (2 * P^s_c)
-                    m_adj = (
-                        m_st * P_s[:, np.newaxis] + m_st.T * P_s[np.newaxis, :]
-                    ) / (2 * P_s[:, np.newaxis])
-                    result[label] = m_adj
-                else:
-                    # Between-stratum (vectorized)
-                    # m^{s,t†}_{c,d} = (m^{s,t}_{c,d} + m^{t,s}_{d,c} * P^t_d / P^s_c) / 2
-                    reverse_label = f"{t_str}->{s_str}"
-                    m_ts = cint_dict[reverse_label]
-
-                    # Vectorized computation with safe division
-                    # Use np.where to handle potential division by zero
-                    # If P_s[c] == 0, keep original m_st[c, d]
-                    P_s_safe = np.where(P_s > 0, P_s, 1)  # Avoid division by zero
-                    m_adj = (
-                        m_st + m_ts.T * P_t[np.newaxis, :] / P_s_safe[:, np.newaxis]
-                    ) / 2
-
-                    # Where P_s was zero, restore original values
-                    m_adj = np.where(P_s[:, np.newaxis] > 0, m_adj, m_st)
-
-                    result[label] = m_adj
-
-        else:
-            # Partial or mixed: no reciprocity adjustment
-            result = cint_dict
-
-        return result
-
-    def cint(self) -> Dict[str, NDArray[np.float64]]:
+    def cint(self) -> Dict[str, "ContactSummary"]:
         """
         Compute contact intensity matrix.
 
@@ -579,50 +554,59 @@ class SocialMix(DeterministicContactModel):
 
         Returns
         -------
-        Dict[str, NDArray]
-            Dictionary mapping stratum labels to contact intensity matrices.
+        Dict[str, ContactSummary]
+            Dictionary mapping stratum labels to ContactSummary objects.
             Keys follow "source->target" format:
             - "All->All" for unstratified data
             - "M->All", "F->All" for participant-only stratification
             - "M->M", "M->F", "F->M", "F->F" for full stratification
-            Each matrix has shape (C, D) where C is participant age groups
-            and D is contact age groups.
         """
         if self._cint is None:
             # Get stratum labels
             labels = self._create_stratum_labels()
 
             # Compute raw intensity matrices based on data structure
-            result = {}
+            raw = {}
 
             if self.K_part == 1 and self.K_cnt == 1:
                 # Single stratum: Y is (C, D), N is (C,)
-                result["All->All"] = self.Y / self.N[:, np.newaxis]
+                raw["All->All"] = self.Y / self.N[:, np.newaxis]
 
             elif self.K_part > 1 and self.K_cnt == 1:
                 # Partial stratification: Y is (K_part, C, D), N is (K_part, C)
                 for k in range(self.K_part):
-                    result[labels[k]] = self.Y[k] / self.N[k, :, np.newaxis]
+                    raw[labels[k]] = self.Y[k] / self.N[k, :, np.newaxis]
 
             else:
                 # Full/mixed stratification: Y is (K_part, K_cnt, C, D), N is (K_part, C)
                 idx = 0
                 for k_part in range(self.K_part):
                     for k_cnt in range(self.K_cnt):
-                        result[labels[idx]] = (
+                        raw[labels[idx]] = (
                             self.Y[k_part, k_cnt] / self.N[k_part, :, np.newaxis]
                         )
                         idx += 1
 
             # Apply reciprocity adjustment if requested
             if self.apply_reciprocity and self.P is not None:
-                result = self._apply_reciprocity(result, labels)
+                raw = apply_reciprocity(raw, self.strat_mode, self.K_cnt, self.P)
 
-            self._cint = result
+            _nan = np.full(next(iter(raw.values())).shape, np.nan)
+            self._cint = {
+                key: ContactSummary(
+                    lower=_nan.copy(),
+                    central=arr,
+                    upper=_nan.copy(),
+                    alpha=np.nan,
+                    measure="mean",
+                    age_group_specs=self.age_group_specs,
+                )
+                for key, arr in raw.items()
+            }
 
         return self._cint
 
-    def rate(self) -> Dict[str, NDArray[np.float64]]:
+    def rate(self) -> Dict[str, "ContactSummary"]:
         """
         Compute contact rate matrix.
 
@@ -635,31 +619,14 @@ class SocialMix(DeterministicContactModel):
 
         Returns
         -------
-        Dict[str, NDArray[np.float64]]
-            Dictionary of contact rate matrices, one per stratum.
+        Dict[str, ContactSummary]
+            Dictionary of contact rate ContactSummary objects, one per stratum.
             Keys follow the format "source->target" (e.g., "All->All", "M->F").
-            Each matrix has shape (C, D) where C is the number of participant
-            age groups and D is the number of contact age groups.
 
         Raises
         ------
         ValueError
             If population data was not provided during initialization.
-
-        Examples
-        --------
-        >>> # Single stratum (no stratification)
-        >>> omega_dict = sm.rate()
-        >>> omega = omega_dict["All->All"]  # shape (C, D)
-        >>>
-        >>> # Partial stratification (participant only)
-        >>> omega_dict = sm.rate()
-        >>> omega_M = omega_dict["M->All"]  # Males' contact rates
-        >>> omega_F = omega_dict["F->All"]  # Females' contact rates
-        >>>
-        >>> # Full stratification (both sides)
-        >>> omega_dict = sm.rate()
-        >>> omega_MF = omega_dict["M->F"]  # Males contacting females
         """
         if self._rate is None:
             # Check that population data is available
@@ -669,28 +636,33 @@ class SocialMix(DeterministicContactModel):
                     "Please provide 'pop_data' when initializing SocialMix."
                 )
 
-            # Get contact intensity matrices
+            # Get contact intensity matrices (central values)
             cint_dict = self.cint()
 
             # Compute rate for each stratum: rate = cint / P
-            result = {}
-            for key, M in cint_dict.items():
-                # M has shape (C, D), P has shape (D,) for single/partial
-                # or P has shape (K_cnt, D) for full stratification
+            raw = {}
+            labels = self._create_stratum_labels()
+            for key, cs in cint_dict.items():
+                M = cs.central
                 if self.K_cnt == 1:
-                    # Single or partial stratification: divide by population vector
-                    result[key] = M / self.P[np.newaxis, :]
+                    raw[key] = M / self.P[np.newaxis, :]
                 else:
-                    # Full stratification: need to extract correct P slice
-                    # Parse stratum key to get contact stratum index
-                    labels = self._create_stratum_labels()
                     stratum_idx = labels.index(key)
-                    # For full stratification with K_part participant strata and K_cnt contact strata:
-                    # stratum_idx = k_part * K_cnt + k_cnt
                     k_cnt = stratum_idx % self.K_cnt
-                    result[key] = M / self.P[k_cnt, :][np.newaxis, :]
+                    raw[key] = M / self.P[k_cnt, :][np.newaxis, :]
 
-            self._rate = result
+            _nan = np.full(next(iter(raw.values())).shape, np.nan)
+            self._rate = {
+                key: ContactSummary(
+                    lower=_nan.copy(),
+                    central=arr,
+                    upper=_nan.copy(),
+                    alpha=np.nan,
+                    measure="mean",
+                    age_group_specs=self.age_group_specs,
+                )
+                for key, arr in raw.items()
+            }
 
         return self._rate
 
@@ -700,56 +672,81 @@ class SocialMix(DeterministicContactModel):
         random_state: Optional[int] = None,
         progress: bool = True,
         min_success_rate: float = 0.5,
-    ) -> None:
+    ) -> BootstrapResults:
         """
         Estimate uncertainty via bootstrap resampling.
 
-        This method runs bootstrap resampling to quantify uncertainty in contact
-        intensity and rate estimates. Results are stored in `self._boot` for later
-        access by analysis tools.
+        Runs bootstrap stability validation before resampling — age groups that are
+        too small for reliable resampling are merged automatically when
+        ``adaptive_merge=True``, or a ``ValueError`` is raised otherwise. If merging
+        occurs at this stage, cached point estimates (``cint``, ``rate``) are
+        invalidated and recomputed at the merged resolution.
 
         Parameters
         ----------
-        n_boot : int, default=1000
-            Number of bootstrap resamples to generate
+        n_boot : int, default 1000
+            Number of bootstrap resamples.
         random_state : int, optional
-            Random seed for reproducibility. If None, results will vary between runs.
-        progress : bool, default=True
-            Whether to display a progress bar during bootstrap iterations
-        min_success_rate : float, default=0.5
-            Minimum fraction of successful bootstrap iterations required.
-            If the success rate falls below this threshold, a ValueError is raised.
+            Random seed for reproducibility.
+        progress : bool, default True
+            Show a tqdm progress bar during resampling.
+        min_success_rate : float, default 0.5
+            Minimum fraction of iterations that must succeed. Raises ``ValueError``
+            if the actual success rate falls below this threshold.
 
         Returns
         -------
         BootstrapResults
-            Container with bootstrap samples and methods for computing statistics:
-            - `mean(statistic='cint')`: Mean contact intensity across bootstrap samples
-            - `std(statistic='rate')`: Standard deviation of contact rates
-            - `quantiles(q=[0.025, 0.975])`: Confidence intervals
+            Container with per-iteration samples and summary methods:
+
+            - ``mean(statistic='cint'|'rate')`` — mean across samples
+            - ``std(statistic='cint'|'rate')`` — standard deviation
+            - ``quantiles(q, statistic='cint'|'rate')`` — arbitrary quantiles
+
+            Results are also stored in ``self._boot`` for later access.
 
         Raises
         ------
         ValueError
-            If the success rate is below `min_success_rate`, indicating insufficient
-            sample sizes in some age groups or strata.
+            If empty age groups remain after adaptive merging, or if
+            ``success_rate < min_success_rate``.
 
         Examples
         --------
-        >>> model = SocialMix(part_data, cnt_data, age_bins, pop_data)
-        >>> results = model.run_inference_bootstrap(n_boot=1000, random_state=42)
-        >>> cint_mean = results.mean(statistic='cint')
-        >>> cint_std = results.std(statistic='cint')
-        >>> ci_95 = results.quantiles(q=[0.025, 0.975], statistic='cint')
-
-        Notes
-        -----
-        - Bootstrap results are automatically stored in `self._boot`
-        - If `apply_reciprocity=True` was set during initialization, reciprocity
-          adjustment is applied within each bootstrap iteration
-        - For stratified models, results include separate matrices for each stratum
+        >>> sm = SocialMix(part_data, cnt_data, age_bins, pop_data)
+        >>> boot = sm.run_inference_bootstrap(n_boot=1000, random_state=42)
+        >>> cint_mean = boot.mean(statistic='cint')
+        >>> cint_ci = boot.quantiles(q=[0.025, 0.975], statistic='cint')
         """
-        # Create bootstrap estimator
+        # Run bootstrap stability validation lazily.
+        # This may adaptively merge more age groups than estimation required.
+        boot_validator = SocialMixValidator(
+            self.part_data,
+            self.cnt_data,
+            self.age_group_specs,
+            self.pop_data,
+            self.apply_reciprocity,
+            self.adaptive_merge,
+            validate_for_bootstrap=True,
+        )
+        validated = boot_validator.validate_all()
+
+        # If bootstrap validation merged additional age groups, update instance state
+        # and invalidate cached point estimates so they stay consistent.
+        if validated["age_group_specs"] is not self.age_group_specs:
+            self.part_data = validated["part_data"]
+            self.cnt_data = validated["cnt_data"]
+            self.age_group_specs = validated["age_group_specs"]
+            self.apply_reciprocity = validated["apply_reciprocity"]
+            self._cint = None
+            self._rate = None
+            # Drop stale age_grp column so _assign_age_groups_to_population()
+            # recomputes it with the new (post-merge) intervals.
+            if self.pop_data is not None and "age_grp" in self.pop_data.data.columns:
+                self.pop_data.data.drop(columns=["age_grp"], inplace=True)
+            self._load()
+
+        # Create bootstrap estimator and run
         bootstrap = SocialMixBootstrap(
             part_data=self.part_data,
             cnt_data=self.cnt_data,
@@ -760,8 +757,8 @@ class SocialMix(DeterministicContactModel):
             random_state=random_state,
         )
 
-        # Run bootstrap and store results
         self._boot = bootstrap.run(
             progress=progress,
             min_success_rate=min_success_rate,
         )
+        return self._boot

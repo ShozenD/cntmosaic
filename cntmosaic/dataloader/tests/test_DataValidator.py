@@ -237,11 +237,11 @@ def data_full_single():
         {
             "id": [1, 1, 2, 2, 3, 3],
             "age_cnt": [0, 1, 2, 0, 1, 2],
-            "sex_cnt": ["M", "M", "F", "F", "M", "M"],
+            "cnt_sex": ["M", "M", "F", "F", "M", "M"],
             "y": [1, 1, 1, 1, 1, 1],
         }
     )
-    df_cnt["sex_cnt"] = pd.Categorical(df_cnt["sex_cnt"], categories=["M", "F"])
+    df_cnt["cnt_sex"] = pd.Categorical(df_cnt["cnt_sex"], categories=["M", "F"])
 
     df_pop = pd.DataFrame(
         {
@@ -263,7 +263,7 @@ def data_full_single():
 
     part_data = ParticipantData(df_part, "id", "age", strat_var_cols="sex")
     cnt_data = ContactData(
-        df_cnt, "id", "age_cnt", strat_var_cols="sex_cnt", cnt_col="y"
+        df_cnt, "id", "age_cnt", strat_var_cols="cnt_sex", cnt_col="y"
     )
     pop_data = PopulationData(df_pop, "P", "age", strat_var_cols="sex")
     strat_data = StratificationData(df_strat, "age", "sex", "prop")
@@ -286,11 +286,11 @@ def data_full_single_inconsistent_coding():
         {
             "id": [1, 1, 2, 2, 3, 3],
             "age_cnt": [0, 1, 2, 0, 1, 2],
-            "sex_cnt": ["M", "M", "F", "F", "M", "M"],
+            "cnt_sex": ["M", "M", "F", "F", "M", "M"],
             "y": [1, 1, 1, 1, 1, 1],
         }
     )
-    df_cnt["sex_cnt"] = pd.Categorical(df_cnt["sex_cnt"], categories=["F", "M"])
+    df_cnt["cnt_sex"] = pd.Categorical(df_cnt["cnt_sex"], categories=["F", "M"])
 
     df_pop = pd.DataFrame(
         {
@@ -312,7 +312,7 @@ def data_full_single_inconsistent_coding():
 
     part_data = ParticipantData(df_part, "id", "age", strat_var_cols="sex")
     cnt_data = ContactData(
-        df_cnt, "id", "age_cnt", strat_var_cols="sex_cnt", cnt_col="y"
+        df_cnt, "id", "age_cnt", strat_var_cols="cnt_sex", cnt_col="y"
     )
     pop_data = PopulationData(df_pop, "P", "age", strat_var_cols="sex")
     strat_data = StratificationData(df_strat, "age", "sex", "prop")
@@ -376,7 +376,7 @@ class TestInconsistentCoding:
         # Before validation: check that codes are inconsistent
         # part_data: M=0, F=1 (categories=['M', 'F'])
         # strat_data: F=0, M=1 (categories=['F', 'M'])
-        part_sex_cat = part_data.data["sex_part"].cat
+        part_sex_cat = part_data.data["part_sex"].cat
         strat_sex_cat = strat_data.data["sex"].cat
 
         # Verify initial inconsistency
@@ -394,7 +394,7 @@ class TestInconsistentCoding:
         part_data, _, _, strat_data = validator.validate()
 
         # After validation: check that categories AND codes are consistent
-        part_sex_cat = part_data.data["sex_part"].cat
+        part_sex_cat = part_data.data["part_sex"].cat
         strat_sex_cat = strat_data.data["sex"].cat
 
         # Categories should match
@@ -408,8 +408,8 @@ class TestInconsistentCoding:
         assert strat_sex_cat.categories.to_list() == ["M", "F"]
 
         # Get actual data values to verify code consistency
-        part_m_codes = part_data.data[part_data.data["sex_part"] == "M"][
-            "sex_part"
+        part_m_codes = part_data.data[part_data.data["part_sex"] == "M"][
+            "part_sex"
         ].cat.codes
         strat_m_codes = strat_data.data[strat_data.data["sex"] == "M"]["sex"].cat.codes
 
@@ -421,8 +421,8 @@ class TestInconsistentCoding:
         part_data, cnt_data, pop_data, strat_data = data_full_single_inconsistent_coding
 
         # Before validation: check that codes are inconsistent
-        part_sex_cat = part_data.data["sex_part"].cat
-        cnt_sex_cat = cnt_data.data["sex_cnt"].cat
+        part_sex_cat = part_data.data["part_sex"].cat
+        cnt_sex_cat = cnt_data.data["cnt_sex"].cat
         pop_sex_cat = pop_data.data["sex"].cat
         strat_sex_cat = strat_data.data["sex"].cat
 
@@ -445,8 +445,8 @@ class TestInconsistentCoding:
         part_data, cnt_data, pop_data, strat_data = validator.validate()
 
         # After validation: check that categories AND codes are consistent
-        part_sex_cat = part_data.data["sex_part"].cat
-        cnt_sex_cat = cnt_data.data["sex_cnt"].cat
+        part_sex_cat = part_data.data["part_sex"].cat
+        cnt_sex_cat = cnt_data.data["cnt_sex"].cat
         pop_sex_cat = pop_data.data["sex"].cat
         strat_sex_cat = strat_data.data["sex"].cat
 
@@ -466,11 +466,11 @@ class TestInconsistentCoding:
         assert strat_sex_cat.categories.to_list() == ["M", "F"]
 
         # Get actual data values to verify code consistency
-        part_m_codes = part_data.data[part_data.data["sex_part"] == "M"][
-            "sex_part"
+        part_m_codes = part_data.data[part_data.data["part_sex"] == "M"][
+            "part_sex"
         ].cat.codes
-        cnt_m_codes = cnt_data.data[cnt_data.data["sex_cnt"] == "M"][
-            "sex_cnt"
+        cnt_m_codes = cnt_data.data[cnt_data.data["cnt_sex"] == "M"][
+            "cnt_sex"
         ].cat.codes
         pop_m_codes = pop_data.data[pop_data.data["sex"] == "M"]["sex"].cat.codes
         strat_m_codes = strat_data.data[strat_data.data["sex"] == "M"]["sex"].cat.codes

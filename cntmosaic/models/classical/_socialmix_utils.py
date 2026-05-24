@@ -68,8 +68,8 @@ class SocialMixDataLoader:
         Calculate and store stratification dimensions.
         """
         # Get age group dimensions
-        self.sm.C = len(self.sm.part_data.data["age_grp_part"].cat.categories)
-        self.sm.D = len(self.sm.cnt_data.data["age_grp_cnt"].cat.categories)
+        self.sm.C = len(self.sm.part_data.data["part_age_grp"].cat.categories)
+        self.sm.D = len(self.sm.cnt_data.data["cnt_age_grp"].cat.categories)
 
         # Calculate K_part: number of participant strata
         if self.sm.strat_vars_part:
@@ -98,25 +98,25 @@ class SocialMixDataLoader:
             - Shape (K_part, C) if K_part > 1 (stratified)
         """
         df_part = self.sm.part_data.data
-        age_grps_part = df_part["age_grp_part"].cat.categories
+        age_grps_part = df_part["part_age_grp"].cat.categories
 
         if self.sm.K_part == 1:
             # No stratification: simple count by age group
             counts = (
-                df_part.groupby("age_grp_part", observed=False)
+                df_part.groupby("part_age_grp", observed=False)
                 .size()
                 .reindex(pd.Index(age_grps_part), fill_value=0)
             )
             self.sm.N = counts.values.astype(np.int64)
         else:
             # Stratified: group by strat vars + age
-            group_cols = [f"{var}_part" for var in self.sm.strat_vars_part] + [
-                "age_grp_part"
+            group_cols = [f"part_{var}" for var in self.sm.strat_vars_part] + [
+                "part_age_grp"
             ]
             counts = df_part.groupby(group_cols, observed=False).size()
 
             # Reshape to (K_part, C) matrix
-            self.sm.N = self._series_to_stratified_array(
+            self.sm.N = self._fill_simple_array(
                 counts,
                 shape=(self.sm.K_part, self.sm.C),
                 strat_vars=self.sm.strat_vars_part,
@@ -136,12 +136,12 @@ class SocialMixDataLoader:
         """
         df_part = self.sm.part_data.data
         df_cnt = self.sm.cnt_data.data
-        age_grps_part = df_part["age_grp_part"].cat.categories
-        age_grps_cnt = df_cnt["age_grp_cnt"].cat.categories
+        age_grps_part = df_part["part_age_grp"].cat.categories
+        age_grps_cnt = df_cnt["cnt_age_grp"].cat.categories
 
         # Merge participants with contacts
-        part_cols = ["id", "age_grp_part"] + [
-            f"{v}_part" for v in self.sm.strat_vars_part
+        part_cols = ["id", "part_age_grp"] + [
+            f"part_{v}" for v in self.sm.strat_vars_part
         ]
         merged = df_cnt.merge(df_part[part_cols], on="id", how="inner")
 
@@ -154,7 +154,7 @@ class SocialMixDataLoader:
         if self.sm.K_part == 1 and self.sm.K_cnt == 1:
             # No stratification: simple (C, D) matrix
             Y_agg = (
-                merged.groupby(["age_grp_part", "age_grp_cnt"], observed=False)["y"]
+                merged.groupby(["part_age_grp", "cnt_age_grp"], observed=False)["y"]
                 .sum()
                 .unstack(fill_value=0)
             )
@@ -167,36 +167,33 @@ class SocialMixDataLoader:
 
         elif self.sm.K_part > 1 and self.sm.K_cnt == 1:
             # Partial stratification: (K_part, C, D) tensor
-            group_cols = [f"{v}_part" for v in self.sm.strat_vars_part] + [
-                "age_grp_part",
-                "age_grp_cnt",
+            group_cols = [f"part_{v}" for v in self.sm.strat_vars_part] + [
+                "part_age_grp",
+                "cnt_age_grp",
             ]
             Y_agg = merged.groupby(group_cols, observed=False)["y"].sum()
 
-            self.sm.Y = self._series_to_stratified_array(
+            self.sm.Y = self._fill_partial_array(
                 Y_agg,
                 shape=(self.sm.K_part, self.sm.C, self.sm.D),
-                strat_vars=self.sm.strat_vars_part,
-                suffix="part",
-                has_contact_age=True,
+                strat_vars_part=self.sm.strat_vars_part,
             )
 
         else:
             # Full/mixed stratification: (K_part, K_cnt, C, D) tensor
             group_cols = (
-                [f"{v}_part" for v in self.sm.strat_vars_part]
-                + ["age_grp_part"]
-                + [f"{v}_cnt" for v in self.sm.strat_vars_cnt]
-                + ["age_grp_cnt"]
+                [f"part_{v}" for v in self.sm.strat_vars_part]
+                + ["part_age_grp"]
+                + [f"cnt_{v}" for v in self.sm.strat_vars_cnt]
+                + ["cnt_age_grp"]
             )
             Y_agg = merged.groupby(group_cols, observed=False)["y"].sum()
 
-            self.sm.Y = self._series_to_stratified_array(
+            self.sm.Y = self._fill_full_array(
                 Y_agg,
                 shape=(self.sm.K_part, self.sm.K_cnt, self.sm.C, self.sm.D),
                 strat_vars_part=self.sm.strat_vars_part,
                 strat_vars_cnt=self.sm.strat_vars_cnt,
-                is_full=True,
             )
 
     def _compute_P(self) -> None:
@@ -226,28 +223,46 @@ class SocialMixDataLoader:
                     f"Check that population data covers all age bins."
                 )
 
-            self.sm.P = pop_sizes.values.astype(np.int64)
+            self.sm.P = pop_sizes.values.astype(np.float64)
         else:
             # Stratified: group by strat vars + age
             group_cols = self.sm.strat_vars_pop + ["age_grp"]
             pop_sizes = df_pop.groupby(group_cols, observed=False)["P"].sum()
 
             # Reshape to (K_cnt, D) matrix
-            self.sm.P = self._series_to_stratified_array(
+            self.sm.P = self._fill_simple_array(
                 pop_sizes,
                 shape=(self.sm.K_cnt, self.sm.D),
                 strat_vars=self.sm.strat_vars_pop,
-                suffix=None,  # Population data doesn't have _part/_cnt suffix
+                suffix=None,  # Population data has no part_/cnt_ prefix
             )
 
     def _assign_age_groups_to_population(self) -> None:
         """
         Assign age groups to population data using same bins as contacts.
         """
+        import warnings
+
         if "age_grp" in self.sm.pop_data.data.columns:
             return  # Already assigned
 
-        # Use same bins as participant/contact data
+        if "pop_age_grp" in self.sm.pop_data.data.columns:
+            # Population was provided with pre-grouped coarse ages.
+            # Validate that those groups align with age_group_specs.
+            self._validate_population_age_group_alignment()
+            self.sm.pop_data.data["age_grp"] = self.sm.pop_data.data["pop_age_grp"]
+            return
+
+        # Population is in 1-year resolution — it will be binned and summed.
+        warnings.warn(
+            "Population data is provided in 1-year age resolution and will be "
+            "aggregated into coarse bins matching age_group_specs. "
+            "If you intended to use pre-grouped population counts, provide "
+            "PopulationData with age_grp_col instead of age_col.",
+            UserWarning,
+            stacklevel=4,
+        )
+
         bin_edges = self.sm.age_group_specs.left + [self.sm.age_group_specs.right[-1] + 1]
         intervals = [
             pd.Interval(left=l, right=r + 1, closed="left")
@@ -258,135 +273,181 @@ class SocialMixDataLoader:
         age_grps = pd.cut(ages, bins=bin_edges, right=False, labels=intervals)
         self.sm.pop_data.data["age_grp"] = age_grps
 
-    def _series_to_stratified_array(
+    def _validate_population_age_group_alignment(self) -> None:
+        """
+        Check that pre-grouped population age intervals align with age_group_specs.
+
+        Raises ValueError if the set of population age groups does not match the
+        intervals derived from age_group_specs, since misaligned groups produce
+        silently incorrect population sums used in reciprocity adjustment and rates.
+        """
+        expected_intervals = set(
+            pd.Interval(left=l, right=r + 1, closed="left")
+            for l, r in zip(self.sm.age_group_specs.left, self.sm.age_group_specs.right)
+        )
+
+        pop_intervals = set(
+            self.sm.pop_data.data["pop_age_grp"].dropna().unique()
+        )
+
+        if not pop_intervals.issubset(expected_intervals):
+            unexpected = sorted(str(i) for i in pop_intervals - expected_intervals)
+            raise ValueError(
+                f"Population age groups do not align with age_group_specs.\n"
+                f"  Unexpected population groups: {unexpected}\n"
+                f"  Expected groups from age_group_specs: "
+                f"{sorted(str(i) for i in expected_intervals)}\n"
+                f"Ensure that the population data uses the same age bins as the "
+                f"participant and contact data, or provide population data in "
+                f"1-year resolution using age_col."
+            )
+
+    def _fill_simple_array(
         self,
         series: pd.Series,
         shape: Tuple[int, ...],
-        strat_vars: Optional[List[str]] = None,
-        suffix: Optional[str] = None,
-        has_contact_age: bool = False,
-        strat_vars_part: Optional[List[str]] = None,
-        strat_vars_cnt: Optional[List[str]] = None,
-        is_full: bool = False,
+        strat_vars: List[str],
+        suffix: Optional[str],
     ) -> NDArray:
-        """
-        Convert multi-indexed Series to numpy array with specified shape.
+        """Fill a (K, age) array for N (participants) or P (population).
 
         Parameters
         ----------
         series : pd.Series
-            Multi-indexed series from groupby operation
+            Multi-indexed series from a groupby on [strat_vars..., age_grp].
         shape : tuple
-            Target array shape
-        strat_vars : list, optional
-            Stratification variables (for partial mode)
-        suffix : str, optional
-            Column suffix ('part', 'cnt', or None for population)
-        has_contact_age : bool
-            Whether series includes contact age dimension
-        strat_vars_part : list, optional
-            Participant strat vars (for full mode)
-        strat_vars_cnt : list, optional
-            Contact strat vars (for full mode)
-        is_full : bool
-            Whether this is full stratification mode
-
-        Returns
-        -------
-        NDArray
-            Array with specified shape filled from series data
+            Target array shape ``(K, age_bins)``.
+        strat_vars : list of str
+            Stratification variable names without prefix.
+        suffix : str or None
+            Column prefix — ``"part"`` → ``"part_{var}"``, ``None`` → ``"{var}"``
+            (used for population data which carries no prefix).
         """
         arr = np.zeros(shape, dtype=np.float64)
-
-        # Reset index to get all coordinates as columns
         df = series.reset_index()
         df.columns = [*df.columns[:-1], "value"]
 
-        if is_full:
-            # Full mode: (K_part, K_cnt, C, D)
-            # Get categorical codes for all dimensions
-            for var in strat_vars_part:
-                df[f"{var}_part_code"] = df[f"{var}_part"].cat.codes
-            for var in strat_vars_cnt:
-                df[f"{var}_cnt_code"] = df[f"{var}_cnt"].cat.codes
-            df["age_grp_part_code"] = df["age_grp_part"].cat.codes
-            df["age_grp_cnt_code"] = df["age_grp_cnt"].cat.codes
+        for var in strat_vars:
+            col_name = f"{suffix}_{var}" if suffix else var
+            df[f"{var}_code"] = df[col_name].cat.codes
 
-            # Create composite stratum codes
-            df["k_part"] = self._create_composite_index(
-                df,
-                [f"{v}_part_code" for v in strat_vars_part],
-                [self.sm.strat_dims_part[v] for v in strat_vars_part],
-            )
-            df["k_cnt"] = self._create_composite_index(
-                df,
-                [f"{v}_cnt_code" for v in strat_vars_cnt],
-                [self.sm.strat_dims_cnt[v] for v in strat_vars_cnt],
-            )
-
-            # Fill array
-            for _, row in df.iterrows():
-                arr[
-                    int(row["k_part"]),
-                    int(row["k_cnt"]),
-                    int(row["age_grp_part_code"]),
-                    int(row["age_grp_cnt_code"]),
-                ] = row["value"]
-
-        elif has_contact_age:
-            # Partial mode: (K_part, C, D)
-            for var in strat_vars:
-                col_name = f"{var}_{suffix}" if suffix else var
-                df[f"{var}_code"] = df[col_name].cat.codes
-            df["age_grp_part_code"] = df["age_grp_part"].cat.codes
-            df["age_grp_cnt_code"] = df["age_grp_cnt"].cat.codes
-
-            # Create composite stratum code
-            df["k"] = self._create_composite_index(
-                df,
-                [f"{v}_code" for v in strat_vars],
-                [self.sm.strat_dims_part[v] for v in strat_vars],
-            )
-
-            # Fill array
-            for _, row in df.iterrows():
-                arr[
-                    int(row["k"]),
-                    int(row["age_grp_part_code"]),
-                    int(row["age_grp_cnt_code"]),
-                ] = row["value"]
-
+        if "part_age_grp" in df.columns:
+            age_col = "part_age_grp"
+        elif "age_grp" in df.columns:
+            age_col = "age_grp"
         else:
-            # Simple stratified: (K, C) or (K, D)
-            for var in strat_vars:
-                col_name = f"{var}_{suffix}" if suffix else var
-                df[f"{var}_code"] = df[col_name].cat.codes
+            raise ValueError("No age group column found in series index")
 
-            # Determine age column name
-            if "age_grp_part" in df.columns:
-                age_col = "age_grp_part"
-            elif "age_grp" in df.columns:
-                age_col = "age_grp"
-            else:
-                raise ValueError("No age group column found")
+        df["age_code"] = df[age_col].cat.codes
 
-            df["age_code"] = df[age_col].cat.codes
+        if strat_vars:
+            strat_dims = [
+                self.sm.strat_dims_part.get(v) or self.sm.strat_dims_cnt.get(v)
+                for v in strat_vars
+            ]
+            df["k"] = self._create_composite_index(
+                df, [f"{v}_code" for v in strat_vars], strat_dims
+            )
+        else:
+            df["k"] = 0
 
-            # Create composite stratum code
-            if strat_vars:
-                strat_dims = [
-                    self.sm.strat_dims_part.get(v) or self.sm.strat_dims_cnt.get(v)
-                    for v in strat_vars
-                ]
-                df["k"] = self._create_composite_index(
-                    df, [f"{v}_code" for v in strat_vars], strat_dims
-                )
-            else:
-                df["k"] = 0
+        for _, row in df.iterrows():
+            arr[int(row["k"]), int(row["age_code"])] = row["value"]
 
-            # Fill array
-            for _, row in df.iterrows():
-                arr[int(row["k"]), int(row["age_code"])] = row["value"]
+        return arr
+
+    def _fill_partial_array(
+        self,
+        series: pd.Series,
+        shape: Tuple[int, ...],
+        strat_vars_part: List[str],
+    ) -> NDArray:
+        """Fill a (K_part, C, D) array for Y under partial stratification.
+
+        Parameters
+        ----------
+        series : pd.Series
+            Multi-indexed series from a groupby on
+            [part_{v}..., part_age_grp, cnt_age_grp].
+        shape : tuple
+            Target array shape ``(K_part, C, D)``.
+        strat_vars_part : list of str
+            Participant stratification variable names without prefix.
+        """
+        arr = np.zeros(shape, dtype=np.float64)
+        df = series.reset_index()
+        df.columns = [*df.columns[:-1], "value"]
+
+        for var in strat_vars_part:
+            df[f"{var}_code"] = df[f"part_{var}"].cat.codes
+        df["part_age_grp_code"] = df["part_age_grp"].cat.codes
+        df["cnt_age_grp_code"] = df["cnt_age_grp"].cat.codes
+
+        df["k"] = self._create_composite_index(
+            df,
+            [f"{v}_code" for v in strat_vars_part],
+            [self.sm.strat_dims_part[v] for v in strat_vars_part],
+        )
+
+        for _, row in df.iterrows():
+            arr[
+                int(row["k"]),
+                int(row["part_age_grp_code"]),
+                int(row["cnt_age_grp_code"]),
+            ] = row["value"]
+
+        return arr
+
+    def _fill_full_array(
+        self,
+        series: pd.Series,
+        shape: Tuple[int, ...],
+        strat_vars_part: List[str],
+        strat_vars_cnt: List[str],
+    ) -> NDArray:
+        """Fill a (K_part, K_cnt, C, D) array for Y under full stratification.
+
+        Parameters
+        ----------
+        series : pd.Series
+            Multi-indexed series from a groupby on
+            [part_{v}..., part_age_grp, cnt_{v}..., cnt_age_grp].
+        shape : tuple
+            Target array shape ``(K_part, K_cnt, C, D)``.
+        strat_vars_part : list of str
+            Participant stratification variable names without prefix.
+        strat_vars_cnt : list of str
+            Contact stratification variable names without prefix.
+        """
+        arr = np.zeros(shape, dtype=np.float64)
+        df = series.reset_index()
+        df.columns = [*df.columns[:-1], "value"]
+
+        for var in strat_vars_part:
+            df[f"{var}_part_code"] = df[f"part_{var}"].cat.codes
+        for var in strat_vars_cnt:
+            df[f"{var}_cnt_code"] = df[f"cnt_{var}"].cat.codes
+        df["part_age_grp_code"] = df["part_age_grp"].cat.codes
+        df["cnt_age_grp_code"] = df["cnt_age_grp"].cat.codes
+
+        df["k_part"] = self._create_composite_index(
+            df,
+            [f"{v}_part_code" for v in strat_vars_part],
+            [self.sm.strat_dims_part[v] for v in strat_vars_part],
+        )
+        df["k_cnt"] = self._create_composite_index(
+            df,
+            [f"{v}_cnt_code" for v in strat_vars_cnt],
+            [self.sm.strat_dims_cnt[v] for v in strat_vars_cnt],
+        )
+
+        for _, row in df.iterrows():
+            arr[
+                int(row["k_part"]),
+                int(row["k_cnt"]),
+                int(row["part_age_grp_code"]),
+                int(row["cnt_age_grp_code"]),
+            ] = row["value"]
 
         return arr
 

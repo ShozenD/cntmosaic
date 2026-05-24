@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 import itertools
 import pandas as pd
@@ -82,7 +84,7 @@ def expand_grid(data_dict) -> pd.DataFrame:
     rows = itertools.product(*data_dict.values())
     return pd.DataFrame.from_records(rows, columns=data_dict.keys())
 
-def normalise_age_dists(age_dists: dict[NDArray]):
+def normalise_age_dists(age_dists: dict[NDArray]) -> dict:
   assert isinstance(age_dists, dict), 'Age distributions must be a dictionary.'
   assert 'base' in age_dists, 'Base age distribution is required.'
   

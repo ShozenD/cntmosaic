@@ -7,7 +7,7 @@ def svi_to_inference_data(
     model,
     num_samples: int = 1000,
     kwargs_dict: Optional[Dict[str, np.ndarray]] = None,
-):
+) -> "InferenceData":
     """
     Convert NumPyro SVI data to an ArViz InferenceData object.
 

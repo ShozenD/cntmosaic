@@ -1,5 +1,5 @@
 import warnings
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -436,7 +436,7 @@ class ModelSummariserPrem:
         strat_mode: str = "none",
         strata_labels: Optional[list] = None,
         age_bins=None,
-    ):
+    ) -> Union[NDArray, Dict[str, NDArray]]:
         """
         Apply reciprocity adjustment to contact intensity matrices.
 

@@ -1,4 +1,5 @@
 """Utilities for managing tutorial notebooks and figures."""
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional, Union, Any

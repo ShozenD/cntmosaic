@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from typing import List, Union
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import numpyro
@@ -15,7 +18,7 @@ from ._Prior2D import Prior2D
 
 def validate_init_params(
     nu: float, C: Union[float, List[float]], M: Union[int, List[int]]
-):
+) -> None:
     """
     Validate initialization parameters for HSGP2D prior.
 

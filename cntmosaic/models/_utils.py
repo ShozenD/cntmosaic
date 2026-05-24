@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 from numpy.typing import NDArray
 from scipy.sparse import csr_matrix
@@ -91,7 +93,7 @@ def symm_from_tril_ix_col(N: int) -> NDArray:
 
 	return idx
 
-def symm_from_tril_ix_row(N):
+def symm_from_tril_ix_row(N: int) -> NDArray:
     """
     Return an index array that maps a 1-D array containing the **lower-triangle
     (including the diagonal) of an N x N matrix, stored row-wise** onto the
@@ -261,7 +263,7 @@ def transpose_vector_indices(rows: int, cols: int) -> NDArray:
 	transposed_indices = original_indices.T.flatten(order='F')
 	return transposed_indices
 
-def lattice_adj(rows: int, cols: int, order: int = 1):
+def lattice_adj(rows: int, cols: int, order: int = 1) -> csr_matrix:
   """
   Open-boundary 2-D lattice adjacency (≤ given graph distance) returned
   as a SciPy CSR matrix.  All intermediate work is done with dense NumPy.
@@ -312,7 +314,7 @@ def index_mask_logsumexp(
 		aid_exp: NDArray,
 		bid_pad: NDArray,
 		xid_exp: NDArray=None
-	):
+	) -> jax.Array:
 		"""
 		Computes the log-sum-exp over selected elements in an array, masked appropriately.
 

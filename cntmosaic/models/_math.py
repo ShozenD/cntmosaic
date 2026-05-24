@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 
 import jax
@@ -141,7 +143,7 @@ def subdiag_permutation_matrix(K: int) -> Array:
 
 
 @jit
-def kron_sum_mode_1(tensor_a, tensor_b):
+def kron_sum_mode_1(tensor_a, tensor_b) -> Array:
     """
     Perform mode-1 Kronecker sum operation.
 

@@ -198,8 +198,8 @@ def _select_sigma_cv_global(groups, sigma_grid):
 
 
 def gaussian_smooth_by_group(
-    df, group_by, target, sort_by=None, sigma=2, cv=False, sigma_grid=None
-):
+    df: pd.DataFrame, group_by, target: str, sort_by=None, sigma: float = 2, cv: bool = False, sigma_grid=None
+) -> pd.DataFrame:
     """
     Apply Gaussian kernel smoothing to grouped data.
 

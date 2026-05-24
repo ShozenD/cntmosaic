@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import numpy as np
+import jax
 import jax.numpy as jnp
 import numpyro
 from numpyro import distributions as dist
@@ -35,7 +38,7 @@ class Hill:
     
     self.x = np.arange(0, max_value + 1) # Don't use jnp here to avoid JAX tracing issues
 
-  def sample(self):
+  def sample(self) -> jax.Array:
     
     scale = numpyro.sample('hill_scale', dist.HalfNormal(self.scale_scale))
     shape1 = numpyro.sample('hill_shape1', dist.Normal(self.shape1_loc, self.shape1_scale))

@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import os
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -26,7 +29,7 @@ def run_inference_mcmc(
     max_tree_depth: int = 10,
     init_strategy: callable = init_to_median,
     **model_kwargs,
-):
+) -> MCMC:
     kernel = NUTS(
         model,
         target_accept_prob=target_accept_prob,
@@ -55,7 +58,7 @@ def run_inference_svi(
     num_steps: int = 5_000,
     peak_lr: float = 0.01,
     **model_kwargs,
-):
+) -> Any:
     lr_scheduler = linear_onecycle_schedule(num_steps, peak_lr)
     svi = SVI(model, guide, Adam(lr_scheduler), Trace_ELBO())
     return svi.run(prng_key, num_steps, progress_bar=True, **model_kwargs)
@@ -187,7 +190,7 @@ class NumPyroSVIConverter:
             model_kwargs=model_kwargs,
         )
 
-    def posterior_to_xarray(self):
+    def posterior_to_xarray(self) -> Any:
         # Remove items that contain '_auto_' from data
         data = {k: v for k, v in self.posterior.items() if "_auto_" not in k}
         for key, values in data.items():
@@ -195,7 +198,7 @@ class NumPyroSVIConverter:
 
         return dict_to_dataset(data, library=numpyro)
 
-    def log_likelihood_to_xarray(self):
+    def log_likelihood_to_xarray(self) -> Any:
         log_likelihood_dict = log_likelihood(
             self.model, self.posterior, **self.model_kwargs
         )
@@ -207,7 +210,7 @@ class NumPyroSVIConverter:
 
         return dict_to_dataset(data, library=numpyro)
 
-    def to_inference_data(self):
+    def to_inference_data(self) -> InferenceData:
         """Convert all available data to an Inference object."""
         return InferenceData(
             **{
@@ -217,7 +220,7 @@ class NumPyroSVIConverter:
         )
 
 
-def to_inference_data(model: callable, guide: callable, svi: SVI, **model_kwargs):
+def to_inference_data(model: callable, guide: callable, svi: SVI, **model_kwargs) -> InferenceData:
     """
     Convert NumPyro SVI data to an InferenceData object.
 

@@ -1,6 +1,6 @@
 from importlib import resources
 import pickle
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import numpy as np
 import pandas as pd
@@ -23,14 +23,14 @@ class ContactPatterns(TypedDict):
     community: np.ndarray
 
 
-def load_pickle_data(data_file_name):
+def load_pickle_data(data_file_name: str) -> Any:
 	"""Loads `data_file_name` from the package's data directory."""
 	
 	data_path = resources.files('cntmosaic.datasets.data') / data_file_name
 	with data_path.open('rb') as pickle_file:
 		return pickle.load(pickle_file)
 	
-def load_csv_data(data_file_name, header=0):
+def load_csv_data(data_file_name: str, header: int = 0) -> pd.DataFrame:
 	"""Loads `data_file_name` from the package's data directory."""
 	
 	data_path = resources.files('cntmosaic.datasets.data') / data_file_name

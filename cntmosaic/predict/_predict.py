@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 from scipy.stats import beta
@@ -83,7 +85,7 @@ def z_marginals(
 def feasible_mixing_bounds(
     z_marginals: Dict[str, np.ndarray],
     return_eta: bool = False,
-):
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Calculate feasible mixing bounds (Frechet-Hoeffding bounds) for attributable fractions.
 

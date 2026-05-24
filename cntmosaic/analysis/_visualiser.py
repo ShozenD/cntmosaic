@@ -3,8 +3,10 @@
 This module provides visualization tools for analyzing and presenting
 contact matrix estimation results from the GenMix model family.
 """
+from __future__ import annotations
 
 import copy
+from typing import Union
 
 import altair as alt
 import numpy as np
@@ -16,7 +18,7 @@ from .evaluator._ModelEvaluatorBRC import ModelEvaluatorBRC
 from .summariser._ModelSummariser import ModelSummariser
 
 
-def count_leaf_elements(d):
+def count_leaf_elements(d: dict) -> int:
     """Count the number of leaf (non-dictionary) elements in a nested dictionary.
 
     Recursively traverses a nested dictionary structure and counts all terminal
@@ -48,7 +50,7 @@ def count_leaf_elements(d):
     return count
 
 
-def df_from_dict(d):
+def df_from_dict(d) -> pd.DataFrame:
     """Convert model summary arrays to pandas DataFrame for plotting.
 
     Transforms model output dictionaries containing contact matrices or vectors
@@ -207,7 +209,7 @@ class ModelVisualiser:
         self.summariser = summariser
         self.default_config = copy.deepcopy(ModelVisualiser.default_config)
 
-    def plot_rate(self, width=250, height=250, style_config=None):
+    def plot_rate(self, width: int = 250, height: int = 250, style_config: dict | None = None) -> alt.Chart:
         """Plot posterior median contact rate matrix as a heatmap.
 
         Creates a heatmap visualization of the estimated contact rate matrix,
@@ -250,7 +252,7 @@ class ModelVisualiser:
         )
         return chart
 
-    def plot_cint(self, width=250, height=250, facet_columns=3, style_config=None):
+    def plot_cint(self, width: int = 250, height: int = 250, facet_columns: int = 3, style_config: dict | None = None) -> Union[alt.Chart, dict]:
         """Plot posterior median contact intensity matrix as a heatmap.
 
         Visualizes the estimated contact intensity matrix (rate adjusted for
@@ -389,10 +391,10 @@ class ModelVisualiser:
     def plot_mcint(
         self,
         evaluator: ModelEvaluatorBRC | None = None,
-        width=250,
-        height=250,
-        style_config=None,
-    ):
+        width: int = 250,
+        height: int = 250,
+        style_config: dict | None = None,
+    ) -> Union[alt.Chart, dict]:
         """Plot marginal contact intensity by age with credible intervals.
 
         Generates line plots showing the age-specific marginal contact intensity

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 
 
@@ -55,7 +57,7 @@ def ravel_matrix(matrix: np.ndarray) -> tuple:
   
 		return x_indices, y_indices, values
 
-def generate_vega_expression(tick_pos, tick_labels):
+def generate_vega_expression(tick_pos, tick_labels) -> str:
     # Build a mapping of the integer tick position (as string) to the corresponding label.
     mapping_entries = []
     for pos, label in zip(tick_pos, tick_labels):

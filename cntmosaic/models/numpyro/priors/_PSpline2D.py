@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from typing import Union
 
+import jax
 import numpy as np
 import numpyro
 from numpyro import distributions as dist
@@ -214,7 +217,7 @@ class PSpline2D(Spline2D):
         self.tau_rate = tau_rate
         self.tau_ratio = tau_ratio
 
-    def set_age_bounds(self, min_age, max_age):
+    def set_age_bounds(self, min_age: int, max_age: int) -> None:
         return super().set_age_bounds(min_age, max_age)
 
     def _set_grid(self):
@@ -234,7 +237,7 @@ class PSpline2D(Spline2D):
 
         self.symm_tril_idx = symm_from_tril_ix_row(self.A)
 
-    def sample_global(self):
+    def sample_global(self) -> jax.Array:
         """
         Sample symmetric contact matrix using penalized B-splines.
 
@@ -292,7 +295,7 @@ class PSpline2D(Spline2D):
         f = (self.PHI @ beta)[self.symm_tril_idx].reshape((self.A, self.A))
         return f
 
-    def sample_partial(self):
+    def sample_partial(self) -> jax.Array:
         """
         Sample asymmetric contact matrix with dimension-specific precision parameters.
 
@@ -374,7 +377,7 @@ class PSpline2D(Spline2D):
 
         return self.loc + f
 
-    def sample_full(self):
+    def sample_full(self) -> jax.Array:
         """
         Sample contact matrix with separate priors for diagonal and off-diagonal elements.
 
@@ -491,7 +494,7 @@ class PSpline2D(Spline2D):
 
         return self.loc + f
 
-    def sample(self):
+    def sample(self) -> jax.Array:
         """
         Sample contact matrix using penalized B-spline prior.
 

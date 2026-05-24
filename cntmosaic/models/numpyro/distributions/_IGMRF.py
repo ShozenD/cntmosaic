@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Optional
 
 import numpy as np
@@ -188,7 +190,7 @@ class IGMRF(Distribution):
         order,
         loc=(),
         cond_prec=(),
-    ):
+    ) -> None:
         # IGMRF's event_shape depends on the VALUE of num_nodes, not its shape.
         # Since infer_shapes only receives parameter shapes (not values),
         # we cannot determine the event_shape from shape information alone.

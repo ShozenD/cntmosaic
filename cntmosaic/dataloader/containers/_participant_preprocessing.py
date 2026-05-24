@@ -6,6 +6,7 @@ validation, NaN removal, dtype coercion, and column standardisation.
 Keeping this logic here separates the transformation concern from the
 data-container and query API defined in ParticipantData.
 """
+from __future__ import annotations
 
 import warnings
 from typing import List, Optional
@@ -112,7 +113,7 @@ def _check_columns(
         cols = list(columns)
         return cols[:8] + (["..."] if len(cols) > 8 else [])
 
-    age_column = list[str]()
+    age_column: List[str] = []
     if age_col:
         age_column = [age_col]
     elif age_min_col and age_max_col:

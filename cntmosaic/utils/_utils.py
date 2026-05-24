@@ -1,9 +1,13 @@
+from __future__ import annotations
+
+from typing import Optional
+
 import numpy as np
 
 from ._AgeGroupSpecs import AgeGroupSpecs
 
 
-def pixilate(matrix: np.ndarray, age_bins: AgeGroupSpecs, age_dist: np.ndarray = None):
+def pixilate(matrix: np.ndarray, age_bins: AgeGroupSpecs, age_dist: Optional[np.ndarray] = None) -> np.ndarray:
     """
     Aggregate a contact matrix over specified age intervals.
         - A 3D array of shape (n_samples, dim1, dim2): Aggregates spatially over the last two axes.
@@ -65,7 +69,7 @@ def pixilate(matrix: np.ndarray, age_bins: AgeGroupSpecs, age_dist: np.ndarray =
     return result[0] if single_sample else result
 
 
-def depixilate(matrix: np.ndarray, age_bins: AgeGroupSpecs, age_dist: np.ndarray = None):
+def depixilate(matrix: np.ndarray, age_bins: AgeGroupSpecs, age_dist: Optional[np.ndarray] = None) -> np.ndarray:
     """Depixilate a matrix using age bin slicing.
 
     This function transforms the input matrix by extracting sub-matrices based on the intervals

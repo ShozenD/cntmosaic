@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from typing import Union
 
+import jax
 import numpy as np
 import numpyro
 from numpy.typing import NDArray
@@ -16,7 +19,7 @@ from ..._utils import (
 from ._Prior2D import Prior2D
 
 
-def validate_init_params(M: int | list[int], degree: int | list[int]):
+def validate_init_params(M: int | list[int], degree: int | list[int]) -> None:
     """
     Validate initialization parameters for the Spline2D class.
 
@@ -257,7 +260,7 @@ class Spline2D(Prior2D):
         self.n_knots_outer = 2 * (degree + 1)
         self.bound_ext = bound_ext
 
-    def set_age_bounds(self, min_age: int, max_age: int):
+    def set_age_bounds(self, min_age: int, max_age: int) -> None:
         """
         Set age range for the contact matrix and construct B-spline basis.
 
@@ -498,14 +501,14 @@ class Spline2D(Prior2D):
             self.PHI_diag = self.PHI[tril_ix_row(self.A)]
             self.PHI_non_diag = self.PHI
 
-    def sample_global(self):
+    def sample_global(self) -> jax.Array:
         beta = numpyro.sample(
             "spline_coefs", dist.Normal(0, 1), sample_shape=(self.PHI.shape[-1],)
         )
         f = (self.PHI @ beta)[self.symm_tril_idx].reshape((self.A, self.A))
         return f
 
-    def sample_partial(self):
+    def sample_partial(self) -> jax.Array:
         beta = numpyro.sample(
             "spline_coefs",
             dist.Normal(0, 1),
@@ -516,7 +519,7 @@ class Spline2D(Prior2D):
         f = f.reshape((self.event_dim, self.A, self.A))
         return self.loc + f
 
-    def sample_full(self):
+    def sample_full(self) -> jax.Array:
         beta_diag = numpyro.sample(
             "spline_coefs_diag",
             dist.Normal(0, 1),
@@ -541,7 +544,7 @@ class Spline2D(Prior2D):
 
         return self.loc + f
 
-    def sample(self):
+    def sample(self) -> jax.Array:
         """
         Sample from the tensor product B-spline prior.
 

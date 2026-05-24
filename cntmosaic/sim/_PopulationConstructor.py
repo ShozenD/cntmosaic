@@ -29,7 +29,7 @@ class PopulationConstructor:
             self.coord_codes = self.strats.codes
 
     @property
-    def Q(self):
+    def Q(self) -> NDArray:
         if isinstance(self.strats, Stratification):
             return self.strats.Q
         else:

@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Union
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.typing import ArrayLike
@@ -428,7 +431,7 @@ class Prior2D(ABC):
         pass
 
     @abstractmethod
-    def sample(self):
+    def sample(self) -> jax.Array:
         """
         Sample from the prior distribution.
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 
 
@@ -117,7 +119,7 @@ class AgeGroupSpecs:
     # Bounds computation (fixed-step / cut-point mode only)
     # ------------------------------------------------------------------
 
-    def get_bounds_left(self):
+    def get_bounds_left(self) -> list:
         if not hasattr(self, "left"):
             if self.cuts is not None:
                 self.left = [self.min] + list(self.cuts)
@@ -125,7 +127,7 @@ class AgeGroupSpecs:
                 self.left = list(range(self.min, self.max, self.step))
         return self.left
 
-    def get_bounds_right(self):
+    def get_bounds_right(self) -> list:
         if not hasattr(self, "right"):
             if self.cuts is not None:
                 self.right = list(np.asarray(self.cuts) - 1) + [self.max]
@@ -136,18 +138,18 @@ class AgeGroupSpecs:
                 )
         return self.right
 
-    def get_bin_sizes(self):
+    def get_bin_sizes(self) -> np.ndarray:
         if not hasattr(self, "bin_sizes"):
             self.bin_sizes = np.diff(np.append(self.left, self.max + 1))
         return self.bin_sizes
 
-    def get_cell_sizes(self):
+    def get_cell_sizes(self) -> np.ndarray:
         """Outer product of bin_sizes; cached after first call."""
         if not hasattr(self, "cell_sizes"):
             self.cell_sizes = np.outer(self.bin_sizes, self.bin_sizes)
         return self.cell_sizes
 
-    def get_cuts(self):
+    def get_cuts(self) -> list:
         """Return bin left boundaries plus the exclusive upper bound of the last bin."""
         return self.left + [self.right[-1] + 1]
 

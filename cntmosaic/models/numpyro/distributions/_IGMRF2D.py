@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Optional
 
 import jax
@@ -236,7 +238,7 @@ class IGMRF2D(Distribution):
             validate_args=validate_args,
         )
 
-    def sample(self, key: jax.dtypes.prng_key, sample_shape: tuple[int, ...] = ()):
+    def sample(self, key: jax.dtypes.prng_key, sample_shape: tuple[int, ...] = ()) -> jax.Array:
         """
         Sample from the IGMRF2D distribution.
 
@@ -340,7 +342,7 @@ class IGMRF2D(Distribution):
         loc=(),
         cond_prec1=(),
         cond_prec2=(),
-    ):
+    ) -> None:
         """
         Infer batch and event shapes from parameter shapes.
 

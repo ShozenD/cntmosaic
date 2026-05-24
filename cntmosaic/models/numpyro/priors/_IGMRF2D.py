@@ -1,5 +1,6 @@
 from typing import Optional
 
+import jax
 import numpyro
 from jax.typing import ArrayLike
 from numpyro import distributions as dist
@@ -171,7 +172,7 @@ class IGMRF2D(Prior2D):
         self.loc = loc
         self.order = order
 
-    def set_age_bounds(self, min_age: int, max_age: int):
+    def set_age_bounds(self, min_age: int, max_age: int) -> None:
         """
         Set the age range for the contact matrix and configure grid structure.
 
@@ -217,7 +218,7 @@ class IGMRF2D(Prior2D):
         self.num_nodes = (self.A, self.A)
         self.symm_tril_ix = symm_from_tril_ix_col(self.A)
 
-    def sample_global(self):
+    def sample_global(self) -> jax.Array:
         """
         Sample symmetric contact matrix using SymIGMRF2D distribution.
 
@@ -262,7 +263,7 @@ class IGMRF2D(Prior2D):
         f = numpyro.sample("f", SymIGMRF2D(self.num_nodes[0], self.order[0]))
         return f[self.symm_tril_ix].reshape((self.A, self.A))
 
-    def sample_partial(self):
+    def sample_partial(self) -> jax.Array:
         """
         Sample asymmetric contact matrix with shared precision across dimensions.
 
@@ -321,7 +322,7 @@ class IGMRF2D(Prior2D):
 
         return self.loc + f
 
-    def sample_full(self):
+    def sample_full(self) -> jax.Array:
         """
         Sample contact matrix with separate priors for diagonal and off-diagonal elements.
 
@@ -408,7 +409,7 @@ class IGMRF2D(Prior2D):
 
         return self.loc + f
 
-    def sample(self):
+    def sample(self) -> jax.Array:
         """
         Sample from the IGMRF prior based on the configured prior_type.
 

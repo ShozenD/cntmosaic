@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 import itertools
 import re
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 
 
-def as_interval_type(s):
+def as_interval_type(s) -> Optional[pd.Interval]:
     """Parse interval string to Interval.
     Return None if input is None, not a string, or improperly formatted."""
     # Convert non-string inputs to string (except None which directly returns None)
@@ -71,7 +74,7 @@ def expand_age_interval(
     return expanded_df
 
 
-def check_required_columns(data: pd.DataFrame):
+def check_required_columns(data: pd.DataFrame) -> None:
     """
     Check if a given dataframe contains necessary columns.
 
@@ -97,7 +100,7 @@ def check_required_columns(data: pd.DataFrame):
     print("Necessary columns exist, proceed to model selection")
 
 
-def expand_grid(data_dict):
+def expand_grid(data_dict: dict) -> pd.DataFrame:
     """Create a dataframe from a dictionary of lists. Analogous to R's expand.grid."""
     rows = itertools.product(*data_dict.values())
     return pd.DataFrame.from_records(rows, columns=data_dict.keys())

@@ -14,17 +14,18 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: BSD License",
   "Operating System :: OS Independent",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering",
   "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 description = "A Python package for modelling, simulating, and visualising social contact data."
+license = {file = "LICENSE"}
 name = "cntmosaic"
 readme = "README.md"
 requires-python = ">=3.8"
-version = "0.1.0"
+version = "0.5.0"
 
 dependencies = [
   # Core numerical computing

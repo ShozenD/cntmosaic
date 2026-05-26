@@ -1,0 +1,83 @@
+name: Bug Report
+description: Report unexpected behaviour or an error in cntmosaic.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please fill in as much detail as possible.
+        Before submitting, check whether the issue has already been reported in the
+        [existing issues](https://github.com/ShozenD/cntmosaic/issues).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug.
+      placeholder: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal code example that reproduces the bug.
+      render: python
+      placeholder: |
+        import cntmosaic
+        # ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behaviour
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behaviour
+      description: What actually happened? Include the full error message and traceback if applicable.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: cntmosaic Version
+      description: Output of `python -c "import cntmosaic; print(cntmosaic.__version__)"`
+      placeholder: "e.g. 0.5.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python Version
+      description: Output of `python --version`
+      placeholder: "e.g. 3.11.4"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: "e.g. macOS 14, Ubuntu 22.04, Windows 11"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or information that may help.
+    validations:
+      required: false

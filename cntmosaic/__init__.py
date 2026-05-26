@@ -1,3 +1,10 @@
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("cntmosaic")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
 from . import dataloader, datasets, models, preprocess, sim, vis
 from .dataloader import ContactSurveyLoader
 from ._types import StratMode

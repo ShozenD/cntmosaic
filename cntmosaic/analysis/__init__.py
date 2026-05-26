@@ -1,4 +1,5 @@
 from ._arviz import svi_to_inference_data
+from ._feature_selector import FeatureSelectionResult, FeatureSelector, ModelConfig
 from ._visualiser import ModelVisualiser
 from .evaluator import ModelEvaluatorBRC, ModelEvaluatorPrem, ModelEvaluatorSocialMix
 from .summariser._ModelSummariser import ModelSummariser
@@ -16,4 +17,7 @@ __all__ = [
     "ModelEvaluatorPrem",
     "ModelVisualiser",
     "svi_to_inference_data",
+    "ModelConfig",
+    "FeatureSelectionResult",
+    "FeatureSelector",
 ]

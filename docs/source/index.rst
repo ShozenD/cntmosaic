@@ -1,42 +1,27 @@
-.. BRC documentation master file, created by
-   sphinx-quickstart on Fri Oct 18 11:50:03 2024.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 Contact Mosaic documentation
 ============================
 
 What is Contact Mosaic?
 -----------------------
-Contact Mosaic (``cntmosaic``) is a Python package for analysing social contact patterns from 
-social contact data. It provides a set of tools to process, analyse, simulate, and visualise social contact data.
-It also provides a set of models to infer social contact matrices from real world social contact data.
-The models in ``cntmosaic`` are implemented using the probabilistic programming language `Numpyro <https://num.pyro.ai/en/stable/index.html>`_ which allows for
-both Hamiltonian Monte Carlo (HMC) based full Bayesian inference and fast stochastic variational inference (SVI).
+
+Contact Mosaic (``cntmosaic``) is a Python package for modelling, simulating, and visualising
+social contact data. It provides tools to load and preprocess contact survey data, infer
+social contact matrices using Bayesian models, and evaluate and visualise results.
+
+Models are implemented using `NumPyro <https://num.pyro.ai/en/stable/index.html>`_, enabling
+both Hamiltonian Monte Carlo (HMC) based full Bayesian inference and fast stochastic
+variational inference (SVI).
 
 .. toctree::
    :maxdepth: 2
    :caption: Getting Started
-   
+
    usage/installation
    usage/dependencies
    usage/quickstart
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Introductory Tutorial
 
 .. toctree::
    :maxdepth: 2
    :caption: API Reference
 
    api/index
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Developer Reference (Legacy)
-
-   documentation/preprocess
-   documentation/models
-   documentation/simulation
-

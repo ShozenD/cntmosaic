@@ -1,7 +1,8 @@
 Priors
 ======
 
-The priors module provides spatial prior classes for 2D fields in contact matrix models.
+The priors module provides spatial prior classes for 2D fields used in contact matrix models.
+All priors live under ``cntmosaic.models.numpyro.priors``.
 
 Base Class
 ----------
@@ -9,19 +10,19 @@ Base Class
 Prior2D
 ^^^^^^^
 
-.. autoclass:: cntmosaic.models.priors.Prior2D
+.. autoclass:: cntmosaic.models.numpyro.priors.Prior2D
     :members:
     :undoc-members:
     :show-inheritance:
     :special-members: __init__
 
 Gaussian Process Priors
-------------------------
+-----------------------
 
 HSGP2D
 ^^^^^^
 
-.. autoclass:: cntmosaic.models.priors.HSGP2D
+.. autoclass:: cntmosaic.models.numpyro.priors.HSGP2D
     :members:
     :undoc-members:
     :show-inheritance:
@@ -29,12 +30,12 @@ HSGP2D
     :special-members: __init__
 
 Intrinsic Gaussian Markov Random Field Priors
-----------------------------------------------
+---------------------------------------------
 
 IGMRF2D
 ^^^^^^^
 
-.. autoclass:: cntmosaic.models.priors.IGMRF2D
+.. autoclass:: cntmosaic.models.numpyro.priors.IGMRF2D
     :members:
     :undoc-members:
     :show-inheritance:
@@ -47,7 +48,7 @@ Spline-Based Priors
 Spline2D
 ^^^^^^^^
 
-.. autoclass:: cntmosaic.models.priors.Spline2D
+.. autoclass:: cntmosaic.models.numpyro.priors.Spline2D
     :members:
     :undoc-members:
     :show-inheritance:
@@ -57,7 +58,7 @@ Spline2D
 PSpline2D
 ^^^^^^^^^
 
-.. autoclass:: cntmosaic.models.priors.PSpline2D
+.. autoclass:: cntmosaic.models.numpyro.priors.PSpline2D
     :members:
     :undoc-members:
     :show-inheritance:
@@ -70,7 +71,16 @@ Special Effect Priors
 Hill
 ^^^^
 
-.. autoclass:: cntmosaic.models.priors.Hill
+.. autoclass:: cntmosaic.models.numpyro.priors.Hill
+    :members:
+    :undoc-members:
+    :show-inheritance:
+    :special-members: __init__
+
+vdKassteele2D
+^^^^^^^^^^^^^
+
+.. autoclass:: cntmosaic.models.numpyro.priors.vdKassteele2D
     :members:
     :undoc-members:
     :show-inheritance:

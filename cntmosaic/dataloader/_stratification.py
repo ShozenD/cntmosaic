@@ -144,7 +144,10 @@ def infer_strat_pixs(
     flat_pixs = np.zeros(n_obs, dtype=int)
     multiplier = 1
     for var, mode in reversed(strat_modes.items()):
-        dim = strat_dims[var] if mode == StratMode.FULL else 1
+        # Use n_cat (not n_cat²) as the population row stride. strat_dims[var] = n_cat²
+        # for FULL mode because it counts observation cross-products, but log_P has one
+        # row per contact category, so the stride must be n_cat.
+        dim = len(df_full["cnt_" + var].cat.categories) if mode == StratMode.FULL else 1
         flat_pixs += strat_pixs[var] * multiplier
         multiplier *= dim
 

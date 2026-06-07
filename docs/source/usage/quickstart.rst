@@ -1,6 +1,10 @@
 Quickstart
 ==========
 
+.. image:: https://colab.research.google.com/assets/colab-badge.svg
+   :target: https://colab.research.google.com/github/ShozenD/cntmosaic/blob/main/tutorials/00_Quickstart.ipynb
+   :alt: Open In Colab
+
 This guide walks through a complete contact matrix estimation workflow using the
 bundled POLYMOD Germany dataset. You will load survey data, fit a Bayesian social contact
 model with stochastic variational inference (SVI), and visualise the posterior contact
@@ -9,25 +13,24 @@ intensity matrix.
 Installation
 ------------
 
-**From PyPI (recommended):**
+**From PyPI:**
 
 .. code-block:: bash
 
    pip install cntmosaic
 
-**Using conda for environment management:**
+**From conda-forge (recommended):**
 
 .. code-block:: bash
 
-   conda create -n cntmosaic python=3.12
+   conda install -c conda-forge cntmosaic
+
+**Using conda to create an isolated environment:**
+
+.. code-block:: bash
+
+   conda create -n cntmosaic -c conda-forge python=3.12 cntmosaic
    conda activate cntmosaic
-   pip install cntmosaic
-
-.. note::
-
-   ``cntmosaic`` is not yet available on conda-forge.  The conda commands
-   above create an isolated environment; the package itself is still installed
-   via ``pip``.
 
 Loading Contact Data
 --------------------
@@ -80,13 +83,13 @@ Because we are fitting an age-only model (:class:`AgeMixFF <cntmosaic.models.Age
    part_data = ParticipantData(
        data=survey["participants"],
        id_col="part_id",
-       age_grp_col="part_age",
+       age_col="part_age",
    )
 
    cnt_data = ContactData(
        data=survey["contacts"],
        id_col="part_id",
-       age_grp_col="cnt_age",
+       age_col="cnt_age",
    )
 
    # Aggregate over gender — AgeMixFF models age mixing only
@@ -98,7 +101,7 @@ Because we are fitting an age-only model (:class:`AgeMixFF <cntmosaic.models.Age
    )
    pop_data = PopulationData(
        data=df_pop,
-       age_grp_col="age",
+       age_col="age",
        size_col="P",
    )
 
@@ -211,17 +214,14 @@ The returned object is an ``altair.Chart``, which can be saved to HTML:
 
    chart.save("contact_matrix.html")
 
-.. tip::
+.. note::
 
-   :func:`plot_mosaic_pixilated <cntmosaic.vis.plot_mosaic_pixilated>` is an alternative
-   that accepts a :class:`ContactSummary <cntmosaic.analysis.ContactSummary>` object
-   directly and automatically draws age-group bin boundaries and labels:
-
-   .. code-block:: python
-
-      from cntmosaic.vis import plot_mosaic_pixilated
-
-      chart = plot_mosaic_pixilated(summary["All->All"], title="Contact intensity")
+   :func:`plot_mosaic_pixilated <cntmosaic.vis.plot_mosaic_pixilated>` is designed for
+   coarse-age models (e.g. :class:`AgeMixCC <cntmosaic.models.AgeMixCC>`,
+   :class:`GenMixCC <cntmosaic.models.GenMixCC>`) where age-group bin boundaries are
+   meaningful.  It requires :class:`AgeGroupSpecs <cntmosaic.utils.AgeGroupSpecs>` to
+   be passed when creating the model.  For fine-age models such as ``AgeMixFF``,
+   :func:`plot_mosaic <cntmosaic.vis.plot_mosaic>` is the right choice.
 
 Next Steps
 ----------

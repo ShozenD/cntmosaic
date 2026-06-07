@@ -171,6 +171,9 @@ data/*
 # VS Code
 .vscode/
 
+# Claude Code
+.claude/
+
 # Tutorial figures (keep these for documentation)
 !docs/tutorials/figures/*.png
 !docs/tutorials/figures/*.pdf

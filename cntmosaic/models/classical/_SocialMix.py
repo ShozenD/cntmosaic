@@ -48,6 +48,9 @@ class SocialMix(DeterministicContactModel):
     part_data : ParticipantData
         Validated participant data container. Must have either a ``part_age``
         (1-year resolution) or ``part_age_grp`` (coarse intervals) column.
+        When ``part_data.weight_col`` is set, contact counts in ``Y`` are
+        weighted by individual survey weights, normalized within each
+        age-group / stratum cell.
     cnt_data : ContactData
         Validated contact data container. Must have either a ``cnt_age`` or
         ``cnt_age_grp`` column, and a ``y`` column with contact counts.
@@ -134,6 +137,13 @@ class SocialMix(DeterministicContactModel):
 
     The reciprocity adjustment ensures ``M[c,d] * P[c] == M[d,c] * P[d]``,
     i.e. total contacts are symmetric across the population.
+
+    If ``part_data`` carries a ``weight_col``, each contact record is
+    multiplied by the participant's normalized survey weight before aggregation,
+    so that ``Y[c,d] = sum_i( w_i * y_i_d )`` where weights satisfy
+    ``sum_i(w_i in cell c) == N[c]``.  The normalization is applied
+    automatically by :meth:`~cntmosaic.dataloader.ParticipantData.normalize_weights`
+    the first time :meth:`fit` is called.
     """
 
     def __init__(

@@ -94,6 +94,11 @@ class GenMixFC(GenMixFCNumPyroMixin, AgeMixFC):
         Observation likelihood:
         - 'negbin': Negative binomial (recommended for overdispersed counts)
         - 'poisson': Poisson (assumes mean = variance)
+        - 'quasipoisson': Quasi-Poisson; V(mu) = mu. Dispersion psi fixed at
+          1.0 by default; calibrate with set_quasi_dispersion(psi).
+        - 'quasinegbin': Quasi-negative-binomial; V(mu) = mu + mu^2/k.
+          Concentration k is sampled from a prior; dispersion psi fixed at 1.0
+          by default, calibrate with set_quasi_dispersion(psi).
 
     Attributes
     ----------
@@ -196,7 +201,7 @@ class GenMixFC(GenMixFCNumPyroMixin, AgeMixFC):
             Prior specifications. Must contain 'rate' for baseline and one prior
             per stratification variable.
         likelihood : str, default='negbin'
-            Observation likelihood ('negbin' or 'poisson').
+            Observation likelihood ('negbin', 'poisson', 'quasipoisson', or 'quasinegbin').
         backend : InferenceBackend, optional
             Pluggable inference engine (default: NumPyroBackend).
         """

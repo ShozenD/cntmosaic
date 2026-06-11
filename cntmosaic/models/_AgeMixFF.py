@@ -60,6 +60,11 @@ class AgeMixFF(AgeMixFFNumPyroMixin, GenMix):
         Observation likelihood:
         - 'negbin': Negative binomial (recommended for overdispersed count data)
         - 'poisson': Poisson (assumes mean = variance)
+        - 'quasipoisson': Quasi-Poisson; V(mu) = mu. Dispersion psi fixed at
+          1.0 by default; calibrate with set_quasi_dispersion(psi).
+        - 'quasinegbin': Quasi-negative-binomial; V(mu) = mu + mu^2/k.
+          Concentration k is sampled from a prior; dispersion psi fixed at 1.0
+          by default, calibrate with set_quasi_dispersion(psi).
     inv_odist : float, default=1.0
         Prior mean for inverse overdispersion parameter (negative binomial only).
         Smaller values allow more overdispersion. Actual value is sampled during inference.
@@ -161,7 +166,7 @@ class AgeMixFF(AgeMixFFNumPyroMixin, GenMix):
         priors : Dict[str, Any]
             Prior specifications (must include 'rate').
         likelihood : str, default='negbin'
-            Observation likelihood ('negbin' or 'poisson').
+            Observation likelihood ('negbin', 'poisson', 'quasipoisson', or 'quasinegbin').
         inv_odist : float, default=1.0
             Prior mean for inverse overdispersion (negbin only).
         backend : InferenceBackend, optional

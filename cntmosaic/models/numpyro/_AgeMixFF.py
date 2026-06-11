@@ -59,3 +59,26 @@ class AgeMixFFNumPyroMixin:
                     dist.NegativeBinomial2(mean=mu, concentration=1.0 / inv_disp),
                     obs=y,
                 )
+
+        elif self.likelihood == "quasipoisson":
+            from .distributions import QuasiPoisson
+            with numpyro.plate("data", len_y):
+                numpyro.sample(
+                    "obs",
+                    QuasiPoisson(mu=mu, dispersion=self.quasi_dispersion),
+                    obs=y,
+                )
+
+        elif self.likelihood == "quasinegbin":
+            from .distributions import QuasiNegBin
+            inv_conc = numpyro.sample("inv_conc", dist.Exponential(1.0))
+            with numpyro.plate("data", len_y):
+                numpyro.sample(
+                    "obs",
+                    QuasiNegBin(
+                        mu=mu,
+                        concentration=1.0 / inv_conc,
+                        dispersion=self.quasi_dispersion,
+                    ),
+                    obs=y,
+                )

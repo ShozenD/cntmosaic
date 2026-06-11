@@ -24,6 +24,7 @@ def preprocess_participant_data(
     strat_var_cols: List[str],
     repeat_col: Optional[str],
     amb_cnt_col: Optional[str],
+    weight_col: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Validate, clean, and standardise a raw participant DataFrame.
@@ -49,6 +50,9 @@ def preprocess_participant_data(
     amb_cnt_col : Optional[str]
         Column containing ambiguous contact counts. If None, no column is
         created — the field stays None on the parent ParticipantData.
+    weight_col : Optional[str]
+        Column containing individual-level survey weights. If None, no weight
+        column is created. Renamed to 'part_weight' internally.
 
     Returns
     -------
@@ -72,6 +76,7 @@ def preprocess_participant_data(
         strat_var_cols,
         repeat_col,
         amb_cnt_col,
+        weight_col,
     )
     return _preprocess(
         df_part,
@@ -83,6 +88,7 @@ def preprocess_participant_data(
         strat_var_cols,
         repeat_col,
         required_cols,
+        weight_col,
     )
 
 
@@ -101,6 +107,7 @@ def _check_columns(
     strat_var_cols: List[str],
     repeat_col: Optional[str],
     amb_cnt_col: Optional[str],
+    weight_col: Optional[str] = None,
 ) -> List[str]:
     """
     Assert required columns exist. Return the list of required column names.
@@ -155,6 +162,12 @@ def _check_columns(
             f"  Available columns: {_cols_display(df.columns)}"
         )
 
+    if weight_col and weight_col not in df.columns:
+        raise KeyError(
+            f"weight_col '{weight_col}' is specified but missing in DataFrame.\n"
+            f"  Available columns: {_cols_display(df.columns)}"
+        )
+
     required_cols = [id_col]
     required_cols.extend(age_column)
 
@@ -164,6 +177,8 @@ def _check_columns(
         required_cols.append(repeat_col)
     if amb_cnt_col:
         required_cols.append(amb_cnt_col)
+    if weight_col:
+        required_cols.append(weight_col)
     return required_cols
 
 
@@ -177,6 +192,7 @@ def _preprocess(
     strat_var_cols: List[str],
     repeat_col: Optional[str],
     required_cols: List[str],
+    weight_col: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Copy, clean, coerce dtypes, and rename columns.
@@ -249,6 +265,9 @@ def _preprocess(
 
     if repeat_col and not repeat_col.startswith("part_"):
         rename_map[repeat_col] = "part_repeat"
+
+    if weight_col and not weight_col.startswith("part_"):
+        rename_map[weight_col] = "part_weight"
 
     df = df.rename(columns=rename_map)
 

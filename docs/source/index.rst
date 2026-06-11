@@ -14,15 +14,11 @@ variational inference (SVI).
 
 .. toctree::
    :maxdepth: 2
-
-   usage/quickstart
-
-.. toctree::
-   :maxdepth: 2
    :caption: Getting Started
 
    usage/installation
-   usage/dependencies
+   usage/quickstart
+   usage/hpc
 
 .. toctree::
    :maxdepth: 2

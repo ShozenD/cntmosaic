@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import numpy as np
 import pandas as pd
 
 from ._participant_preprocessing import preprocess_participant_data
@@ -54,6 +55,14 @@ class ParticipantData:
     amb_cnt_col : Optional[str], default=None
         Name of the column containing ambiguous/group contact counts.
         If None, no ambiguous contact column is added to the DataFrame.
+    weight_col : Optional[str], default=None
+        Name of the column containing individual-level survey weights.
+        Values must be strictly positive numeric. When provided, the column
+        is renamed to 'part_weight' internally. Weights are normalized within
+        each (age_group, stratum) cell by :meth:`normalize_weights` before use
+        in :class:`~cntmosaic.models.SocialMix`, so that
+        ``sum(w_i in cell c) == N_cell``, preserving the contact intensity
+        estimator ``M = Y / N``.
 
     Attributes
     ----------
@@ -77,6 +86,12 @@ class ParticipantData:
         Returns DataFrame with participant counts, optionally stratified by all variables.
     summary()
         Returns dictionary with summary statistics about the participant data.
+    check_weights_normalized(grp_cols, tol=1e-6)
+        Returns True if 'part_weight' sums to the participant count within each
+        cell defined by grp_cols. Always returns True when weight_col is None.
+    normalize_weights(grp_cols)
+        Rescales 'part_weight' in-place so that weights sum to the participant
+        count within each cell defined by grp_cols.
 
     Examples
     --------
@@ -153,6 +168,7 @@ class ParticipantData:
     - {var}_part: Each stratification variable with _part suffix
     - part_repeat: Repeat interview indicator (if specified)
     - {amb_cnt_col}: Ambiguous contact count column (only if specified)
+    - part_weight: Individual-level survey weight (if weight_col specified)
 
     **Validation Checks:**
 
@@ -163,6 +179,7 @@ class ParticipantData:
     - Age groups (if using age_grp_col) must be categorical with IntervalIndex categories
     - Repeat values (if specified) must be non-negative numeric
     - Ambiguous contact counts (if specified) must be non-negative numeric
+    - Survey weights (if weight_col specified) must be strictly positive numeric
     - No missing values in required columns (removed during preprocessing)
 
     **Warnings:**
@@ -185,6 +202,7 @@ class ParticipantData:
     strat_var_cols: Optional[Union[List[str], str]] = None
     repeat_col: Optional[str] = None
     amb_cnt_col: Optional[str] = None
+    weight_col: Optional[str] = None
 
     def __post_init__(self) -> None:
         """
@@ -262,6 +280,7 @@ class ParticipantData:
                 self.strat_var_cols,
                 self.repeat_col,
                 self.amb_cnt_col,
+                self.weight_col,
             ),
         )
 
@@ -304,6 +323,7 @@ class ParticipantData:
             self.age_grp_col,
             self.repeat_col,
             self.amb_cnt_col,
+            self.weight_col,
         )
 
     @property
@@ -474,6 +494,86 @@ class ParticipantData:
             .agg(N=("id", "count"))
             .reset_index()
         )
+
+    def check_weights_normalized(
+        self, grp_cols: List[str], tol: float = 1e-6
+    ) -> bool:
+        """
+        Return True if survey weights are cell-normalized within grp_cols.
+
+        A weight vector is considered normalized when, within each cell defined
+        by grp_cols, the sum of weights equals the participant count for that
+        cell: ``sum(w_i in cell) == N_cell``.
+
+        Always returns True when weight_col is None (no weights to check).
+
+        Parameters
+        ----------
+        grp_cols : List[str]
+            Column names to group by when checking normalization (e.g.
+            ``["part_age_grp"]`` or ``["part_age_grp", "part_gender"]``).
+            These columns must already exist in ``self.data``.
+        tol : float, default=1e-6
+            Absolute tolerance passed to ``numpy.allclose``.
+
+        Returns
+        -------
+        bool
+            True if weights are normalized within every cell, False otherwise.
+
+        Examples
+        --------
+        >>> pd_ = ParticipantData(df, id_col='id', age_col='age', weight_col='w')
+        >>> pd_.check_weights_normalized(["part_age_grp"])
+        False
+        >>> pd_.normalize_weights(["part_age_grp"])
+        >>> pd_.check_weights_normalized(["part_age_grp"])
+        True
+        """
+        if self.weight_col is None:
+            return True
+        cell_sums = self.data.groupby(grp_cols, observed=False)["part_weight"].sum()
+        cell_counts = self.data.groupby(grp_cols, observed=False)["id"].count()
+        return bool(np.allclose(cell_sums.values, cell_counts.values, atol=tol))
+
+    def normalize_weights(self, grp_cols: List[str]) -> None:
+        """
+        Rescale 'part_weight' in-place so weights sum to N within each cell.
+
+        For each cell defined by grp_cols, applies the rescaling:
+
+        ``w_i_normalized = w_i * N_cell / sum(w_j for j in cell)``
+
+        This ensures ``sum(w_i_normalized in cell) == N_cell``, preserving the
+        contact intensity estimator ``M = Y / N`` when weights are used.
+
+        Parameters
+        ----------
+        grp_cols : List[str]
+            Column names that define normalization cells (e.g.
+            ``["part_age_grp"]`` or ``["part_age_grp", "part_gender"]``).
+            These columns must already exist in ``self.data``.
+
+        Raises
+        ------
+        ValueError
+            If weight_col is None (no weights are set).
+
+        Examples
+        --------
+        >>> pd_ = ParticipantData(df, id_col='id', age_col='age', weight_col='w')
+        >>> pd_.normalize_weights(["part_age_grp"])
+        >>> pd_.check_weights_normalized(["part_age_grp"])
+        True
+        """
+        if self.weight_col is None:
+            raise ValueError(
+                "Cannot normalize weights: no weight_col is set on this ParticipantData."
+            )
+        df = self.data
+        cell_sum = df.groupby(grp_cols, observed=False)["part_weight"].transform("sum")
+        cell_count = df.groupby(grp_cols, observed=False)["id"].transform("count")
+        df["part_weight"] = df["part_weight"] * cell_count / cell_sum
 
     def summary(self) -> Dict[str, Any]:
         """

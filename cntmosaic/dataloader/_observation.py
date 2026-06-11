@@ -6,7 +6,7 @@ independently testable and to support the ContactSurveyLoader pipeline.
 """
 
 import warnings
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -82,13 +82,41 @@ def build_contact_offsets(
     return df_V
 
 
-def build_contact_counts(data: pd.DataFrame, col_spec: ColumnSpec) -> pd.DataFrame:
-    """Aggregate contact counts (y) by age and stratification variables."""
-    df_y = (
-        data.groupby(col_spec.strat_vars_y, observed=False)
-        .agg({col_spec.y: "sum"})
-        .reset_index()
-    )
+def build_contact_counts(
+    data: pd.DataFrame,
+    col_spec: ColumnSpec,
+    weight_col: Optional[str] = None,
+) -> pd.DataFrame:
+    """Aggregate contact counts (y) by age and stratification variables.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Merged participant-contact DataFrame.
+    col_spec : ColumnSpec
+        Column mapping specification.
+    weight_col : str or None, optional
+        Name of a column in ``data`` containing per-row survey weights. When
+        provided and the column is present, each contact record's ``y`` value
+        is multiplied by its weight before summing, producing real-valued
+        (weighted) contact counts suitable for quasi-likelihood inference.
+        When ``None`` (default) a plain unweighted integer sum is computed.
+    """
+    if weight_col is not None and weight_col in data.columns:
+        data = data.copy()
+        data["_weighted_y"] = data[col_spec.y] * data[weight_col]
+        df_y = (
+            data.groupby(col_spec.strat_vars_y, observed=False)
+            .agg({"_weighted_y": "sum"})
+            .reset_index()
+            .rename(columns={"_weighted_y": col_spec.y})
+        )
+    else:
+        df_y = (
+            data.groupby(col_spec.strat_vars_y, observed=False)
+            .agg({col_spec.y: "sum"})
+            .reset_index()
+        )
     return df_y
 
 

@@ -325,6 +325,11 @@ class ContactModel(ABC):
                 "SVI inference has not been run. Call run_inference_svi() first."
             )
         _guide = guide if guide is not None else self._guide
+        # Pass observed y so that numpyro.sample("obs", dist, obs=y) receives a
+        # non-None value. Without this, Predictive runs the model with y=None,
+        # which makes NumPyro treat "obs" as unobserved and call dist.sample() —
+        # which fails for quasi-likelihoods that intentionally have no sampler.
         return self._get_backend().posterior_predictive_svi(
-            prng_key, self.model, _guide, self._svi_result, num_samples=num_samples
+            prng_key, self.model, _guide, self._svi_result, num_samples=num_samples,
+            y=getattr(self, "y", None),
         )

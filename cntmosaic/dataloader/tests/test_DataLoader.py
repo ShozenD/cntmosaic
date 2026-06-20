@@ -5,10 +5,10 @@ import pytest
 from ..._types import StratMode
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import (
-    ContactGenerator,
-    MatrixGenerator,
-    ParticipantGenerator,
-    PopulationConstructor,
+    ContactSampler,
+    MatrixSampler,
+    ParticipantSampler,
+    Population,
     Stratification,
 )
 from .._ContactSurveyLoader import ContactSurveyLoader
@@ -36,19 +36,19 @@ def data_single():
         seed=SEED,
     )
 
-    pop_const = PopulationConstructor(strata)
+    pop_const = Population(strata)
     df_pop = pop_const.df_P
 
     # Generate participants
-    part_gen = ParticipantGenerator(popcon=pop_const, n_part=1000)
+    part_gen = ParticipantSampler(popcon=pop_const, n_part=1000)
     df_part = part_gen.generate(SEED)
 
     # Generate contact matrix
-    matrix_gen = MatrixGenerator(templates)
+    matrix_gen = MatrixSampler(templates)
     contact_matrix = matrix_gen.generate_single(pop_const, SEED)
 
     # Generate contacts
-    cnt_gen = ContactGenerator(df_part, contact_matrix, random_effects=True)
+    cnt_gen = ContactSampler(df_part, contact_matrix, random_effects=True)
     df_cnt = cnt_gen.generate(SEED)
 
     return df_part, df_cnt, df_pop
@@ -77,11 +77,11 @@ def data_partial():
             seed=SEED,
         ),
     ]
-    popcon = PopulationConstructor(strats)
+    popcon = Population(strats)
     df_pop = popcon.df_P
 
     # Generate participants
-    part_gen = ParticipantGenerator(popcon, n_part=1000)
+    part_gen = ParticipantSampler(popcon, n_part=1000)
     df_part = part_gen.generate(SEED)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
     df_part["hhsize"] = pd.Categorical(
@@ -89,11 +89,11 @@ def data_partial():
     )
 
     # Generate contact matrix
-    matrix_gen = MatrixGenerator(templates)
+    matrix_gen = MatrixSampler(templates)
     contact_matrices = matrix_gen.generate_partial(popcon, SEED)
 
     # Generate contacts
-    cnt_gen = ContactGenerator(df_part, contact_matrices)
+    cnt_gen = ContactSampler(df_part, contact_matrices)
     df_cnt = cnt_gen.generate(SEED)
 
     # Population size offsets
@@ -132,7 +132,7 @@ def data_full():
         ),
     ]
 
-    popcon = PopulationConstructor(strats)
+    popcon = Population(strats)
     df_pop = popcon.df_P
     df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
     df_pop["hhsize"] = pd.Categorical(
@@ -140,7 +140,7 @@ def data_full():
     )
 
     # Generate participants
-    part_gen = ParticipantGenerator(popcon, n_part=1000)
+    part_gen = ParticipantSampler(popcon, n_part=1000)
     df_part = part_gen.generate(SEED)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
     df_part["hhsize"] = pd.Categorical(
@@ -148,11 +148,11 @@ def data_full():
     )
 
     # Generate contact matrix
-    matrix_gen = MatrixGenerator(templates)
+    matrix_gen = MatrixSampler(templates)
     contact_matrices = matrix_gen.generate_full(popcon, SEED)
 
     # Generate contacts
-    cnt_gen = ContactGenerator(df_part, contact_matrices)
+    cnt_gen = ContactSampler(df_part, contact_matrices)
     df_cnt = cnt_gen.generate(SEED)
     df_cnt = df_cnt.rename(columns={"sex_cnt": "cnt_sex", "hhsize_cnt": "cnt_hhsize"})
     df_cnt["cnt_sex"] = pd.Categorical(
@@ -563,10 +563,10 @@ def data_multi_strat():
             seed=SEED,
         ),
     ]
-    popcon = PopulationConstructor(strats)
+    popcon = Population(strats)
 
     # Generate participant data
-    part_gen = ParticipantGenerator(popcon, n_part=500)
+    part_gen = ParticipantSampler(popcon, n_part=500)
     df_part = part_gen.generate(SEED)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
     df_part["setting"] = pd.Categorical(
@@ -574,11 +574,11 @@ def data_multi_strat():
     )
 
     # Generate contact matrices
-    matrix_gen = MatrixGenerator(templates)
+    matrix_gen = MatrixSampler(templates)
     contact_matrices = matrix_gen.generate_full(popcon, SEED)
 
     # Generate contact data
-    cnt_gen = ContactGenerator(df_part, contact_matrices)
+    cnt_gen = ContactSampler(df_part, contact_matrices)
     df_cnt = cnt_gen.generate(SEED)
     df_cnt = df_cnt.rename(columns={"sex_cnt": "cnt_sex", "setting_cnt": "cnt_setting"})
     df_cnt["cnt_sex"] = pd.Categorical(

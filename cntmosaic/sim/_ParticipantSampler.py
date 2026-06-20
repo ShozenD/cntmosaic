@@ -7,11 +7,11 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from ._PopulationConstructor import PopulationConstructor
+from ._Population import Population
 from ._Stratification import Stratification
 
 
-class ParticipantGenerator:
+class ParticipantSampler:
     """
     Generate synthetic participant data for a social contact survey.
 
@@ -20,14 +20,14 @@ class ParticipantGenerator:
     population distribution, then a stratum is sampled conditional on that age
     using the population proportion matrix Q.
 
-    The PopulationConstructor defines the joint population structure through:
+    The Population defines the joint population structure through:
     - Global age distribution (ref_age_dist)
     - Population proportion matrix Q[s, a]: probability of stratum s given age a
     - Stratification variables (e.g., gender, region, SES)
 
     Parameters
     ----------
-    popcon : PopulationConstructor
+    popcon : Population
         Population structure defining stratifications and age distributions.
         Contains the reference age distribution and proportion matrix Q.
     n_part : int
@@ -35,7 +35,7 @@ class ParticipantGenerator:
 
     Attributes
     ----------
-    popcon : PopulationConstructor
+    popcon : Population
         The population constructor with stratification information.
     n_part : int
         Total sample size.
@@ -58,7 +58,7 @@ class ParticipantGenerator:
     **Example 1: Single stratification variable (Gender)**
 
     >>> import numpy as np
-    >>> from cntmosaic.sim import Stratification, PopulationConstructor, ParticipantGenerator
+    >>> from cntmosaic.sim import Stratification, Population, ParticipantSampler
 
     >>> # Define reference age distribution
     >>> ref_age_dist = np.array([1000, 1500, 2000, 1800, 1200])
@@ -73,10 +73,10 @@ class ParticipantGenerator:
     ... )
 
     >>> # Build population constructor
-    >>> popcon = PopulationConstructor(gender_strat)
+    >>> popcon = Population(gender_strat)
 
     >>> # Generate 1000 participants
-    >>> pg = ParticipantGenerator(popcon, n_part=1000)
+    >>> pg = ParticipantSampler(popcon, n_part=1000)
     >>> df_participants = pg.generate(seed=123)
 
     >>> print(df_participants.head())
@@ -116,10 +116,10 @@ class ParticipantGenerator:
     ... )
 
     >>> # Build joint population
-    >>> popcon = PopulationConstructor([gender_strat, region_strat])
+    >>> popcon = Population([gender_strat, region_strat])
 
     >>> # Generate participants
-    >>> pg = ParticipantGenerator(popcon, n_part=2000)
+    >>> pg = ParticipantSampler(popcon, n_part=2000)
     >>> df_participants = pg.generate(seed=456)
 
     >>> print(df_participants.head())
@@ -149,21 +149,21 @@ class ParticipantGenerator:
     3. Map stratum index to stratification variable values
 
     This ensures the generated sample is representative of the population
-    structure defined by the PopulationConstructor.
+    structure defined by the Population.
     """
 
     def __init__(
         self,
-        popcon: PopulationConstructor,
+        popcon: Population,
         n_part: Optional[int] = None,
         n_participants: Optional[int] = None,
     ) -> None:
         """
-        Initialize ParticipantGenerator with population structure.
+        Initialize ParticipantSampler with population structure.
 
         Parameters
         ----------
-        popcon : PopulationConstructor
+        popcon : Population
             Population structure defining stratifications and age distributions.
         n_part : int, optional
             Total number of participants to generate. Must be positive.
@@ -175,10 +175,10 @@ class ParticipantGenerator:
         ValueError
             If n_part is not positive, or if neither/both aliases are provided.
         TypeError
-            If popcon is not a PopulationConstructor instance.
+            If popcon is not a Population instance.
         """
-        if not isinstance(popcon, PopulationConstructor):
-            raise TypeError(f"popcon must be PopulationConstructor, got {type(popcon)}")
+        if not isinstance(popcon, Population):
+            raise TypeError(f"popcon must be Population, got {type(popcon)}")
 
         if n_part is None and n_participants is None:
             raise TypeError("Must provide one of 'n_part' or 'n_participants'")
@@ -204,14 +204,14 @@ class ParticipantGenerator:
         strat_var_cols: Optional[List[str]] = None,
         age_col: str = "age",
         pop_col: str = "P",
-    ) -> ParticipantGenerator:
+    ) -> ParticipantSampler:
         """
-        Create a ParticipantGenerator from a DataFrame with population sizes.
+        Create a ParticipantSampler from a DataFrame with population sizes.
 
         This alternative constructor allows initialization directly from a
         DataFrame containing population counts by age and stratification
         variables, without needing to create Stratification and
-        PopulationConstructor objects.
+        Population objects.
 
         Parameters
         ----------
@@ -232,7 +232,7 @@ class ParticipantGenerator:
 
         Returns
         -------
-        ParticipantGenerator
+        ParticipantSampler
             Initialized generator ready to produce participant samples.
 
         Raises
@@ -244,7 +244,7 @@ class ParticipantGenerator:
         --------
         >>> import pandas as pd
         >>> import numpy as np
-        >>> from cntmosaic.sim import ParticipantGenerator
+        >>> from cntmosaic.sim import ParticipantSampler
 
         >>> # Create population DataFrame
         >>> df_pop = pd.DataFrame({
@@ -254,7 +254,7 @@ class ParticipantGenerator:
         ... })
 
         >>> # Create generator from DataFrame
-        >>> pg = ParticipantGenerator.from_df(df_pop, n_part=500, strat_var_cols=['gender'])
+        >>> pg = ParticipantSampler.from_df(df_pop, n_part=500, strat_var_cols=['gender'])
         >>> df_participants = pg.generate(seed=42)
 
         >>> print(df_participants.head())
@@ -294,7 +294,7 @@ class ParticipantGenerator:
 
         # Create instance without calling __init__
         instance = cls.__new__(cls)
-        instance.popcon = None  # No PopulationConstructor in this mode
+        instance.popcon = None  # No Population in this mode
         instance.n_part = n_part
 
         # Extract population structure from DataFrame
@@ -397,7 +397,7 @@ class ParticipantGenerator:
                 self.Q[:, zero_pop_ages] = 1.0 / self.n_strata
 
     def _extract_population_structure(self) -> None:
-        """Extract and validate population structure from PopulationConstructor."""
+        """Extract and validate population structure from Population."""
         # Get reference age distribution and normalize to proportions
         ref_age_dist = self.popcon.ref_age_dist
         self.global_age_dist = ref_age_dist / ref_age_dist.sum()
@@ -533,7 +533,7 @@ class ParticipantGenerator:
 
         Examples
         --------
-        >>> pg = ParticipantGenerator(popcon, n_part=500)
+        >>> pg = ParticipantSampler(popcon, n_part=500)
         >>> df = pg.generate(seed=42)
         >>> df.columns
         Index(['id', 'age', 'gender'], dtype='object')

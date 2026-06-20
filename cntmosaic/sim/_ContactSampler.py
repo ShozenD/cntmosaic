@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from .._types import StratumLabel  # noqa: F401
 
 
-class ContactGenerator:
+class ContactSampler:
     """
     Generate synthetic contact count data from contact intensity matrices and participant data.
 
@@ -16,8 +16,8 @@ class ContactGenerator:
     individual random effects.
 
     The generator works with outputs from:
-    - ParticipantGenerator: provides participant demographics (df_part)
-    - MatrixGenerator: provides contact intensity matrices (cint_matrices)
+    - ParticipantSampler: provides participant demographics (df_part)
+    - MatrixSampler: provides contact intensity matrices (cint_matrices)
 
     Three modes of operation:
     1. Single population: One matrix for all participants (key: "All->All")
@@ -28,8 +28,8 @@ class ContactGenerator:
     --------
     >>> import numpy as np
     >>> from cntmosaic.sim import (
-    ...     Stratification, PopulationConstructor, MatrixGenerator,
-    ...     ParticipantGenerator, ContactGenerator
+    ...     Stratification, Population, MatrixSampler,
+    ...     ParticipantSampler, ContactSampler
     ... )
     >>> from cntmosaic.datasets import load_template_patterns
 
@@ -41,17 +41,17 @@ class ContactGenerator:
     >>>
     >>> # Create stratification and population
     >>> strat = Stratification('group', 1, ref_age_dist, labels=['All'], seed=42)
-    >>> pop = PopulationConstructor(strat)
+    >>> pop = Population(strat)
     >>>
     >>> # Generate participants and matrix
-    >>> part_gen = ParticipantGenerator(pop, n_participants=100)
+    >>> part_gen = ParticipantSampler(pop, n_participants=100)
     >>> participants = part_gen.generate(seed=42)
     >>>
-    >>> mat_gen = MatrixGenerator(templates)
+    >>> mat_gen = MatrixSampler(templates)
     >>> matrices = mat_gen.generate_single(pop, mean_intensity=15.0, seed=42)
     >>>
     >>> # Generate contacts
-    >>> contact_gen = ContactGenerator(participants, matrices)
+    >>> contact_gen = ContactSampler(participants, matrices)
     >>> contacts = contact_gen.generate(seed=42)
     >>> print(contacts.head())
        id  cnt_age   y
@@ -67,17 +67,17 @@ class ContactGenerator:
     >>> region_strat = Stratification(
     ...     'region', 2, ref_age_dist, labels=['Urban', 'Rural'], seed=42
     ... )
-    >>> pop = PopulationConstructor(region_strat)
+    >>> pop = Population(region_strat)
     >>>
     >>> # Generate participants and matrices
-    >>> part_gen = ParticipantGenerator(pop, n_participants=150)
+    >>> part_gen = ParticipantSampler(pop, n_participants=150)
     >>> participants = part_gen.generate(seed=42)
     >>>
-    >>> mat_gen = MatrixGenerator(templates)
+    >>> mat_gen = MatrixSampler(templates)
     >>> matrices = mat_gen.generate_partial(pop, mean_intensity=15.0, seed=42)
     >>> # matrices = {"Urban->All": M_urban, "Rural->All": M_rural}
     >>>
-    >>> contact_gen = ContactGenerator(participants, matrices)
+    >>> contact_gen = ContactSampler(participants, matrices)
     >>> contacts = contact_gen.generate(seed=42)
     >>> print(contacts.head())
        id  cnt_age   y
@@ -94,18 +94,18 @@ class ContactGenerator:
     >>> region_strat = Stratification(
     ...     'region', 2, ref_age_dist, labels=['Urban', 'Rural'], seed=42
     ... )
-    >>> pop = PopulationConstructor(region_strat)
+    >>> pop = Population(region_strat)
     >>>
     >>> # Generate participants and matrices
-    >>> part_gen = ParticipantGenerator(pop, n_participants=150)
+    >>> part_gen = ParticipantSampler(pop, n_participants=150)
     >>> participants = part_gen.generate(seed=42)
     >>>
-    >>> mat_gen = MatrixGenerator(templates)
+    >>> mat_gen = MatrixSampler(templates)
     >>> matrices = mat_gen.generate_full(pop, mean_intensity=15.0, seed=42)
     >>> # matrices = {"Urban->Urban": M_uu, "Urban->Rural": M_ur,
     >>> #            "Rural->Urban": M_ru, "Rural->Rural": M_rr}
     >>>
-    >>> contact_gen = ContactGenerator(participants, matrices)
+    >>> contact_gen = ContactSampler(participants, matrices)
     >>> contacts = contact_gen.generate(seed=42)
     >>> print(contacts.head())
        id  cnt_age  cnt_region   y
@@ -135,19 +135,19 @@ class ContactGenerator:
         random_effects_rate: float = 5.0,
     ):
         """
-        Initialize ContactGenerator with participant data and contact matrices.
+        Initialize ContactSampler with participant data and contact matrices.
 
         Parameters
         ----------
         df_part : pd.DataFrame
-                Participant data from ParticipantGenerator.generate().
+                Participant data from ParticipantSampler.generate().
                 Must contain columns:
                 - 'id': Unique participant identifier
                 - 'age': Participant age (continuous)
                 - Stratification columns (e.g., 'gender', 'region') if using stratified matrices
 
         cint_matrices : dict of str to NDArray
-                Contact intensity matrices from MatrixGenerator.
+                Contact intensity matrices from MatrixSampler.
                 Dictionary mapping string keys to contact matrices:
                 - Single case: {"All->All": matrix}
                 - Partial case: {"{label}->All": matrix} for each stratum

@@ -9,7 +9,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from .._types import StratumLabel  # noqa: F401
-from ._PopulationConstructor import PopulationConstructor
+from ._Population import Population
 from ._Stratification import Stratification
 
 
@@ -22,7 +22,7 @@ class _StratInfo:
     labels: List[str]
 
 
-class MatrixGenerator:
+class MatrixSampler:
     """
     Generate synthetic contact intensity matrices using template-based approach.
 
@@ -61,18 +61,18 @@ class MatrixGenerator:
     Examples
     --------
     >>> from cntmosaic.datasets import load_template_patterns
-    >>> from cntmosaic.sim import Stratification, PopulationConstructor, MatrixGenerator
+    >>> from cntmosaic.sim import Stratification, Population, MatrixSampler
     >>> import numpy as np
 
     >>> # Load templates
     >>> templates = load_template_patterns('United_States', max_age=80)
-    >>> mg = MatrixGenerator(templates)
+    >>> mg = MatrixSampler(templates)
 
     >>> # Create stratified population
     >>> ref_age_dist = np.array([1000, 1500, 2000, 1800, 1200])
     >>> gender_strat = Stratification('gender', 2, ref_age_dist,
     ...                               labels=['Male', 'Female'], seed=42)
-    >>> pop = PopulationConstructor(gender_strat)
+    >>> pop = Population(gender_strat)
 
     >>> # Generate baseline matrix
     >>> M_baseline = mg.generate_single(pop, mean_intensity=15.0, seed=123)
@@ -415,7 +415,7 @@ class MatrixGenerator:
 
     def generate_single(
         self,
-        popcon: PopulationConstructor,
+        popcon: Population,
         mean_intensity: float = 15.0,
         seed: Optional[int] = None,
     ) -> Dict[str, NDArray]:
@@ -433,7 +433,7 @@ class MatrixGenerator:
 
         Parameters
         ----------
-        popcon : PopulationConstructor
+        popcon : Population
             Population structure (stratifications are ignored for baseline)
         mean_intensity : float, default=15.0
             Average marginal contact intensity C
@@ -449,15 +449,15 @@ class MatrixGenerator:
         Examples
         --------
         >>> from cntmosaic.datasets import load_template_patterns
-        >>> from cntmosaic.sim import Stratification, PopulationConstructor, MatrixGenerator
+        >>> from cntmosaic.sim import Stratification, Population, MatrixSampler
         >>> import numpy as np
 
         >>> templates = load_template_patterns('United_States', max_age=10)
-        >>> mg = MatrixGenerator(templates)
+        >>> mg = MatrixSampler(templates)
 
         >>> ref_age_dist = np.array([1000, 1500, 2000])
         >>> gender_strat = Stratification('gender', 2, ref_age_dist, seed=42)
-        >>> pop = PopulationConstructor(gender_strat)
+        >>> pop = Population(gender_strat)
 
         >>> M_dict = mg.generate_single(pop, mean_intensity=15.0, seed=123)
         >>> M_dict.keys()
@@ -492,7 +492,7 @@ class MatrixGenerator:
         Generate global baseline contact intensity matrix from a DataFrame.
 
         This is an alternative to `generate_single` that accepts a pandas
-        DataFrame directly instead of a PopulationConstructor.
+        DataFrame directly instead of a Population.
 
         Parameters
         ----------
@@ -517,11 +517,11 @@ class MatrixGenerator:
         Examples
         --------
         >>> import pandas as pd
-        >>> from cntmosaic.sim import MatrixGenerator
+        >>> from cntmosaic.sim import MatrixSampler
         >>> from cntmosaic.datasets import load_template_patterns
 
         >>> templates = load_template_patterns('United_States', max_age=10)
-        >>> mg = MatrixGenerator(templates)
+        >>> mg = MatrixSampler(templates)
 
         >>> df_pop = pd.DataFrame({
         ...     'age': [0, 1, 2],
@@ -705,7 +705,7 @@ class MatrixGenerator:
 
     def generate_partial(
         self,
-        popcon: PopulationConstructor,
+        popcon: Population,
         mean_intensity: float = 15.0,
         seed: Optional[int] = None,
     ) -> Dict[str, NDArray]:
@@ -723,7 +723,7 @@ class MatrixGenerator:
 
         Parameters
         ----------
-        popcon : PopulationConstructor
+        popcon : Population
             Population structure with stratifications
         mean_intensity : float, default=15.0
             Average marginal contact intensity
@@ -739,11 +739,11 @@ class MatrixGenerator:
         Examples
         --------
         >>> templates = load_template_patterns('United_States', max_age=10)
-        >>> mg = MatrixGenerator(templates)
+        >>> mg = MatrixSampler(templates)
 
         >>> ref_age_dist = np.array([1000, 1500, 2000])
         >>> gender_strat = Stratification('gender', 2, ref_age_dist, labels=['Male', 'Female'], seed=42)
-        >>> pop = PopulationConstructor(gender_strat)
+        >>> pop = Population(gender_strat)
 
         >>> M_partial = mg.generate_partial(pop, mean_intensity=15.0, seed=123)
         >>> list(M_partial.keys())
@@ -854,7 +854,7 @@ class MatrixGenerator:
         Generate partial contact matrices from a DataFrame.
 
         This is an alternative to `generate_partial` that accepts a pandas
-        DataFrame directly instead of a PopulationConstructor.
+        DataFrame directly instead of a Population.
 
         Parameters
         ----------
@@ -881,11 +881,11 @@ class MatrixGenerator:
         Examples
         --------
         >>> import pandas as pd
-        >>> from cntmosaic.sim import MatrixGenerator
+        >>> from cntmosaic.sim import MatrixSampler
         >>> from cntmosaic.datasets import load_template_patterns
 
         >>> templates = load_template_patterns('United_States', max_age=10)
-        >>> mg = MatrixGenerator(templates)
+        >>> mg = MatrixSampler(templates)
 
         >>> df_pop = pd.DataFrame({
         ...     'age': [0, 0, 1, 1, 2, 2],
@@ -978,7 +978,7 @@ class MatrixGenerator:
 
     def generate_full(
         self,
-        popcon: PopulationConstructor,
+        popcon: Population,
         mean_intensity: float = 15.0,
         assortativity: float = 0.0,
         seed: Optional[int] = None,
@@ -999,7 +999,7 @@ class MatrixGenerator:
 
         Parameters
         ----------
-        popcon : PopulationConstructor
+        popcon : Population
             Population structure with stratifications
         mean_intensity : float, default=15.0
             Average marginal contact intensity
@@ -1020,11 +1020,11 @@ class MatrixGenerator:
         Examples
         --------
         >>> templates = load_template_patterns('United_States', max_age=10)
-        >>> mg = MatrixGenerator(templates)
+        >>> mg = MatrixSampler(templates)
 
         >>> ref_age_dist = np.array([1000, 1500, 2000])
         >>> gender_strat = Stratification('gender', 2, ref_age_dist, labels=['Male', 'Female'], seed=42)
-        >>> pop = PopulationConstructor(gender_strat)
+        >>> pop = Population(gender_strat)
 
         >>> M_full = mg.generate_full(pop, mean_intensity=15.0, seed=123)
         >>> list(M_full.keys())
@@ -1143,7 +1143,7 @@ class MatrixGenerator:
         Generate full stratified contact matrices from a DataFrame.
 
         This is an alternative to `generate_full` that accepts a pandas
-        DataFrame directly instead of a PopulationConstructor.
+        DataFrame directly instead of a Population.
 
         Parameters
         ----------
@@ -1174,11 +1174,11 @@ class MatrixGenerator:
         Examples
         --------
         >>> import pandas as pd
-        >>> from cntmosaic.sim import MatrixGenerator
+        >>> from cntmosaic.sim import MatrixSampler
         >>> from cntmosaic.datasets import load_template_patterns
 
         >>> templates = load_template_patterns('United_States', max_age=10)
-        >>> mg = MatrixGenerator(templates)
+        >>> mg = MatrixSampler(templates)
 
         >>> df_pop = pd.DataFrame({
         ...     'age': [0, 0, 1, 1, 2, 2],

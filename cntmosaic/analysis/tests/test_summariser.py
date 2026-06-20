@@ -18,10 +18,10 @@ from numpyro.infer.autoguide import AutoNormal
 from cntmosaic.datasets import load_age_distribution, load_template_patterns
 from cntmosaic.utils import AgeBins
 from cntmosaic.sim import (
-    ParticipantGenerator,
-    MatrixGenerator,
-    ContactGenerator,
-    PopulationConstructor,
+    ParticipantSampler,
+    MatrixSampler,
+    ContactSampler,
+    Population,
     Stratification,
 )
 from cntmosaic.dataloader import (
@@ -49,15 +49,15 @@ def sample_dataloader():
     strat = Stratification(
         name="general", n_strata=1, ref_age_dist=df_age_dist.P.values, labels=["All"], seed=42
     )
-    popcon = PopulationConstructor(strats=strat)
+    popcon = Population(strats=strat)
 
-    matrix_gen = MatrixGenerator(templates)
+    matrix_gen = MatrixSampler(templates)
     contact_matrix = matrix_gen.generate_single(popcon, mean_intensity=15.0, seed=42)
 
-    part_gen = ParticipantGenerator(popcon, n_part=500)
+    part_gen = ParticipantSampler(popcon, n_part=500)
     df_part = part_gen.generate(seed=42)
 
-    cnt_gen = ContactGenerator(df_part, cint_matrices=contact_matrix, model="poisson")
+    cnt_gen = ContactSampler(df_part, cint_matrices=contact_matrix, model="poisson")
     df_cnt = cnt_gen.generate(seed=42)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age")

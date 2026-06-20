@@ -1,15 +1,15 @@
-from ._ContactGenerator import ContactGenerator
-from ._MatrixGenerator import MatrixGenerator
-from ._ParticipantGenerator import ParticipantGenerator
-from ._PopulationConstructor import PopulationConstructor
+from ._ContactSampler import ContactSampler
+from ._MatrixSampler import MatrixSampler
+from ._ParticipantSampler import ParticipantSampler
+from ._Population import Population
 from ._Stratification import Stratification
 from ._utils import print_available_countries
 
 __all__ = [
     "print_available_countries",
     "Stratification",
-    "PopulationConstructor",
-    "ParticipantGenerator",
-    "MatrixGenerator",
-    "ContactGenerator",
+    "Population",
+    "ParticipantSampler",
+    "MatrixSampler",
+    "ContactSampler",
 ]

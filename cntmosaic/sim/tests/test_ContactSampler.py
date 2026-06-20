@@ -2,17 +2,17 @@ import numpy as np
 import pytest
 
 from ...datasets._base import load_template_patterns
-from .._ContactGenerator import ContactGenerator
-from .._MatrixGenerator import MatrixGenerator
-from .._ParticipantGenerator import ParticipantGenerator
-from .._PopulationConstructor import PopulationConstructor
+from .._ContactSampler import ContactSampler
+from .._MatrixSampler import MatrixSampler
+from .._ParticipantSampler import ParticipantSampler
+from .._Population import Population
 from .._Stratification import Stratification
 
 patterns = load_template_patterns("United_States", max_age=50)
 n_ages = patterns["household"].shape[0]
 
 # ============================
-# Fixtures for ContactGenerator tests
+# Fixtures for ContactSampler tests
 # ============================
 
 
@@ -21,10 +21,10 @@ def generate_single():
     """Single population case with new API."""
     ref_age_dist = np.random.rand(n_ages) * 1000
     strat = Stratification("group", 1, ref_age_dist, labels=["All"], seed=42)
-    pop = PopulationConstructor(strat)
+    pop = Population(strat)
 
-    df_part = ParticipantGenerator(pop, n_participants=1000).generate(seed=0)
-    cint_matrices = MatrixGenerator(patterns).generate_single(
+    df_part = ParticipantSampler(pop, n_participants=1000).generate(seed=0)
+    cint_matrices = MatrixSampler(patterns).generate_single(
         pop, mean_intensity=15.0, seed=0
     )
 
@@ -38,10 +38,10 @@ def generate_partial():
     region_strat = Stratification(
         "region", 2, ref_age_dist, labels=["Urban", "Rural"], seed=42
     )
-    pop = PopulationConstructor(region_strat)
+    pop = Population(region_strat)
 
-    df_part = ParticipantGenerator(pop, n_participants=1500).generate(seed=0)
-    cint_matrices = MatrixGenerator(patterns).generate_partial(
+    df_part = ParticipantSampler(pop, n_participants=1500).generate(seed=0)
+    cint_matrices = MatrixSampler(patterns).generate_partial(
         pop, mean_intensity=15.0, seed=0
     )
 
@@ -55,10 +55,10 @@ def generate_full():
     region_strat = Stratification(
         "region", 2, ref_age_dist, labels=["Urban", "Rural"], seed=42
     )
-    pop = PopulationConstructor(region_strat)
+    pop = Population(region_strat)
 
-    df_part = ParticipantGenerator(pop, n_participants=1500).generate(seed=0)
-    cint_matrices = MatrixGenerator(patterns).generate_full(
+    df_part = ParticipantSampler(pop, n_participants=1500).generate(seed=0)
+    cint_matrices = MatrixSampler(patterns).generate_full(
         pop, mean_intensity=15.0, seed=0
     )
 
@@ -66,13 +66,13 @@ def generate_full():
 
 
 # ============================
-# Tests for ContactGenerator
+# Tests for ContactSampler
 # ============================
 def test_single(generate_single):
     """Test single population case."""
     df_part, cint_matrices = generate_single
 
-    cnt_gen = ContactGenerator(df_part, cint_matrices)
+    cnt_gen = ContactSampler(df_part, cint_matrices)
     df_cnt = cnt_gen.generate(seed=0)
 
     assert df_cnt.shape[0] > 0, "No contacts generated in single population case"
@@ -86,7 +86,7 @@ def test_partial(generate_partial):
     """Test partial case with stratified participants."""
     df_part, cint_matrices = generate_partial
 
-    cnt_gen = ContactGenerator(df_part, cint_matrices)
+    cnt_gen = ContactSampler(df_part, cint_matrices)
     df_cnt = cnt_gen.generate(seed=0)
 
     assert df_cnt.shape[0] > 0, "No contacts generated in partial case"
@@ -100,7 +100,7 @@ def test_full(generate_full):
     """Test full case with all stratum pair interactions."""
     df_part, cint_matrices = generate_full
 
-    cnt_gen = ContactGenerator(df_part, cint_matrices)
+    cnt_gen = ContactSampler(df_part, cint_matrices)
     df_cnt = cnt_gen.generate(seed=0)
 
     assert df_cnt.shape[0] > 0, "No contacts generated in full case"

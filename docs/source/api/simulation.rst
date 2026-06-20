@@ -6,28 +6,28 @@ The simulation module provides tools for generating synthetic contact data.
 Generators
 ----------
 
-ParticipantGenerator
+ParticipantSampler
 ^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: cntmosaic.sim.ParticipantGenerator
+.. autoclass:: cntmosaic.sim.ParticipantSampler
     :members:
     :undoc-members:
     :show-inheritance:
     :special-members: __init__
 
-MatrixGenerator
+MatrixSampler
 ^^^^^^^^^^^^^^^
 
-.. autoclass:: cntmosaic.sim.MatrixGenerator
+.. autoclass:: cntmosaic.sim.MatrixSampler
     :members:
     :undoc-members:
     :show-inheritance:
     :special-members: __init__
 
-ContactGenerator
+ContactSampler
 ^^^^^^^^^^^^^^^^
 
-.. autoclass:: cntmosaic.sim.ContactGenerator
+.. autoclass:: cntmosaic.sim.ContactSampler
     :members:
     :undoc-members:
     :show-inheritance:

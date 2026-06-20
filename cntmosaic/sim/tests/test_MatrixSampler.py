@@ -1,11 +1,11 @@
-"""Tests for the new MatrixGenerator implementation using PopulationConstructor."""
+"""Tests for the new MatrixSampler implementation using Population."""
 
 import numpy as np
 import pytest
 
 from ...datasets._base import load_template_patterns
-from .._MatrixGenerator import MatrixGenerator
-from .._PopulationConstructor import PopulationConstructor
+from .._MatrixSampler import MatrixSampler
+from .._Population import Population
 from .._Stratification import Stratification
 
 # ===== Fixtures =====
@@ -31,17 +31,17 @@ def real_templates():
 
 @pytest.fixture
 def simple_popcon():
-    """Create simple PopulationConstructor with single stratification."""
+    """Create simple Population with single stratification."""
     ref_age_dist = np.array([1000, 1500, 2000, 1800, 1200])
     gender_strat = Stratification(
         name="gender", n_strata=2, ref_age_dist=ref_age_dist, labels=["M", "F"], seed=42
     )
-    return PopulationConstructor(gender_strat)
+    return Population(gender_strat)
 
 
 @pytest.fixture
 def multi_popcon():
-    """Create PopulationConstructor with multiple stratifications."""
+    """Create Population with multiple stratifications."""
     ref_age_dist = np.array([1000, 1500, 2000, 1800, 1200])
     gender_strat = Stratification(
         name="gender", n_strata=2, ref_age_dist=ref_age_dist, labels=["M", "F"], seed=42
@@ -53,7 +53,7 @@ def multi_popcon():
         labels=["Urban", "Rural"],
         seed=43,
     )
-    return PopulationConstructor([gender_strat, region_strat])
+    return Population([gender_strat, region_strat])
 
 
 # ===== Template Validation Tests =====
@@ -61,7 +61,7 @@ def multi_popcon():
 
 def test_init_with_valid_templates(simple_templates):
     """Test initialization with valid templates."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     assert generator is not None
     assert hasattr(generator, "templates")
     assert generator.n_ages == 5
@@ -76,13 +76,13 @@ def test_init_missing_required_template():
         # Missing 'community'
     }
     with pytest.raises(ValueError, match="Missing required templates"):
-        MatrixGenerator(templates)
+        MatrixSampler(templates)
 
 
 def test_init_with_non_dict_templates():
     """Test that TypeError is raised for non-dictionary templates."""
     with pytest.raises(TypeError, match="templates must be a dictionary"):
-        MatrixGenerator([np.random.rand(5, 5)])
+        MatrixSampler([np.random.rand(5, 5)])
 
 
 def test_init_with_mismatched_shapes():
@@ -94,7 +94,7 @@ def test_init_with_mismatched_shapes():
         "community": np.random.rand(5, 5),
     }
     with pytest.raises(ValueError, match="All templates must have same shape"):
-        MatrixGenerator(templates)
+        MatrixSampler(templates)
 
 
 def test_init_with_non_square_matrices():
@@ -106,12 +106,12 @@ def test_init_with_non_square_matrices():
         "community": np.random.rand(5, 6),
     }
     with pytest.raises(ValueError, match="Templates must be square matrices"):
-        MatrixGenerator(templates)
+        MatrixSampler(templates)
 
 
 def test_template_normalization(simple_templates):
     """Test that templates are normalized correctly."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
 
     # Check that each normalized template has average marginal intensity of 1
     A = generator.n_ages
@@ -127,7 +127,7 @@ def test_template_normalization(simple_templates):
 
 def test_generate_single_basic(simple_templates, simple_popcon):
     """Test basic single matrix generation."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_dict = generator.generate_single(
         simple_popcon, mean_intensity=15.0, seed=42
     )
@@ -147,7 +147,7 @@ def test_generate_single_basic(simple_templates, simple_popcon):
 
 def test_generate_single_reciprocity(simple_templates, simple_popcon):
     """Test that reciprocity condition PM = (PM)^T is satisfied."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_dict = generator.generate_single(
         simple_popcon, mean_intensity=15.0, seed=42
     )
@@ -165,7 +165,7 @@ def test_generate_single_reciprocity(simple_templates, simple_popcon):
 
 def test_generate_single_reproducibility(simple_templates, simple_popcon):
     """Test that same seed produces same results."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
 
     M1_dict = generator.generate_single(
         simple_popcon, mean_intensity=15.0, seed=123
@@ -189,7 +189,7 @@ def test_generate_single_different_seeds(simple_popcon):
         "work": np.random.rand(5, 5),
         "community": np.random.rand(5, 5),
     }
-    generator = MatrixGenerator(templates)
+    generator = MatrixSampler(templates)
 
     M1_dict = generator.generate_single(
         simple_popcon, mean_intensity=15.0, seed=111
@@ -205,7 +205,7 @@ def test_generate_single_different_seeds(simple_popcon):
 
 def test_generate_single_scaling(simple_templates, simple_popcon):
     """Test that mean_intensity parameter affects matrix values."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
 
     M1_dict = generator.generate_single(
         simple_popcon, mean_intensity=10.0, seed=42
@@ -227,7 +227,7 @@ def test_generate_single_scaling(simple_templates, simple_popcon):
 
 def test_generate_partial_basic(simple_templates, simple_popcon):
     """Test basic partial matrix generation."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_partial = generator.generate_partial(
         simple_popcon, mean_intensity=15.0, seed=42
     )
@@ -244,7 +244,7 @@ def test_generate_partial_basic(simple_templates, simple_popcon):
 
 def test_generate_partial_reciprocity(simple_templates, simple_popcon):
     """Test that partial matrices are properly normalized."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_partial = generator.generate_partial(
         simple_popcon, mean_intensity=15.0, seed=42
     )
@@ -262,7 +262,7 @@ def test_generate_partial_reciprocity(simple_templates, simple_popcon):
 
 def test_generate_partial_reproducibility(simple_templates, simple_popcon):
     """Test reproducibility of partial matrix generation."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
 
     M1 = generator.generate_partial(
         simple_popcon, mean_intensity=15.0, seed=99
@@ -278,7 +278,7 @@ def test_generate_partial_reproducibility(simple_templates, simple_popcon):
 
 def test_generate_partial_multi_stratification(simple_templates, multi_popcon):
     """Test partial generation with multiple stratifications."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_partial = generator.generate_partial(
         multi_popcon, mean_intensity=15.0, seed=42
     )
@@ -298,7 +298,7 @@ def test_generate_partial_multi_stratification(simple_templates, multi_popcon):
 
 def test_generate_full_basic(simple_templates, simple_popcon):
     """Test basic full matrix generation."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_full = generator.generate_full(
         simple_popcon, mean_intensity=15.0, seed=42
     )
@@ -316,7 +316,7 @@ def test_generate_full_basic(simple_templates, simple_popcon):
 
 def test_generate_full_diagonal_symmetry(simple_templates, simple_popcon):
     """Test that diagonal blocks (within-stratum) are symmetric."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_full = generator.generate_full(
         simple_popcon, mean_intensity=15.0, seed=42
     )
@@ -335,7 +335,7 @@ def test_generate_full_off_diagonal_reciprocity(
     simple_templates, simple_popcon
 ):
     """Test reciprocity between off-diagonal blocks."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_full = generator.generate_full(
         simple_popcon, mean_intensity=15.0, seed=42
     )
@@ -365,7 +365,7 @@ def test_generate_full_off_diagonal_reciprocity(
 
 def test_generate_full_reproducibility(simple_templates, simple_popcon):
     """Test reproducibility of full matrix generation."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
 
     M1 = generator.generate_full(simple_popcon, mean_intensity=15.0, seed=333)
     M2 = generator.generate_full(simple_popcon, mean_intensity=15.0, seed=333)
@@ -377,7 +377,7 @@ def test_generate_full_reproducibility(simple_templates, simple_popcon):
 
 def test_generate_full_multi_stratification(simple_templates, multi_popcon):
     """Test full generation with multiple stratifications (2×2 strata)."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_full = generator.generate_full(
         multi_popcon, mean_intensity=15.0, seed=42
     )
@@ -397,7 +397,7 @@ def test_generate_full_multi_stratification(simple_templates, multi_popcon):
 
 def test_deviation_normalization(simple_templates, simple_popcon):
     """Test that deviations are normalized correctly."""
-    generator = MatrixGenerator(simple_templates)
+    generator = MatrixSampler(simple_templates)
     M_full = generator.generate_full(
         simple_popcon, mean_intensity=15.0, seed=42
     )
@@ -457,11 +457,11 @@ def test_single_age_group():
         "work": np.array([[4.0]]),
         "community": np.array([[2.0]]),
     }
-    generator = MatrixGenerator(templates)
+    generator = MatrixSampler(templates)
 
     ref_age_dist = np.array([1000])
     strat = Stratification(name="test", n_strata=2, ref_age_dist=ref_age_dist, seed=42)
-    pop = PopulationConstructor(strat)
+    pop = Population(strat)
 
     M_dict = generator.generate_single(pop, mean_intensity=10.0, seed=42)
     M = M_dict["All->All"]
@@ -478,11 +478,11 @@ def test_zero_intensity():
         "work": np.random.rand(3, 3),
         "community": np.random.rand(3, 3),
     }
-    generator = MatrixGenerator(templates)
+    generator = MatrixSampler(templates)
 
     ref_age_dist = np.array([100, 200, 300])
     strat = Stratification(name="test", n_strata=2, ref_age_dist=ref_age_dist, seed=42)
-    pop = PopulationConstructor(strat)
+    pop = Population(strat)
 
     M_dict = generator.generate_single(pop, mean_intensity=0.0, seed=42)
     M = M_dict["All->All"]

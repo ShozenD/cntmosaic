@@ -271,10 +271,10 @@ def synthetic_data():
     )
     from cntmosaic.datasets import load_age_distribution, load_template_patterns
     from cntmosaic.sim import (
-        ContactGenerator,
-        MatrixGenerator,
-        ParticipantGenerator,
-        PopulationConstructor,
+        ContactSampler,
+        MatrixSampler,
+        ParticipantSampler,
+        Population,
         Stratification,
     )
 
@@ -290,17 +290,17 @@ def synthetic_data():
             seed=0,
         ),
     ]
-    pc = PopulationConstructor(strats)
+    pc = Population(strats)
     df_pop = pc.df_P
     df_pop_prop = pc.df_Q
 
-    pg = ParticipantGenerator(pc, n_part=150)
+    pg = ParticipantSampler(pc, n_part=150)
     df_part = pg.generate(seed=0)
 
-    mg = MatrixGenerator(templates)
+    mg = MatrixSampler(templates)
     cint_matrices = mg.generate_partial(pc, 5, seed=0)
 
-    cg = ContactGenerator(df_part, cint_matrices, "poisson", random_effects=False)
+    cg = ContactSampler(df_part, cint_matrices, "poisson", random_effects=False)
     df_cnt = cg.generate(seed=0)
 
     return df_part, df_cnt, df_pop, df_pop_prop

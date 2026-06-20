@@ -97,7 +97,22 @@ class GenMix(ContactModel, ABC):
     ContactSurveyLoader : Data preprocessing and loading utilities
     """
 
-    ALLOWED_LIKELIHOODS = ["negbin", "poisson"]
+    ALLOWED_LIKELIHOODS = ["negbin", "poisson", "quasipoisson", "quasinegbin"]
+
+    quasi_dispersion: float = 1.0
+
+    def set_quasi_dispersion(self, psi: float) -> None:
+        """Set the dispersion (loss-scale) ``psi`` for quasi-likelihood modes.
+
+        Parameters
+        ----------
+        psi : float
+            Dispersion parameter :math:`\\psi > 0`. Calibrate from a preliminary
+            fit (e.g., the Pearson estimator) before running quasi-posterior
+            inference. Has no effect when ``likelihood`` is ``'poisson'`` or
+            ``'negbin'``.
+        """
+        self.quasi_dispersion = float(psi)
 
     def __init__(
         self,
@@ -144,7 +159,8 @@ class GenMix(ContactModel, ABC):
         Raises
         ------
         ValueError
-            If likelihood is not in ALLOWED_LIKELIHOODS.
+            If likelihood is not one of 'negbin', 'poisson', 'quasipoisson',
+            'quasinegbin'.
             If priors is not a dictionary.
             If 'rate' key is missing from priors.
 

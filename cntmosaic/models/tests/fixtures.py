@@ -9,10 +9,10 @@ import pytest
 from ...dataloader import ContactData, ParticipantData, PopulationData
 from ...datasets import load_age_distribution, load_template_patterns
 from ...sim import (
-    ContactGenerator,
-    MatrixGenerator,
-    ParticipantGenerator,
-    PopulationConstructor,
+    ContactSampler,
+    MatrixSampler,
+    ParticipantSampler,
+    Population,
     Stratification,
 )
 
@@ -29,19 +29,19 @@ def single_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P.drop(columns="general")
 
     # Generate contact matrix
-    cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
+    cnt_matrix = MatrixSampler(templates).generate_single(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrix, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age")
     cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
@@ -59,20 +59,20 @@ def single_coarse_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
     df_pop.drop(columns="general", inplace=True)
 
     # Generate contact matrix
-    cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
+    cnt_matrix = MatrixSampler(templates).generate_single(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrix, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
 
     # Simulate coarse age group reporting
     df_cnt["cnt_age_grp"] = pd.cut(
@@ -99,19 +99,19 @@ def single_small_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P.drop(columns="general")
 
     # Generate contact matrix
-    cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
+    cnt_matrix = MatrixSampler(templates).generate_single(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=50).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=50).sample(seed=42)
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrix, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age")
     cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
@@ -129,7 +129,7 @@ def single_coarse_coarse_small():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
     df_pop.drop(columns="general", inplace=True)
     df_pop["pop_age_grp"] = pd.cut(
@@ -141,10 +141,10 @@ def single_coarse_coarse_small():
     df_pop = df_pop.groupby("pop_age_grp", observed=False)["P"].sum().reset_index()
 
     # Generate contact matrix
-    cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
+    cnt_matrix = MatrixSampler(templates).generate_single(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=50).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=50).sample(seed=42)
 
     df_part["part_age_grp"] = pd.cut(
         df_part["age"],
@@ -154,9 +154,9 @@ def single_coarse_coarse_small():
     df_part.dropna(subset=["part_age_grp"], inplace=True)
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrix, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
 
     # Simulate coarse age group reporting
     df_cnt["cnt_age_grp"] = pd.cut(
@@ -183,21 +183,21 @@ def single_coarse_large_sample_with_repeats():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
     df_pop.drop(columns="general", inplace=True)
 
     # Generate contact matrix
-    cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
+    cnt_matrix = MatrixSampler(templates).generate_single(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["rid"] = np.random.choice(5, size=len(df_part))
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrix, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
 
     # Simulate coarse age group reporting
     df_cnt["cnt_age_grp"] = pd.cut(
@@ -224,20 +224,20 @@ def single_large_sample_with_repeats():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
 
     # Generate contact matrix
-    cnt_matrix = MatrixGenerator(templates).generate_single(popcon, seed=42)
+    cnt_matrix = MatrixSampler(templates).generate_single(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["rid"] = np.random.choice(5, size=len(df_part))
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrix, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
 
     part_data = ParticipantData(df_part, id_col="id", age_col="age", repeat_col="rid")
     cnt_data = ContactData(df_cnt, id_col="id", age_col="cnt_age")
@@ -256,21 +256,21 @@ def partial_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
     df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
 
     # Generate contact matrix
-    cnt_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_partial(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrices, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
 
     part_data = ParticipantData(
         df_part, id_col="id", age_col="age", strat_var_cols="sex"
@@ -295,21 +295,21 @@ def partial_coarse_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
     df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
 
     # Generate contact matrix
-    cnt_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_partial(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrices, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
     df_cnt["cnt_age_grp"] = pd.cut(
         df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
@@ -341,21 +341,21 @@ def partial_small_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
     df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
 
     # Generate contact matrix
-    cnt_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_partial(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=200).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=200).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrices, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
 
     part_data = ParticipantData(
         df_part, id_col="id", age_col="age", strat_var_cols="sex"
@@ -380,20 +380,20 @@ def partial_coarse_small_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
 
     # Generate contact matrix
-    cnt_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_partial(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=200).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=200).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
 
     # Generate contacts
-    df_cnt = ContactGenerator(
+    df_cnt = ContactSampler(
         df_part, cint_matrices=cnt_matrices, model="poisson"
-    ).generate(seed=42)
+    ).sample(seed=42)
     df_cnt["cnt_age_grp"] = pd.cut(
         df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
@@ -431,23 +431,23 @@ def partial_multi_strat_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor([strat_sex, strat_ses])
+    popcon = Population([strat_sex, strat_ses])
     df_pop = popcon.df_P
     df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
     df_pop["ses"] = pd.Categorical(df_pop["ses"], categories=["Low", "High"], ordered=True)
 
     # Generate contact matrices
-    cint_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
+    cint_matrices = MatrixSampler(templates).generate_partial(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
     df_part["ses"] = pd.Categorical(
         df_part["ses"], categories=["Low", "High"], ordered=True
     )
 
     # Generate contacts
-    df_cnt = ContactGenerator(df_part, cint_matrices=cint_matrices).generate(seed=42)
+    df_cnt = ContactSampler(df_part, cint_matrices=cint_matrices).sample(seed=42)
 
     part_data = ParticipantData(
         df_part, id_col="id", age_col="age", strat_var_cols=["sex", "ses"]
@@ -480,21 +480,21 @@ def partial_coarse_multi_strat_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor([strat_sex, strat_ses])
+    popcon = Population([strat_sex, strat_ses])
     df_pop = popcon.df_P
 
     # Generate contact matrices
-    cint_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
+    cint_matrices = MatrixSampler(templates).generate_partial(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
     df_part["ses"] = pd.Categorical(
         df_part["ses"], categories=["Low", "High"], ordered=True
     )
 
     # Generate contacts
-    df_cnt = ContactGenerator(df_part, cint_matrices=cint_matrices).generate(seed=42)
+    df_cnt = ContactSampler(df_part, cint_matrices=cint_matrices).sample(seed=42)
     df_cnt["cnt_age_grp"] = pd.cut(
         df_cnt["cnt_age"],
         bins=[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 65, 70, 75, 80],
@@ -528,19 +528,19 @@ def full_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
     df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["F", "M"], ordered=True)
 
     # Generate contact matrices
-    cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_full(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["F", "M"], ordered=True)
 
     # Generate contacts
-    df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
+    df_cnt = ContactSampler(df_part, cint_matrices=cnt_matrices).sample(seed=42)
     df_cnt["cnt_sex"] = pd.Categorical(
         df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
@@ -569,18 +569,18 @@ def full_coarse_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
 
     # Generate contact matrices
-    cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_full(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["F", "M"], ordered=True)
 
     # Generate contacts
-    df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
+    df_cnt = ContactSampler(df_part, cint_matrices=cnt_matrices).sample(seed=42)
     df_cnt["cnt_sex"] = pd.Categorical(
         df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
@@ -617,18 +617,18 @@ def full_small_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
 
     # Generate contact matrices
-    cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_full(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=N).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=N).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["F", "M"], ordered=True)
 
     # Generate contacts
-    df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
+    df_cnt = ContactSampler(df_part, cint_matrices=cnt_matrices).sample(seed=42)
     df_cnt["cnt_sex"] = pd.Categorical(
         df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
@@ -663,23 +663,23 @@ def full_multi_strat_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor([strat_sex, strat_ses])
+    popcon = Population([strat_sex, strat_ses])
     df_pop = popcon.df_P
     df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["F", "M"], ordered=True)
     df_pop["ses"] = pd.Categorical(df_pop["ses"], categories=["High", "Low"], ordered=True)
 
     # Generate contact matrices
-    cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_full(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["F", "M"], ordered=True)
     df_part["ses"] = pd.Categorical(
         df_part["ses"], categories=["High", "Low"], ordered=True
     )
 
     # Generate contacts
-    df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
+    df_cnt = ContactSampler(df_part, cint_matrices=cnt_matrices).sample(seed=42)
     df_cnt["cnt_sex"] = pd.Categorical(
         df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
@@ -719,18 +719,18 @@ def partial_coarse_coarse_large_sample():
         name="sex", n_strata=2, labels=["M", "F"], ref_age_dist=df_age_dist.P.values
     )
 
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
     df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["M", "F"], ordered=True)
 
-    cnt_matrices = MatrixGenerator(templates).generate_partial(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_partial(popcon, seed=42)
 
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["M", "F"], ordered=True)
     df_part["part_age_grp"] = pd.cut(df_part["age"], bins=_CC_BINS, right=False)
     df_part.dropna(subset=["part_age_grp"], inplace=True)
 
-    df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices, model="poisson").generate(seed=42)
+    df_cnt = ContactSampler(df_part, cint_matrices=cnt_matrices, model="poisson").sample(seed=42)
     df_cnt["cnt_age_grp"] = pd.cut(df_cnt["cnt_age"], bins=_CC_BINS, right=False)
     df_cnt.drop(columns="cnt_age", inplace=True)
     df_cnt.dropna(subset=["cnt_age_grp"], inplace=True)
@@ -760,18 +760,18 @@ def full_coarse_coarse_large_sample():
         name="sex", n_strata=2, labels=["M", "F"], ref_age_dist=df_age_dist.P.values
     )
 
-    popcon = PopulationConstructor(strat)
+    popcon = Population(strat)
     df_pop = popcon.df_P
     df_pop["sex"] = pd.Categorical(df_pop["sex"], categories=["F", "M"], ordered=True)
 
-    cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_full(popcon, seed=42)
 
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["F", "M"], ordered=True)
     df_part["part_age_grp"] = pd.cut(df_part["age"], bins=_CC_BINS, right=False)
     df_part.dropna(subset=["part_age_grp"], inplace=True)
 
-    df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
+    df_cnt = ContactSampler(df_part, cint_matrices=cnt_matrices).sample(seed=42)
     df_cnt["cnt_sex"] = pd.Categorical(
         df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )
@@ -817,21 +817,21 @@ def full_coarse_multi_strat_large_sample():
     )
 
     # Construct population
-    popcon = PopulationConstructor([strat_sex, strat_ses])
+    popcon = Population([strat_sex, strat_ses])
     df_pop = popcon.df_P
 
     # Generate contact matrices
-    cnt_matrices = MatrixGenerator(templates).generate_full(popcon, seed=42)
+    cnt_matrices = MatrixSampler(templates).generate_full(popcon, seed=42)
 
     # Generate participants
-    df_part = ParticipantGenerator(popcon, n_part=1500).generate(seed=42)
+    df_part = ParticipantSampler(popcon, n_part=1500).sample(seed=42)
     df_part["sex"] = pd.Categorical(df_part["sex"], categories=["F", "M"], ordered=True)
     df_part["ses"] = pd.Categorical(
         df_part["ses"], categories=["High", "Low"], ordered=True
     )
 
     # Generate contacts
-    df_cnt = ContactGenerator(df_part, cint_matrices=cnt_matrices).generate(seed=42)
+    df_cnt = ContactSampler(df_part, cint_matrices=cnt_matrices).sample(seed=42)
     df_cnt["cnt_sex"] = pd.Categorical(
         df_cnt["cnt_sex"], categories=["F", "M"], ordered=True
     )

@@ -146,7 +146,7 @@ dataloader = DataLoader(df_part, df_cnt, df_age_dist, col_map=col_map)
 
 ### Simulation Workflow
 ```python
-from cntmosaic.sim import Subgroup, ParticipantGenerator, MatrixGenerator, ContactGenerator
+from cntmosaic.sim import Subgroup, ParticipantSampler, MatrixSampler, ContactSampler
 from cntmosaic.datasets import load_template_patterns
 
 # 1. Load template patterns (household, school, work, community)
@@ -156,11 +156,11 @@ templates = load_template_patterns('USA')
 subgroup = Subgroup(n=500, age_dist=np.array([...]), mean_cint_margin=15.0)
 
 # 3. Generate synthetic data
-part_gen = ParticipantGenerator(subgroup)
+part_gen = ParticipantSampler(subgroup)
 participants = part_gen.generate(seed=42)
-mat_gen = MatrixGenerator(templates)
+mat_gen = MatrixSampler(templates)
 matrix = mat_gen.generate_single(subgroup, seed=42)
-contact_gen = ContactGenerator(participants, matrix)
+contact_gen = ContactSampler(participants, matrix)
 contacts = contact_gen.generate(seed=42)
 ```
 

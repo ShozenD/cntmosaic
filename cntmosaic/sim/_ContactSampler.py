@@ -1,4 +1,4 @@
-from typing import Dict
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from .._types import StratumLabel  # noqa: F401
 
 
-class ContactGenerator:
+class ContactSampler:
     """
     Generate synthetic contact count data from contact intensity matrices and participant data.
 
@@ -16,8 +16,8 @@ class ContactGenerator:
     individual random effects.
 
     The generator works with outputs from:
-    - ParticipantGenerator: provides participant demographics (df_part)
-    - MatrixGenerator: provides contact intensity matrices (cint_matrices)
+    - ParticipantSampler: provides participant demographics (df_part)
+    - MatrixSampler: provides contact intensity matrices (cint_matrices)
 
     Three modes of operation:
     1. Single population: One matrix for all participants (key: "All->All")
@@ -28,8 +28,8 @@ class ContactGenerator:
     --------
     >>> import numpy as np
     >>> from cntmosaic.sim import (
-    ...     Stratification, PopulationConstructor, MatrixGenerator,
-    ...     ParticipantGenerator, ContactGenerator
+    ...     Stratification, Population, MatrixSampler,
+    ...     ParticipantSampler, ContactSampler
     ... )
     >>> from cntmosaic.datasets import load_template_patterns
 
@@ -41,18 +41,18 @@ class ContactGenerator:
     >>>
     >>> # Create stratification and population
     >>> strat = Stratification('group', 1, ref_age_dist, labels=['All'], seed=42)
-    >>> pop = PopulationConstructor(strat)
+    >>> pop = Population(strat)
     >>>
     >>> # Generate participants and matrix
-    >>> part_gen = ParticipantGenerator(pop, n_participants=100)
-    >>> participants = part_gen.generate(seed=42)
+    >>> part_gen = ParticipantSampler(pop, n_participants=100)
+    >>> participants = part_gen.sample(seed=42)
     >>>
-    >>> mat_gen = MatrixGenerator(templates)
+    >>> mat_gen = MatrixSampler(templates)
     >>> matrices = mat_gen.generate_single(pop, mean_intensity=15.0, seed=42)
     >>>
     >>> # Generate contacts
-    >>> contact_gen = ContactGenerator(participants, matrices)
-    >>> contacts = contact_gen.generate(seed=42)
+    >>> contact_gen = ContactSampler(participants, matrices)
+    >>> contacts = contact_gen.sample(seed=42)
     >>> print(contacts.head())
        id  cnt_age   y
     0   1        2  12
@@ -67,18 +67,18 @@ class ContactGenerator:
     >>> region_strat = Stratification(
     ...     'region', 2, ref_age_dist, labels=['Urban', 'Rural'], seed=42
     ... )
-    >>> pop = PopulationConstructor(region_strat)
+    >>> pop = Population(region_strat)
     >>>
     >>> # Generate participants and matrices
-    >>> part_gen = ParticipantGenerator(pop, n_participants=150)
-    >>> participants = part_gen.generate(seed=42)
+    >>> part_gen = ParticipantSampler(pop, n_participants=150)
+    >>> participants = part_gen.sample(seed=42)
     >>>
-    >>> mat_gen = MatrixGenerator(templates)
+    >>> mat_gen = MatrixSampler(templates)
     >>> matrices = mat_gen.generate_partial(pop, mean_intensity=15.0, seed=42)
     >>> # matrices = {"Urban->All": M_urban, "Rural->All": M_rural}
     >>>
-    >>> contact_gen = ContactGenerator(participants, matrices)
-    >>> contacts = contact_gen.generate(seed=42)
+    >>> contact_gen = ContactSampler(participants, matrices)
+    >>> contacts = contact_gen.sample(seed=42)
     >>> print(contacts.head())
        id  cnt_age   y
     0   1        2  15
@@ -94,19 +94,19 @@ class ContactGenerator:
     >>> region_strat = Stratification(
     ...     'region', 2, ref_age_dist, labels=['Urban', 'Rural'], seed=42
     ... )
-    >>> pop = PopulationConstructor(region_strat)
+    >>> pop = Population(region_strat)
     >>>
     >>> # Generate participants and matrices
-    >>> part_gen = ParticipantGenerator(pop, n_participants=150)
-    >>> participants = part_gen.generate(seed=42)
+    >>> part_gen = ParticipantSampler(pop, n_participants=150)
+    >>> participants = part_gen.sample(seed=42)
     >>>
-    >>> mat_gen = MatrixGenerator(templates)
+    >>> mat_gen = MatrixSampler(templates)
     >>> matrices = mat_gen.generate_full(pop, mean_intensity=15.0, seed=42)
     >>> # matrices = {"Urban->Urban": M_uu, "Urban->Rural": M_ur,
     >>> #            "Rural->Urban": M_ru, "Rural->Rural": M_rr}
     >>>
-    >>> contact_gen = ContactGenerator(participants, matrices)
-    >>> contacts = contact_gen.generate(seed=42)
+    >>> contact_gen = ContactSampler(participants, matrices)
+    >>> contacts = contact_gen.sample(seed=42)
     >>> print(contacts.head())
        id  cnt_age  cnt_region   y
     0   1        2       Urban  12
@@ -129,25 +129,25 @@ class ContactGenerator:
         df_part: pd.DataFrame,
         cint_matrices: Dict[str, NDArray],
         model: str = "poisson",
-        odisp: float = None,
+        odisp: float | None = None,
         random_effects: bool = False,
         random_effects_shape: float = 5.0,
         random_effects_rate: float = 5.0,
     ):
         """
-        Initialize ContactGenerator with participant data and contact matrices.
+        Initialize ContactSampler with participant data and contact matrices.
 
         Parameters
         ----------
         df_part : pd.DataFrame
-                Participant data from ParticipantGenerator.generate().
+                Participant data from ParticipantSampler.generate().
                 Must contain columns:
                 - 'id': Unique participant identifier
                 - 'age': Participant age (continuous)
                 - Stratification columns (e.g., 'gender', 'region') if using stratified matrices
 
         cint_matrices : dict of str to NDArray
-                Contact intensity matrices from MatrixGenerator.
+                Contact intensity matrices from MatrixSampler.
                 Dictionary mapping string keys to contact matrices:
                 - Single case: {"All->All": matrix}
                 - Partial case: {"{label}->All": matrix} for each stratum
@@ -487,9 +487,9 @@ class ContactGenerator:
 
         return df
 
-    def generate(self, seed: int = None) -> pd.DataFrame:
+    def sample(self, seed: int | None = None) -> pd.DataFrame:
         """
-        Generate contact count data for all participants.
+        Sample contact count data for all participants.
 
         Parameters
         ----------
@@ -501,20 +501,22 @@ class ContactGenerator:
         pd.DataFrame
                 Contact data with columns:
                 - 'id': Participant identifier (matches df_part)
-                - 'age_cnt': Age group of contact
+                - 'cnt_age': Age group of contact
                 - 'y': Number of contacts with this age group
-                - 'subgroup_cnt': Subgroup of contact (only for full case)
+                - 'cnt_{strat}': Contact stratum for each stratification variable
+                  (only for full case; column name matches the stratification, e.g.
+                  'cnt_region' for a 'region' stratification)
 
                 Each row represents contacts between a participant and an age group.
                 Only non-zero contact counts are included.
 
-                Note: For partial case, there is no 'subgroup' column because contacts
-                are with the general population, not specific subgroups.
+                Note: For partial case, there is no 'cnt_{strat}' column because
+                contacts are with the general population, not specific subgroups.
 
         Examples
         --------
         >>> # Single population
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> print(contacts.head())
            id  cnt_age   y
         0   1        2  12
@@ -522,7 +524,7 @@ class ContactGenerator:
         2   2        1   5
 
         >>> # Partial case (multiple subgroups, contacts with general population)
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> print(contacts.head())
            id  cnt_age   y
         0   1        2  15
@@ -531,24 +533,24 @@ class ContactGenerator:
         3   3        0  12
         4   3        2   8
 
-        >>> # Full case (all subgroup interactions)
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> # Full case (all stratum interactions, e.g. 'region' stratification)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> print(contacts.head())
-           id  cnt_age  cnt_subgroup   y
-        0   1        2         urban  12
-        1   1        3         urban   8
-        2   1        1         rural   3
-        3   2        0         urban   7
-        4   2        2         rural   5
+           id  cnt_age  cnt_region   y
+        0   1        2       Urban  12
+        1   1        3       Urban   8
+        2   1        1       Rural   3
+        3   2        0       Urban   7
+        4   2        2       Rural   5
 
         Notes
         -----
         For participants with many contacts, the output can be large. Consider
         aggregating by age group or filtering rare contact patterns for analysis.
 
-        In the full case, each participant can have contacts with all subgroups.
-        For example, an urban participant will have contacts generated using both
-        the ('urban', 'urban') and ('urban', 'rural') matrices.
+        In the full case, each participant can have contacts with all strata.
+        For example, an Urban participant will have contacts generated using both
+        the Urban->Urban and Urban->Rural matrices.
         """
         rng = np.random.default_rng(seed)
 
@@ -611,139 +613,9 @@ class ContactGenerator:
         # Combine all source-target pairs
         return pd.concat(dfs, ignore_index=True)
 
-    def summarize_contacts(self, contacts: pd.DataFrame = None) -> pd.DataFrame:
-        """
-        Summarize contact patterns across participants.
-
-        Parameters
-        ----------
-        contacts : pd.DataFrame, optional
-                Contact data from generate(). If None, will call generate() with default seed.
-
-        Returns
-        -------
-        pd.DataFrame
-                Summary statistics with columns:
-                - For single/partial case: participant-level statistics by subgroup
-                - For full case: contact totals by source and target subgroup pairs
-
-        Examples
-        --------
-        >>> # Single case
-        >>> contacts = contact_gen.generate(seed=42)
-        >>> summary = contact_gen.summarize_contacts(contacts)
-        >>> print(summary)
-          total_participants  total_contacts  mean_contacts  median_contacts
-        0                100            1500          15.00            14.0
-
-        >>> # Partial case
-        >>> contacts = contact_gen.generate(seed=42)
-        >>> summary = contact_gen.summarize_contacts(contacts)
-        >>> print(summary)
-          subgroup  total_participants  total_contacts  mean_contacts  median_contacts
-        0    urban                 100            1800          18.00            17.0
-        1    rural                  50             600          12.00            11.0
-
-        >>> # Full case
-        >>> contacts = contact_gen.generate(seed=42)
-        >>> summary = contact_gen.summarize_contacts(contacts)
-        >>> print(summary)
-          subgroup subgroup_cnt  total_contacts  mean_contacts
-        0    urban        urban            1200          12.00
-        1    urban        rural             300           3.00
-        2    rural        urban             200           4.00
-        3    rural        rural             400           8.00
-        """
-        if contacts is None:
-            contacts = self.generate()
-
-        # Single population case
-        if not hasattr(self, "is_full_case"):
-            participant_totals = contacts.groupby("id")["y"].sum()
-
-            summary = pd.DataFrame(
-                {
-                    "total_participants": [len(participant_totals)],
-                    "total_contacts": [participant_totals.sum()],
-                    "mean_contacts": [participant_totals.mean()],
-                    "median_contacts": [participant_totals.median()],
-                    "std_contacts": [participant_totals.std()],
-                    "min_contacts": [participant_totals.min()],
-                    "max_contacts": [participant_totals.max()],
-                }
-            )
-            return summary
-
-        # Full case - summarize by source-target pairs
-        if self.is_full_case:
-            summary_data = []
-            for source_sg in self.subgroup_labels:
-                for target_sg in self.subgroup_labels:
-                    # Filter contacts from source to target
-                    mask = contacts["subgroup_cnt"] == target_sg
-                    contacts_filtered = contacts[mask]
-
-                    # Get participants from source subgroup
-                    source_participants = self.df_part[
-                        self.df_part["subgroup"] == source_sg
-                    ]["id"]
-                    contacts_source_to_target = contacts_filtered[
-                        contacts_filtered["id"].isin(source_participants)
-                    ]
-
-                    if len(contacts_source_to_target) > 0:
-                        total_contacts = contacts_source_to_target["y"].sum()
-                        n_participants = len(source_participants)
-                        mean_contacts = (
-                            total_contacts / n_participants if n_participants > 0 else 0
-                        )
-                    else:
-                        total_contacts = 0
-                        n_participants = len(source_participants)
-                        mean_contacts = 0
-
-                    summary_data.append(
-                        {
-                            "subgroup": source_sg,
-                            "subgroup_cnt": target_sg,
-                            "total_contacts": int(total_contacts),
-                            "mean_contacts": mean_contacts,
-                        }
-                    )
-
-            return pd.DataFrame(summary_data)
-
-        # Partial case - summarize by subgroup
-        # Calculate total contacts per participant
-        participant_totals = contacts.groupby("id")["y"].sum()
-
-        # Merge subgroup information
-        participant_subgroups = self.df_part[["id", "subgroup"]].set_index("id")
-        participant_totals = participant_totals.to_frame("total_contacts")
-        participant_totals = participant_totals.join(participant_subgroups)
-
-        # Calculate statistics by subgroup
-        summary = (
-            participant_totals.groupby("subgroup")["total_contacts"]
-            .agg(
-                [
-                    ("total_participants", "count"),
-                    ("total_contacts", "sum"),
-                    ("mean_contacts", "mean"),
-                    ("median_contacts", "median"),
-                    ("std_contacts", "std"),
-                    ("min_contacts", "min"),
-                    ("max_contacts", "max"),
-                ]
-            )
-            .reset_index()
-        )
-
-        return summary
-
     def get_contact_matrix_empirical(
         self, contacts: pd.DataFrame = None, normalize: bool = False
-    ) -> Dict[str, NDArray]:  # keys are "source->target" matrix labels
+    ) -> dict[str, NDArray]:  # keys are "source->target" matrix labels
         """
         Calculate empirical contact matrix from generated contact data.
 
@@ -753,7 +625,7 @@ class ContactGenerator:
         Parameters
         ----------
         contacts : pd.DataFrame, optional
-                Contact data from generate(). If None, will call generate() with default seed.
+                Contact data from sample(). If None, will call sample() with default seed.
         normalize : bool, default=False
                 If True, normalize by the number of participants in each age group
 
@@ -770,25 +642,25 @@ class ContactGenerator:
         Examples
         --------
         >>> # Single case
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> empirical = contact_gen.get_contact_matrix_empirical(contacts, normalize=True)
         >>> matrix = empirical["All->All"]
         >>> print(f"Empirical contacts from age 0 to age 1: {matrix[0, 1]:.2f}")
 
         >>> # Partial case
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> empirical = contact_gen.get_contact_matrix_empirical(contacts, normalize=True)
         >>> urban_matrix = empirical['Urban->All']
         >>> print(f"Urban contacts (age 0→1): {urban_matrix[0, 1]:.2f}")
 
         >>> # Full case
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> empirical = contact_gen.get_contact_matrix_empirical(contacts, normalize=True)
         >>> urban_to_rural = empirical['Urban->Rural']
         >>> print(f"Urban to rural contacts (age 0→1): {urban_to_rural[0, 1]:.2f}")
         """
         if contacts is None:
-            contacts = self.generate()
+            contacts = self.sample()
 
         # Determine number of age groups from contact matrix
         first_matrix = next(iter(self.cint_matrices.values()))

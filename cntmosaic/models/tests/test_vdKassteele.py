@@ -5,7 +5,7 @@ from numpyro.infer.autoguide import AutoNormal
 
 from ...dataloader import ContactSurveyLoader
 from ...datasets import load_age_distribution, load_template_patterns
-from ...sim import ContactGenerator, MatrixGenerator, ParticipantGenerator
+from ...sim import ContactSampler, MatrixSampler, ParticipantSampler
 from .._vdKassteele import vdKassteele
 from ..numpyro.priors import Spline2D
 from .fixtures import (

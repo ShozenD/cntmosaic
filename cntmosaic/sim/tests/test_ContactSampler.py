@@ -23,7 +23,7 @@ def generate_single():
     strat = Stratification("group", 1, ref_age_dist, labels=["All"], seed=42)
     pop = Population(strat)
 
-    df_part = ParticipantSampler(pop, n_participants=1000).sample(seed=0)
+    df_part = ParticipantSampler(pop, n_part=1000).sample(seed=0)
     cint_matrices = MatrixSampler(patterns).generate_single(
         pop, mean_intensity=15.0, seed=0
     )
@@ -40,7 +40,7 @@ def generate_partial():
     )
     pop = Population(region_strat)
 
-    df_part = ParticipantSampler(pop, n_participants=1500).sample(seed=0)
+    df_part = ParticipantSampler(pop, n_part=1500).sample(seed=0)
     cint_matrices = MatrixSampler(patterns).generate_partial(
         pop, mean_intensity=15.0, seed=0
     )
@@ -57,7 +57,7 @@ def generate_full():
     )
     pop = Population(region_strat)
 
-    df_part = ParticipantSampler(pop, n_participants=1500).sample(seed=0)
+    df_part = ParticipantSampler(pop, n_part=1500).sample(seed=0)
     cint_matrices = MatrixSampler(patterns).generate_full(
         pop, mean_intensity=15.0, seed=0
     )

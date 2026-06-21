@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from itertools import product
-from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -155,8 +154,7 @@ class ParticipantSampler:
     def __init__(
         self,
         popcon: Population,
-        n_part: Optional[int] = None,
-        n_participants: Optional[int] = None,
+        n_part: int,
     ) -> None:
         """
         Initialize ParticipantSampler with population structure.
@@ -165,35 +163,24 @@ class ParticipantSampler:
         ----------
         popcon : Population
             Population structure defining stratifications and age distributions.
-        n_part : int, optional
+        n_part : int
             Total number of participants to generate. Must be positive.
-        n_participants : int, optional
-            Alias for n_part. Provide exactly one of n_part or n_participants.
 
         Raises
         ------
         ValueError
-            If n_part is not positive, or if neither/both aliases are provided.
+            If n_part is not positive.
         TypeError
             If popcon is not a Population instance.
         """
         if not isinstance(popcon, Population):
             raise TypeError(f"popcon must be Population, got {type(popcon)}")
-
-        if n_part is None and n_participants is None:
-            raise TypeError("Must provide one of 'n_part' or 'n_participants'")
-        if n_part is not None and n_participants is not None:
-            raise TypeError("Provide only one of 'n_part' or 'n_participants', not both")
-
-        n_part = n_part if n_part is not None else n_participants
-
         if n_part <= 0:
             raise ValueError(f"n_part must be positive, got {n_part}")
 
         self.popcon = popcon
         self.n_part = n_part
 
-        # Extract population structure
         self._extract_population_structure()
 
     @classmethod
@@ -201,7 +188,7 @@ class ParticipantSampler:
         cls,
         df: pd.DataFrame,
         n_part: int,
-        strat_var_cols: Optional[List[str]] = None,
+        strat_var_cols: list[str] | None = None,
         age_col: str = "age",
         pop_col: str = "P",
     ) -> ParticipantSampler:
@@ -307,24 +294,11 @@ class ParticipantSampler:
     def _extract_population_structure_from_df(
         self,
         df: pd.DataFrame,
-        strat_var_cols: List[str],
+        strat_var_cols: list[str],
         age_col: str,
         pop_col: str,
     ) -> None:
-        """
-        Extract population structure from a DataFrame.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            DataFrame with population sizes.
-        strat_var_cols : list of str
-            Names of stratification variable columns.
-        age_col : str
-            Name of age column.
-        pop_col : str
-            Name of population size column.
-        """
+        """Extract population structure from a DataFrame."""
         # Get unique ages (sorted)
         ages = np.sort(df[age_col].unique())
         self.n_ages = len(ages)
@@ -332,21 +306,17 @@ class ParticipantSampler:
 
         # Handle case with no stratification variables
         if len(strat_var_cols) == 0:
-            # Unstratified: single stratum
             self.n_strata = 1
             self.strat_names = []
             self.strat_labels = [()]
             self.is_multi_strat = False
 
-            # Global age distribution
             ref_age_dist = np.zeros(self.n_ages)
             for _, row in df.iterrows():
                 age_idx = age_to_idx[row[age_col]]
                 ref_age_dist[age_idx] = row[pop_col]
 
             self.global_age_dist = ref_age_dist / ref_age_dist.sum()
-
-            # Q matrix is trivially all ones (single stratum)
             self.Q = np.ones((1, self.n_ages))
             return
 
@@ -362,7 +332,6 @@ class ParticipantSampler:
         else:
             self.is_multi_strat = True
             self.strat_names = strat_var_cols
-            # Generate all combinations of categories
             strat_tuples = list(
                 product(*[strat_categories[var] for var in strat_var_cols])
             )
@@ -370,12 +339,10 @@ class ParticipantSampler:
 
         self.n_strata = len(strat_tuples)
 
-        # Create mapping from stratum tuple to index
         strat_to_idx = {tup: idx for idx, tup in enumerate(strat_tuples)}
 
         # Build population matrix P[s, a]
         P_matrix = np.zeros((self.n_strata, self.n_ages))
-
         for _, row in df.iterrows():
             age_idx = age_to_idx[row[age_col]]
             strat_tuple = tuple(row[var] for var in strat_var_cols)
@@ -383,133 +350,72 @@ class ParticipantSampler:
                 strat_idx = strat_to_idx[strat_tuple]
                 P_matrix[strat_idx, age_idx] = row[pop_col]
 
-        # Compute global age distribution (sum across strata)
         ref_age_dist = P_matrix.sum(axis=0)
         self.global_age_dist = ref_age_dist / ref_age_dist.sum()
 
-        # Compute Q matrix: Q[s, a] = P[s, a] / sum_s(P[s, a])
-        # Handle potential division by zero for ages with no population
         with np.errstate(divide="ignore", invalid="ignore"):
             self.Q = P_matrix / ref_age_dist[np.newaxis, :]
-            # Set Q to uniform for ages with zero population
             zero_pop_ages = ref_age_dist == 0
             if zero_pop_ages.any():
                 self.Q[:, zero_pop_ages] = 1.0 / self.n_strata
 
     def _extract_population_structure(self) -> None:
         """Extract and validate population structure from Population."""
-        # Get reference age distribution and normalize to proportions
         ref_age_dist = self.popcon.ref_age_dist
         self.global_age_dist = ref_age_dist / ref_age_dist.sum()
         self.n_ages = len(self.global_age_dist)
 
-        # Get population proportion matrix Q
         self.Q = self.popcon.Q  # Shape: (n_strata, n_ages)
         self.n_strata = self.Q.shape[0]
 
-        # Extract stratification metadata
         self._extract_stratification_info()
 
     def _extract_stratification_info(self) -> None:
         """Extract stratification variable names and labels."""
-        # Check if single or multiple stratifications
         if isinstance(self.popcon.strats, Stratification):
-            # Single stratification
             self.strat_names = [self.popcon.strats.name]
             self.strat_labels = self.popcon.strats.labels
             self.is_multi_strat = False
         else:
-            # Multiple stratifications
             self.strat_names = [strat.name for strat in self.popcon.strats]
             self.strat_labels = self.popcon.coord_labels
             self.is_multi_strat = True
 
     def _sample_ages(self, rng: np.random.Generator) -> NDArray:
-        """
-        Sample ages from global population distribution.
-
-        Parameters
-        ----------
-        rng : np.random.Generator
-            Random number generator.
-
-        Returns
-        -------
-        NDArray
-            Array of sampled ages (length n_part).
-        """
-        ages = rng.choice(self.n_ages, size=self.n_part, p=self.global_age_dist)
-        return ages
+        """Sample ages from global population distribution."""
+        return rng.choice(self.n_ages, size=self.n_part, p=self.global_age_dist)
 
     def _sample_strata_given_ages(
         self, ages: NDArray, rng: np.random.Generator
     ) -> NDArray:
-        """
-        Sample strata conditional on ages using Q matrix.
-
-        For each age a, samples stratum from categorical distribution Q[:, a].
-
-        Parameters
-        ----------
-        ages : NDArray
-            Array of participant ages (length n_part).
-        rng : np.random.Generator
-            Random number generator.
-
-        Returns
-        -------
-        NDArray
-            Array of sampled stratum indices (length n_part).
-        """
+        """Sample strata conditional on ages using Q matrix."""
         strata = np.zeros(self.n_part, dtype=int)
 
         for i, age in enumerate(ages):
-            # Get conditional distribution over strata given this age
             probs_given_age = self.Q[:, age]
-
-            # Normalize to ensure valid probability distribution
             probs_given_age = probs_given_age / probs_given_age.sum()
-
-            # Sample stratum
             strata[i] = rng.choice(self.n_strata, p=probs_given_age)
 
         return strata
 
     def _map_strata_to_labels(
         self, strata: NDArray
-    ) -> Optional[Union[pd.Series, pd.DataFrame]]:
-        """
-        Map stratum indices to stratification variable labels.
-
-        Parameters
-        ----------
-        strata : NDArray
-            Array of stratum indices (length n_part).
-
-        Returns
-        -------
-        pd.Series, pd.DataFrame, or None
-            If no stratification: None.
-            If single stratification: Series with stratification values.
-            If multiple stratifications: DataFrame with columns for each variable.
-        """
-        # Handle unstratified case
+    ) -> pd.Series | pd.DataFrame | None:
+        """Map stratum indices to stratification variable labels."""
         if len(self.strat_names) == 0:
             return None
 
         if not self.is_multi_strat:
-            # Single stratification: return Series
             labels = [self.strat_labels[s] for s in strata]
             return pd.Series(labels, name=self.strat_names[0])
         else:
-            # Multiple stratifications: return DataFrame
             data = {}
             for j, strat_name in enumerate(self.strat_names):
                 labels = [self.strat_labels[s][j] for s in strata]
                 data[strat_name] = labels
             return pd.DataFrame(data)
 
-    def sample(self, seed: Optional[int] = None) -> pd.DataFrame:
+    def sample(self, seed: int | None = None) -> pd.DataFrame:
         """
         Sample synthetic participant data.
 
@@ -542,16 +448,10 @@ class ParticipantSampler:
         """
         rng = np.random.default_rng(seed)
 
-        # Step 1: Sample ages from global distribution
         ages = self._sample_ages(rng)
-
-        # Step 2: Sample strata conditional on ages
         strata = self._sample_strata_given_ages(ages, rng)
-
-        # Step 3: Map strata to labels
         strat_data = self._map_strata_to_labels(strata)
 
-        # Build final DataFrame
         df = pd.DataFrame(
             {
                 "id": np.arange(1, self.n_part + 1),
@@ -559,12 +459,9 @@ class ParticipantSampler:
             }
         )
 
-        # Append stratification columns (if any)
-        if strat_data is None:
-            pass  # No stratification variables
-        elif isinstance(strat_data, pd.Series):
+        if isinstance(strat_data, pd.Series):
             df[strat_data.name] = strat_data.values
-        else:
+        elif isinstance(strat_data, pd.DataFrame):
             for col in strat_data.columns:
                 df[col] = strat_data[col].values
 

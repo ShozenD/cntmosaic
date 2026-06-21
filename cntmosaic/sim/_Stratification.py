@@ -60,6 +60,7 @@ class Stratification:
     # No default here: __post_init__ always assigns these before any method can run.
     codes: list[int] = field(init=False, repr=False)
     A: int = field(init=False, repr=False)
+    _auto_alpha: bool = field(default=False, init=False, repr=False)
     _P: NDArray | None = field(default=None, init=False, repr=False)
     _Q: NDArray | None = field(default=None, init=False, repr=False)
     _df_P: pd.DataFrame | None = field(default=None, init=False, repr=False)
@@ -71,6 +72,7 @@ class Stratification:
         self.codes = list(range(len(self.labels)))
         self.A = len(self.ref_age_dist)
 
+        self._auto_alpha = self.alpha is None
         if self.alpha is None:
             self.alpha = np.random.default_rng(self.seed).uniform(0.01, 0.2)
 
@@ -104,6 +106,9 @@ class Stratification:
         """
         if seed is not None:
             self.seed = seed
+
+        if self._auto_alpha:
+            self.alpha = np.random.default_rng(self.seed).uniform(0.01, 0.2)
 
         self._P = None
         self._Q = None

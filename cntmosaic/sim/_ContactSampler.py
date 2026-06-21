@@ -1,4 +1,4 @@
-from typing import Dict
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
@@ -129,7 +129,7 @@ class ContactSampler:
         df_part: pd.DataFrame,
         cint_matrices: Dict[str, NDArray],
         model: str = "poisson",
-        odisp: float = None,
+        odisp: float | None = None,
         random_effects: bool = False,
         random_effects_shape: float = 5.0,
         random_effects_rate: float = 5.0,
@@ -501,15 +501,17 @@ class ContactSampler:
         pd.DataFrame
                 Contact data with columns:
                 - 'id': Participant identifier (matches df_part)
-                - 'age_cnt': Age group of contact
+                - 'cnt_age': Age group of contact
                 - 'y': Number of contacts with this age group
-                - 'subgroup_cnt': Subgroup of contact (only for full case)
+                - 'cnt_{strat}': Contact stratum for each stratification variable
+                  (only for full case; column name matches the stratification, e.g.
+                  'cnt_region' for a 'region' stratification)
 
                 Each row represents contacts between a participant and an age group.
                 Only non-zero contact counts are included.
 
-                Note: For partial case, there is no 'subgroup' column because contacts
-                are with the general population, not specific subgroups.
+                Note: For partial case, there is no 'cnt_{strat}' column because
+                contacts are with the general population, not specific subgroups.
 
         Examples
         --------
@@ -531,24 +533,24 @@ class ContactSampler:
         3   3        0  12
         4   3        2   8
 
-        >>> # Full case (all subgroup interactions)
+        >>> # Full case (all stratum interactions, e.g. 'region' stratification)
         >>> contacts = contact_gen.sample(seed=42)
         >>> print(contacts.head())
-           id  cnt_age  cnt_subgroup   y
-        0   1        2         urban  12
-        1   1        3         urban   8
-        2   1        1         rural   3
-        3   2        0         urban   7
-        4   2        2         rural   5
+           id  cnt_age  cnt_region   y
+        0   1        2       Urban  12
+        1   1        3       Urban   8
+        2   1        1       Rural   3
+        3   2        0       Urban   7
+        4   2        2       Rural   5
 
         Notes
         -----
         For participants with many contacts, the output can be large. Consider
         aggregating by age group or filtering rare contact patterns for analysis.
 
-        In the full case, each participant can have contacts with all subgroups.
-        For example, an urban participant will have contacts generated using both
-        the ('urban', 'urban') and ('urban', 'rural') matrices.
+        In the full case, each participant can have contacts with all strata.
+        For example, an Urban participant will have contacts generated using both
+        the Urban->Urban and Urban->Rural matrices.
         """
         rng = np.random.default_rng(seed)
 
@@ -611,139 +613,9 @@ class ContactSampler:
         # Combine all source-target pairs
         return pd.concat(dfs, ignore_index=True)
 
-    def summarize_contacts(self, contacts: pd.DataFrame = None) -> pd.DataFrame:
-        """
-        Summarize contact patterns across participants.
-
-        Parameters
-        ----------
-        contacts : pd.DataFrame, optional
-                Contact data from sample(). If None, will call sample() with default seed.
-
-        Returns
-        -------
-        pd.DataFrame
-                Summary statistics with columns:
-                - For single/partial case: participant-level statistics by subgroup
-                - For full case: contact totals by source and target subgroup pairs
-
-        Examples
-        --------
-        >>> # Single case
-        >>> contacts = contact_gen.sample(seed=42)
-        >>> summary = contact_gen.summarize_contacts(contacts)
-        >>> print(summary)
-          total_participants  total_contacts  mean_contacts  median_contacts
-        0                100            1500          15.00            14.0
-
-        >>> # Partial case
-        >>> contacts = contact_gen.sample(seed=42)
-        >>> summary = contact_gen.summarize_contacts(contacts)
-        >>> print(summary)
-          subgroup  total_participants  total_contacts  mean_contacts  median_contacts
-        0    urban                 100            1800          18.00            17.0
-        1    rural                  50             600          12.00            11.0
-
-        >>> # Full case
-        >>> contacts = contact_gen.sample(seed=42)
-        >>> summary = contact_gen.summarize_contacts(contacts)
-        >>> print(summary)
-          subgroup subgroup_cnt  total_contacts  mean_contacts
-        0    urban        urban            1200          12.00
-        1    urban        rural             300           3.00
-        2    rural        urban             200           4.00
-        3    rural        rural             400           8.00
-        """
-        if contacts is None:
-            contacts = self.sample()
-
-        # Single population case
-        if not hasattr(self, "is_full_case"):
-            participant_totals = contacts.groupby("id")["y"].sum()
-
-            summary = pd.DataFrame(
-                {
-                    "total_participants": [len(participant_totals)],
-                    "total_contacts": [participant_totals.sum()],
-                    "mean_contacts": [participant_totals.mean()],
-                    "median_contacts": [participant_totals.median()],
-                    "std_contacts": [participant_totals.std()],
-                    "min_contacts": [participant_totals.min()],
-                    "max_contacts": [participant_totals.max()],
-                }
-            )
-            return summary
-
-        # Full case - summarize by source-target pairs
-        if self.is_full_case:
-            summary_data = []
-            for source_sg in self.subgroup_labels:
-                for target_sg in self.subgroup_labels:
-                    # Filter contacts from source to target
-                    mask = contacts["subgroup_cnt"] == target_sg
-                    contacts_filtered = contacts[mask]
-
-                    # Get participants from source subgroup
-                    source_participants = self.df_part[
-                        self.df_part["subgroup"] == source_sg
-                    ]["id"]
-                    contacts_source_to_target = contacts_filtered[
-                        contacts_filtered["id"].isin(source_participants)
-                    ]
-
-                    if len(contacts_source_to_target) > 0:
-                        total_contacts = contacts_source_to_target["y"].sum()
-                        n_participants = len(source_participants)
-                        mean_contacts = (
-                            total_contacts / n_participants if n_participants > 0 else 0
-                        )
-                    else:
-                        total_contacts = 0
-                        n_participants = len(source_participants)
-                        mean_contacts = 0
-
-                    summary_data.append(
-                        {
-                            "subgroup": source_sg,
-                            "subgroup_cnt": target_sg,
-                            "total_contacts": int(total_contacts),
-                            "mean_contacts": mean_contacts,
-                        }
-                    )
-
-            return pd.DataFrame(summary_data)
-
-        # Partial case - summarize by subgroup
-        # Calculate total contacts per participant
-        participant_totals = contacts.groupby("id")["y"].sum()
-
-        # Merge subgroup information
-        participant_subgroups = self.df_part[["id", "subgroup"]].set_index("id")
-        participant_totals = participant_totals.to_frame("total_contacts")
-        participant_totals = participant_totals.join(participant_subgroups)
-
-        # Calculate statistics by subgroup
-        summary = (
-            participant_totals.groupby("subgroup")["total_contacts"]
-            .agg(
-                [
-                    ("total_participants", "count"),
-                    ("total_contacts", "sum"),
-                    ("mean_contacts", "mean"),
-                    ("median_contacts", "median"),
-                    ("std_contacts", "std"),
-                    ("min_contacts", "min"),
-                    ("max_contacts", "max"),
-                ]
-            )
-            .reset_index()
-        )
-
-        return summary
-
     def get_contact_matrix_empirical(
         self, contacts: pd.DataFrame = None, normalize: bool = False
-    ) -> Dict[str, NDArray]:  # keys are "source->target" matrix labels
+    ) -> dict[str, NDArray]:  # keys are "source->target" matrix labels
         """
         Calculate empirical contact matrix from generated contact data.
 

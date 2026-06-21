@@ -2,14 +2,13 @@
 cntmosaic.models.classical
 ==========================
 
-Classical (deterministic / frequentist) contact matrix models.
+Contact matrix models — both classical frequentist (SocialMix) and Bayesian
+(Prem) implementations.
 
-The primary model in this subpackage is :class:`SocialMix`, which implements
-the socialmixr algorithm (Funk et al. 2024) for estimating age-structured
-contact matrices from survey data.
-
-All models in this subpackage inherit from :class:`DeterministicContactModel`,
-which provides the common ``fit()`` / ``predict()`` interface.
+The primary frequentist model is :class:`SocialMix`, which implements the
+socialmixr algorithm (Funk et al. 2024) for estimating age-structured contact
+matrices from survey data.  :class:`Prem` implements the Bayesian methodology
+from Prem et al. (2017).
 
 Public API
 ----------
@@ -21,14 +20,18 @@ SocialMixBootstrap
     Bootstrap uncertainty quantification for SocialMix.
 BootstrapResults
     Container for bootstrap estimation results.
+Prem
+    Bayesian contact matrix estimator (Prem et al. 2017).
 """
 
 from ._base import DeterministicContactModel
+from ._Prem import Prem
 from ._SocialMix import SocialMix
 from ._socialmix_bootstrap import BootstrapResults, SocialMixBootstrap
 
 __all__ = [
     "DeterministicContactModel",
+    "Prem",
     "SocialMix",
     "SocialMixBootstrap",
     "BootstrapResults",

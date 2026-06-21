@@ -7,7 +7,7 @@ from jax.random import PRNGKey
 
 from ...analysis.summariser import ModelSummariserPrem
 from ...utils import AgeBins
-from .._Prem import Prem
+from ..classical import Prem
 from .fixtures import (
     full_large_sample,
     full_multi_strat_large_sample,

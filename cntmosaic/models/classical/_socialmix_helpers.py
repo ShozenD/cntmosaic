@@ -1,8 +1,8 @@
 """
-Shared stateless helpers for SocialMix.
+Shared stateless helpers for classical contact models.
 
-These functions are used by SocialMix, SocialMixValidator, and SocialMixBootstrap
-to avoid duplicated logic across those classes.
+These functions are used by SocialMix, SocialMixValidator, SocialMixBootstrap,
+and Prem to avoid duplicated logic across those classes.
 """
 
 import itertools
@@ -204,3 +204,80 @@ def apply_reciprocity(
         result[label] = m_adj
 
     return result
+
+
+def validate_shared_strat_vars(strat_vars_shared: List[str], part_data, cnt_data) -> None:
+    """Validate and align categories for variables present in both participant and contact data.
+
+    Ensures both sides have identical category sets. When sets match but ordering
+    differs, the contact side is reordered to match the participant side.
+
+    Raises
+    ------
+    ValueError
+        If both sides have different category values for any shared variable.
+    """
+    for var in strat_vars_shared:
+        col_part = f"part_{var}"
+        col_cnt = f"cnt_{var}"
+
+        part_col = part_data.data[col_part]
+        cnt_col = cnt_data.data[col_cnt]
+
+        if not hasattr(part_col, "cat"):
+            part_data.data[col_part] = part_col.astype("category")
+            part_col = part_data.data[col_part]
+        if not hasattr(cnt_col, "cat"):
+            cnt_data.data[col_cnt] = cnt_col.astype("category")
+            cnt_col = cnt_data.data[col_cnt]
+
+        part_cats = list(part_col.cat.categories)
+        cnt_cats = list(cnt_col.cat.categories)
+
+        if set(part_cats) != set(cnt_cats):
+            only_part = set(part_cats) - set(cnt_cats)
+            only_cnt = set(cnt_cats) - set(part_cats)
+            raise ValueError(
+                f"Shared stratification variable '{var}' has different categories:\n"
+                f"  Participant side: {part_cats}\n"
+                f"  Contact side: {cnt_cats}\n"
+                f"  Only in participants: {sorted(only_part) if only_part else 'None'}\n"
+                f"  Only in contacts: {sorted(only_cnt) if only_cnt else 'None'}\n"
+                f"For shared variables, both sides must have identical categories."
+            )
+
+        if part_cats != cnt_cats:
+            cnt_data.data[col_cnt] = (
+                cnt_data.data[col_cnt].cat.reorder_categories(part_cats, ordered=cnt_col.cat.ordered)
+            )
+
+
+def row_stratum_labels(
+    df: pd.DataFrame, part_cols: List[str], cnt_cols: List[str]
+) -> pd.Series:
+    """Assign a ``"source->target"`` stratum label to each row in *df*.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Aggregated data frame with stratification columns.
+    part_cols : list of str
+        Participant-side column names (e.g. ``["part_sex"]``).
+    cnt_cols : list of str
+        Contact-side column names (e.g. ``["cnt_sex"]``).
+
+    Returns
+    -------
+    pd.Series
+        Per-row label such as ``"M->F"`` or ``"All->All"``.
+    """
+    def _side(cols: List[str]) -> pd.Series:
+        present = [c for c in cols if c in df.columns]
+        if not present:
+            return pd.Series(["All"] * len(df), index=df.index)
+        result = df[present[0]].astype(str)
+        for col in present[1:]:
+            result = result + "_" + df[col].astype(str)
+        return result
+
+    return _side(part_cols) + "->" + _side(cnt_cols)

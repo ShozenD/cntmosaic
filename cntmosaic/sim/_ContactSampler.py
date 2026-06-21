@@ -45,14 +45,14 @@ class ContactSampler:
     >>>
     >>> # Generate participants and matrix
     >>> part_gen = ParticipantSampler(pop, n_participants=100)
-    >>> participants = part_gen.generate(seed=42)
+    >>> participants = part_gen.sample(seed=42)
     >>>
     >>> mat_gen = MatrixSampler(templates)
     >>> matrices = mat_gen.generate_single(pop, mean_intensity=15.0, seed=42)
     >>>
     >>> # Generate contacts
     >>> contact_gen = ContactSampler(participants, matrices)
-    >>> contacts = contact_gen.generate(seed=42)
+    >>> contacts = contact_gen.sample(seed=42)
     >>> print(contacts.head())
        id  cnt_age   y
     0   1        2  12
@@ -71,14 +71,14 @@ class ContactSampler:
     >>>
     >>> # Generate participants and matrices
     >>> part_gen = ParticipantSampler(pop, n_participants=150)
-    >>> participants = part_gen.generate(seed=42)
+    >>> participants = part_gen.sample(seed=42)
     >>>
     >>> mat_gen = MatrixSampler(templates)
     >>> matrices = mat_gen.generate_partial(pop, mean_intensity=15.0, seed=42)
     >>> # matrices = {"Urban->All": M_urban, "Rural->All": M_rural}
     >>>
     >>> contact_gen = ContactSampler(participants, matrices)
-    >>> contacts = contact_gen.generate(seed=42)
+    >>> contacts = contact_gen.sample(seed=42)
     >>> print(contacts.head())
        id  cnt_age   y
     0   1        2  15
@@ -98,7 +98,7 @@ class ContactSampler:
     >>>
     >>> # Generate participants and matrices
     >>> part_gen = ParticipantSampler(pop, n_participants=150)
-    >>> participants = part_gen.generate(seed=42)
+    >>> participants = part_gen.sample(seed=42)
     >>>
     >>> mat_gen = MatrixSampler(templates)
     >>> matrices = mat_gen.generate_full(pop, mean_intensity=15.0, seed=42)
@@ -106,7 +106,7 @@ class ContactSampler:
     >>> #            "Rural->Urban": M_ru, "Rural->Rural": M_rr}
     >>>
     >>> contact_gen = ContactSampler(participants, matrices)
-    >>> contacts = contact_gen.generate(seed=42)
+    >>> contacts = contact_gen.sample(seed=42)
     >>> print(contacts.head())
        id  cnt_age  cnt_region   y
     0   1        2       Urban  12
@@ -487,9 +487,9 @@ class ContactSampler:
 
         return df
 
-    def generate(self, seed: int = None) -> pd.DataFrame:
+    def sample(self, seed: int | None = None) -> pd.DataFrame:
         """
-        Generate contact count data for all participants.
+        Sample contact count data for all participants.
 
         Parameters
         ----------
@@ -514,7 +514,7 @@ class ContactSampler:
         Examples
         --------
         >>> # Single population
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> print(contacts.head())
            id  cnt_age   y
         0   1        2  12
@@ -522,7 +522,7 @@ class ContactSampler:
         2   2        1   5
 
         >>> # Partial case (multiple subgroups, contacts with general population)
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> print(contacts.head())
            id  cnt_age   y
         0   1        2  15
@@ -532,7 +532,7 @@ class ContactSampler:
         4   3        2   8
 
         >>> # Full case (all subgroup interactions)
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> print(contacts.head())
            id  cnt_age  cnt_subgroup   y
         0   1        2         urban  12
@@ -618,7 +618,7 @@ class ContactSampler:
         Parameters
         ----------
         contacts : pd.DataFrame, optional
-                Contact data from generate(). If None, will call generate() with default seed.
+                Contact data from sample(). If None, will call sample() with default seed.
 
         Returns
         -------
@@ -630,14 +630,14 @@ class ContactSampler:
         Examples
         --------
         >>> # Single case
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> summary = contact_gen.summarize_contacts(contacts)
         >>> print(summary)
           total_participants  total_contacts  mean_contacts  median_contacts
         0                100            1500          15.00            14.0
 
         >>> # Partial case
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> summary = contact_gen.summarize_contacts(contacts)
         >>> print(summary)
           subgroup  total_participants  total_contacts  mean_contacts  median_contacts
@@ -645,7 +645,7 @@ class ContactSampler:
         1    rural                  50             600          12.00            11.0
 
         >>> # Full case
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> summary = contact_gen.summarize_contacts(contacts)
         >>> print(summary)
           subgroup subgroup_cnt  total_contacts  mean_contacts
@@ -655,7 +655,7 @@ class ContactSampler:
         3    rural        rural             400           8.00
         """
         if contacts is None:
-            contacts = self.generate()
+            contacts = self.sample()
 
         # Single population case
         if not hasattr(self, "is_full_case"):
@@ -753,7 +753,7 @@ class ContactSampler:
         Parameters
         ----------
         contacts : pd.DataFrame, optional
-                Contact data from generate(). If None, will call generate() with default seed.
+                Contact data from sample(). If None, will call sample() with default seed.
         normalize : bool, default=False
                 If True, normalize by the number of participants in each age group
 
@@ -770,25 +770,25 @@ class ContactSampler:
         Examples
         --------
         >>> # Single case
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> empirical = contact_gen.get_contact_matrix_empirical(contacts, normalize=True)
         >>> matrix = empirical["All->All"]
         >>> print(f"Empirical contacts from age 0 to age 1: {matrix[0, 1]:.2f}")
 
         >>> # Partial case
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> empirical = contact_gen.get_contact_matrix_empirical(contacts, normalize=True)
         >>> urban_matrix = empirical['Urban->All']
         >>> print(f"Urban contacts (age 0→1): {urban_matrix[0, 1]:.2f}")
 
         >>> # Full case
-        >>> contacts = contact_gen.generate(seed=42)
+        >>> contacts = contact_gen.sample(seed=42)
         >>> empirical = contact_gen.get_contact_matrix_empirical(contacts, normalize=True)
         >>> urban_to_rural = empirical['Urban->Rural']
         >>> print(f"Urban to rural contacts (age 0→1): {urban_to_rural[0, 1]:.2f}")
         """
         if contacts is None:
-            contacts = self.generate()
+            contacts = self.sample()
 
         # Determine number of age groups from contact matrix
         first_matrix = next(iter(self.cint_matrices.values()))

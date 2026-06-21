@@ -23,7 +23,7 @@ def generate_single():
     strat = Stratification("group", 1, ref_age_dist, labels=["All"], seed=42)
     pop = Population(strat)
 
-    df_part = ParticipantSampler(pop, n_participants=1000).generate(seed=0)
+    df_part = ParticipantSampler(pop, n_participants=1000).sample(seed=0)
     cint_matrices = MatrixSampler(patterns).generate_single(
         pop, mean_intensity=15.0, seed=0
     )
@@ -40,7 +40,7 @@ def generate_partial():
     )
     pop = Population(region_strat)
 
-    df_part = ParticipantSampler(pop, n_participants=1500).generate(seed=0)
+    df_part = ParticipantSampler(pop, n_participants=1500).sample(seed=0)
     cint_matrices = MatrixSampler(patterns).generate_partial(
         pop, mean_intensity=15.0, seed=0
     )
@@ -57,7 +57,7 @@ def generate_full():
     )
     pop = Population(region_strat)
 
-    df_part = ParticipantSampler(pop, n_participants=1500).generate(seed=0)
+    df_part = ParticipantSampler(pop, n_participants=1500).sample(seed=0)
     cint_matrices = MatrixSampler(patterns).generate_full(
         pop, mean_intensity=15.0, seed=0
     )
@@ -73,7 +73,7 @@ def test_single(generate_single):
     df_part, cint_matrices = generate_single
 
     cnt_gen = ContactSampler(df_part, cint_matrices)
-    df_cnt = cnt_gen.generate(seed=0)
+    df_cnt = cnt_gen.sample(seed=0)
 
     assert df_cnt.shape[0] > 0, "No contacts generated in single population case"
     assert df_cnt.columns.tolist() == ["id", "cnt_age", "y"]
@@ -87,7 +87,7 @@ def test_partial(generate_partial):
     df_part, cint_matrices = generate_partial
 
     cnt_gen = ContactSampler(df_part, cint_matrices)
-    df_cnt = cnt_gen.generate(seed=0)
+    df_cnt = cnt_gen.sample(seed=0)
 
     assert df_cnt.shape[0] > 0, "No contacts generated in partial case"
     assert df_cnt.columns.tolist() == ["id", "cnt_age", "y"]
@@ -101,7 +101,7 @@ def test_full(generate_full):
     df_part, cint_matrices = generate_full
 
     cnt_gen = ContactSampler(df_part, cint_matrices)
-    df_cnt = cnt_gen.generate(seed=0)
+    df_cnt = cnt_gen.sample(seed=0)
 
     assert df_cnt.shape[0] > 0, "No contacts generated in full case"
     assert df_cnt.columns.tolist() == ["id", "cnt_age", "cnt_region", "y"]

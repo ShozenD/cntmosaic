@@ -90,9 +90,9 @@ class Stratification:
         probs = sp.special.softmax(logits, axis=0)
         self._P = np.round(probs * self.ref_age_dist[np.newaxis, :]).astype(int)
 
-    def generate(self, seed: int | None = None) -> None:
+    def sample(self, seed: int | None = None) -> None:
         """
-        Generate stratified age distributions using GP-based perturbations.
+        Sample stratified age distributions using GP-based perturbations.
 
         Resets and recomputes all cached arrays and DataFrames. If a seed is
         provided it replaces the instance's stored seed for future calls.

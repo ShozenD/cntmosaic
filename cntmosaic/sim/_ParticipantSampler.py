@@ -77,7 +77,7 @@ class ParticipantSampler:
 
     >>> # Generate 1000 participants
     >>> pg = ParticipantSampler(popcon, n_part=1000)
-    >>> df_participants = pg.generate(seed=123)
+    >>> df_participants = pg.sample(seed=123)
 
     >>> print(df_participants.head())
        id  age  gender
@@ -120,7 +120,7 @@ class ParticipantSampler:
 
     >>> # Generate participants
     >>> pg = ParticipantSampler(popcon, n_part=2000)
-    >>> df_participants = pg.generate(seed=456)
+    >>> df_participants = pg.sample(seed=456)
 
     >>> print(df_participants.head())
        id  age  gender     region
@@ -255,7 +255,7 @@ class ParticipantSampler:
 
         >>> # Create generator from DataFrame
         >>> pg = ParticipantSampler.from_df(df_pop, n_part=500, strat_var_cols=['gender'])
-        >>> df_participants = pg.generate(seed=42)
+        >>> df_participants = pg.sample(seed=42)
 
         >>> print(df_participants.head())
            id  age  gender
@@ -509,9 +509,9 @@ class ParticipantSampler:
                 data[strat_name] = labels
             return pd.DataFrame(data)
 
-    def generate(self, seed: Optional[int] = None) -> pd.DataFrame:
+    def sample(self, seed: Optional[int] = None) -> pd.DataFrame:
         """
-        Generate synthetic participant data.
+        Sample synthetic participant data.
 
         Sampling procedure:
         1. Sample age a from global population distribution
@@ -534,7 +534,7 @@ class ParticipantSampler:
         Examples
         --------
         >>> pg = ParticipantSampler(popcon, n_part=500)
-        >>> df = pg.generate(seed=42)
+        >>> df = pg.sample(seed=42)
         >>> df.columns
         Index(['id', 'age', 'gender'], dtype='object')
         >>> len(df)

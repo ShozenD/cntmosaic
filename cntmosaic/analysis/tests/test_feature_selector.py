@@ -295,13 +295,13 @@ def synthetic_data():
     df_pop_prop = pc.df_Q
 
     pg = ParticipantSampler(pc, n_part=150)
-    df_part = pg.generate(seed=0)
+    df_part = pg.sample(seed=0)
 
     mg = MatrixSampler(templates)
     cint_matrices = mg.generate_partial(pc, 5, seed=0)
 
     cg = ContactSampler(df_part, cint_matrices, "poisson", random_effects=False)
-    df_cnt = cg.generate(seed=0)
+    df_cnt = cg.sample(seed=0)
 
     return df_part, df_cnt, df_pop, df_pop_prop
 

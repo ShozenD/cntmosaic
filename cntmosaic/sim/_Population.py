@@ -65,11 +65,11 @@ class Population:
             self.coord_labels = self.strats.labels
             self.coord_codes = self.strats.codes
 
-    def generate(self, seed: int | None = None) -> None:
+    def sample(self, seed: int | None = None) -> None:
         """
-        Regenerate all stratified age distributions and clear cached arrays.
+        Resample all stratified age distributions and clear cached arrays.
 
-        Delegates to each child :class:`Stratification`'s ``generate()`` method,
+        Delegates to each child :class:`Stratification`'s ``sample()`` method,
         then invalidates this instance's cached Q, P, and DataFrame views.
 
         Parameters
@@ -79,7 +79,7 @@ class Population:
         """
         strats = self.strats if isinstance(self.strats, list) else [self.strats]
         for strat in strats:
-            strat.generate(seed)
+            strat.sample(seed)
         self._Q = None
         self._P = None
         self._df_Q = None

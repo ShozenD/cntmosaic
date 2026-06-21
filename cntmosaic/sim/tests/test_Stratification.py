@@ -82,7 +82,7 @@ def test_generate_resets_cache():
     _ = s.df_P
     _ = s.df_Q
 
-    s.generate(seed=999)
+    s.sample(seed=999)
 
     assert s._Q is None, "Q cache must be cleared after generate()"
     assert s._df_P is None, "df_P cache must be cleared after generate()"

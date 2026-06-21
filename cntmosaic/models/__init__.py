@@ -6,7 +6,6 @@ from ._AgeMixFC import AgeMixFC
 from ._GenMixFF import GenMixFF
 from ._GenMixFC import GenMixFC
 from ._GenMixCC import GenMixCC
-from ._Prem import Prem
 from ._vdKassteele import vdKassteele
 
 
@@ -15,6 +14,10 @@ def __getattr__(name: str):
         from ._numpyro import to_inference_data
 
         return to_inference_data
+    if name == "Prem":
+        from .classical._Prem import Prem
+
+        return Prem
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

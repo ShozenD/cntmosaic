@@ -1,5 +1,6 @@
 """Data loading utilities for the Prem model."""
 
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -112,7 +113,13 @@ class PremDataLoader:
 
         if prem.data["part_age_grp"].isnull().any():
             missing = prem.data[prem.data["part_age_grp"].isna()]["id"].unique()
-            raise ValueError(f"Missing participant data for IDs: {missing}.")
+            warnings.warn(
+                f"Missing age group information for participant IDs: {missing}. "
+                "These participants will be dropped from the analysis.",
+                UserWarning,
+                stacklevel=2,
+            )
+            prem.data = prem.data[prem.data["part_age_grp"].notna()]
 
         if not isinstance(prem.data["part_age_grp"].dtype, pd.CategoricalDtype):
             prem.data["part_age_grp"] = pd.Categorical(
@@ -123,10 +130,9 @@ class PremDataLoader:
         """Sum contact counts within each (participant × part_age_grp × cnt_age_grp [× strat]) cell."""
         prem = self.prem
         groupby_cols = ["id", "part_age_grp", "cnt_age_grp"]
-        for col in (
-            [f"part_{v}" for v in prem.strat_vars_part]
-            + [f"cnt_{v}" for v in prem.strat_vars_cnt]
-        ):
+        for col in [f"part_{v}" for v in prem.strat_vars_part] + [
+            f"cnt_{v}" for v in prem.strat_vars_cnt
+        ]:
             if col not in groupby_cols:
                 groupby_cols.append(col)
 

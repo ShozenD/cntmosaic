@@ -13,6 +13,7 @@ from ...utils import AgeGroupSpecs, depixilate, pixilate
 
 
 from .._stats import compute_quantiles, validate_alpha
+from ._summary import ContactSummary
 
 
 def _get_ci_probs(alpha: float) -> Tuple[float, float, float]:
@@ -65,7 +66,9 @@ class ModelSummariserPrem:
     >>>
     >>> # Get 95% credible intervals for contact intensity
     >>> summary = summariser.summarise_cint(alpha=0.05)
-    >>> lower, median, upper = summary[0], summary[1], summary[2]
+    >>> summary["All->All"].lower    # shape (A, A)
+    >>> summary["All->All"].central
+    >>> summary["All->All"].upper
     >>>
     >>> # Get reciprocity-adjusted and depixilated results
     >>> summary_full = summariser.summarise_cint(
@@ -135,7 +138,7 @@ class ModelSummariserPrem:
         self.post_cint_samples: Optional[NDArray] = None
 
         # Simple cache: {cache_key: result_dict}
-        self._cache: Dict[str, Dict[str, NDArray]] = {}
+        self._cache: Dict[str, Dict[str, ContactSummary]] = {}
 
         # Run processing pipeline
         self._validate()
@@ -857,9 +860,9 @@ class ModelSummariserPrem:
         apply_reciprocity: bool = False,
         return_depixilated: bool = False,
         force_recompute: bool = False,
-    ) -> Dict[str, NDArray]:
+    ) -> Dict[str, ContactSummary]:
         """
-        Compute summary statistics for contact intensity matrix.
+        Compute credible-interval summaries for the contact intensity matrix.
 
         Contact intensity M[c,d] represents the average number of contacts
         that individuals in age group c have with individuals in age group d.
@@ -880,8 +883,9 @@ class ModelSummariserPrem:
 
         Returns
         -------
-        Dict[str, NDArray]
-            Dict mapping stratum labels to NDArray of shape (3, A, A)
+        Dict[str, ContactSummary]
+            One entry per stratum. Key is ``"All->All"`` for unstratified models
+            (K=1) or stratum labels such as ``"M->F"`` for stratified models (K>1).
 
         Raises
         ------
@@ -891,22 +895,13 @@ class ModelSummariserPrem:
 
         Examples
         --------
-        >>> # Unstratified (K=1)
         >>> summary = summariser.summarise_cint(alpha=0.05)
-        >>> lower, median, upper = summary[0], summary[1], summary[2]
+        >>> summary["All->All"].lower    # shape (A, A)
+        >>> summary["All->All"].central
+        >>> summary["All->All"].upper
         >>>
         >>> # Stratified (K>1)
-        >>> summary = summariser.summarise_cint(alpha=0.05)
-        >>> median_M_to_F = summary["M->F"][1]  # [1] for median
-        >>>
-        >>> # With reciprocity and depixilation (full stratification)
-        >>> pop_data = PopulationData(df, age_col='age', size_col='pop', strat_var_cols=['gender'])
-        >>> summariser = ModelSummariserPrem(prem, pop_data=pop_data)
-        >>> summary = summariser.summarise_cint(
-        ...     alpha=0.05,
-        ...     apply_reciprocity=True,
-        ...     return_depixilated=True
-        ... )
+        >>> summary["M->F"].central
 
         Notes
         -----
@@ -916,11 +911,6 @@ class ModelSummariserPrem:
         3. Quantile computation
 
         This order is critical because depixilation and quantiles don't commute.
-
-        Output format changed in v2.0:
-        - Old: Dict with keys ['lower', 'median', 'upper']
-        - New K=1: NDArray of shape (3, A, A)
-        - New K>1: Dict[str, NDArray] with stratum labels as keys
         """
         validate_alpha(alpha)
         probs = _get_ci_probs(alpha)
@@ -959,29 +949,29 @@ class ModelSummariserPrem:
             else:
                 raise ValueError("pop_data must be provided for depixilation.")
 
-        # Compute quantiles and format output
+        result: Dict[str, ContactSummary] = {}
+
         if self.K == 1:
-            # Unstratified: return NDArray of shape (3, A, A)
             if isinstance(samples, dict):
-                # Extract single sample if mistakenly wrapped in dict
                 samples = samples[self.strata_labels[0]]
-
-            quantiles = compute_quantiles(samples, probs, axis=0)
-            result = {"All->All": quantiles}
-
+            q = compute_quantiles(samples, probs, axis=0)
+            result["All->All"] = ContactSummary(
+                lower=q[0], central=q[1], upper=q[2],
+                alpha=alpha, measure="median",
+                age_group_specs=self.age_group_specs,
+            )
         else:
-            # Stratified: return Dict[str, NDArray]
             if not isinstance(samples, dict):
                 raise ValueError("Stratified samples should be Dict")
-
-            result = {}
             for label, sample in samples.items():
-                quantiles = compute_quantiles(sample, probs, axis=0)
-                result[label] = quantiles  # Shape: (3, A, A)
+                q = compute_quantiles(sample, probs, axis=0)
+                result[label] = ContactSummary(
+                    lower=q[0], central=q[1], upper=q[2],
+                    alpha=alpha, measure="median",
+                    age_group_specs=self.age_group_specs,
+                )
 
-        # Cache and return
         self._cache[cache_key] = result
-
         return result
 
     def summarise_rate(
@@ -990,9 +980,9 @@ class ModelSummariserPrem:
         return_symmetrized: bool = False,
         return_depixilated: bool = False,
         force_recompute: bool = False,
-    ) -> Dict[str, NDArray]:
+    ) -> Dict[str, ContactSummary]:
         """
-        Compute summary statistics for contact rate matrix.
+        Compute credible-interval summaries for the contact rate matrix.
 
         Contact rate R[c,d] represents the per-capita rate at which
         individuals in age group c contact individuals in age group d.
@@ -1011,33 +1001,21 @@ class ModelSummariserPrem:
 
         Returns
         -------
-        summary : Dict[str, NDArray]
-            Dictionary containing:
-            - 'lower': Lower credible bound
-            - 'median': Median estimate
-            - 'upper': Upper credible bound
-            - 'alpha': Significance level used
+        Dict[str, ContactSummary]
+            One entry per stratum. Key is ``"All->All"`` for unstratified models
+            (K=1) or stratum labels such as ``"M->F"`` for stratified models (K>1).
 
         Raises
         ------
         ValueError
             If age_grp_dist not available (required for rate computation).
 
-        Returns
-        -------
-        NDArray
-            Array of shape (3, A, A) containing quantiles:
-            - [0, :, :]: Lower credible bound (2.5th percentile if alpha=0.05)
-            - [1, :, :]: Median estimate (50th percentile)
-            - [2, :, :]: Upper credible bound (97.5th percentile if alpha=0.05)
-            where A is number of age groups (B) or fine-grained ages if depixilated
-
         Examples
         --------
         >>> summary = summariser.summarise_rate(alpha=0.05)
-        >>> lower = summary[0]  # Lower bound
-        >>> median = summary[1]  # Median
-        >>> upper = summary[2]  # Upper bound
+        >>> summary["All->All"].lower    # shape (A, A)
+        >>> summary["All->All"].central
+        >>> summary["All->All"].upper
 
         Notes
         -----
@@ -1091,32 +1069,30 @@ class ModelSummariserPrem:
                 self.strata_labels,
                 age_bins=self.age_group_specs,
             )
-            # Use fine-grained age distribution for rate computation
             pop_dist = self.age_dist
         else:
-            # Use age group distribution
             pop_dist = self.age_grp_dist
 
-        # Convert intensity to rate: R[c,d] = M[c,d] / P[d]
-        if isinstance(samples, dict):
-            # Stratified: compute rate for each stratum
-            rate_dict = {}
-            for label, cint_samples in samples.items():
-                # Broadcasting: cint_samples is (n_samples, B, B), pop_dist is (B,)
-                rate_samples = cint_samples / pop_dist[np.newaxis, np.newaxis, :]
-                quantiles = compute_quantiles(rate_samples, probs, axis=0)
-                rate_dict[label] = np.stack(
-                    [quantiles[0], quantiles[1], quantiles[2]], axis=0
-                )
-            result = rate_dict
-        else:
-            # Unstratified: compute rate directly
-            # Broadcasting: samples is (n_samples, B, B), pop_dist is (B,)
-            rate_samples = samples / pop_dist[np.newaxis, np.newaxis, :]
-            quantiles = compute_quantiles(rate_samples, probs, axis=0)
-            result = np.stack([quantiles[0], quantiles[1], quantiles[2]], axis=0)
+        result: Dict[str, ContactSummary] = {}
 
-        # Cache and return
+        if isinstance(samples, dict):
+            for label, cint_samples in samples.items():
+                rate_samples = cint_samples / pop_dist[np.newaxis, np.newaxis, :]
+                q = compute_quantiles(rate_samples, probs, axis=0)
+                result[label] = ContactSummary(
+                    lower=q[0], central=q[1], upper=q[2],
+                    alpha=alpha, measure="median",
+                    age_group_specs=self.age_group_specs,
+                )
+        else:
+            rate_samples = samples / pop_dist[np.newaxis, np.newaxis, :]
+            q = compute_quantiles(rate_samples, probs, axis=0)
+            result["All->All"] = ContactSummary(
+                lower=q[0], central=q[1], upper=q[2],
+                alpha=alpha, measure="median",
+                age_group_specs=self.age_group_specs,
+            )
+
         self._cache[cache_key] = result
         return result
 
@@ -1126,9 +1102,9 @@ class ModelSummariserPrem:
         return_symmetrized: bool = False,
         return_depixilated: bool = False,
         force_recompute: bool = False,
-    ) -> Dict[str, NDArray]:
+    ) -> Dict[str, ContactSummary]:
         """
-        Compute summary statistics for marginal contact intensity.
+        Compute credible-interval summaries for the marginal contact intensity.
 
         Marginal contact intensity m[c] = Σ_d M[c,d] represents the total
         average number of contacts made by individuals in age group c
@@ -1147,19 +1123,16 @@ class ModelSummariserPrem:
 
         Returns
         -------
-        NDArray
-            Array of shape (3, A) containing quantiles:
-            - [0, :]: Lower credible bound (2.5th percentile if alpha=0.05)
-            - [1, :]: Median estimate (50th percentile)
-            - [2, :]: Upper credible bound (97.5th percentile if alpha=0.05)
-            where A is number of age groups (B) or fine-grained ages if depixilated
+        Dict[str, ContactSummary]
+            One entry per stratum; each ``ContactSummary`` has 1-D arrays of
+            shape ``(A,)`` instead of ``(A, A)``.
 
         Examples
         --------
         >>> summary = summariser.summarise_mcint(alpha=0.05)
-        >>> lower = summary[0]  # Lower bound
-        >>> median = summary[1]  # Median
-        >>> upper = summary[2]  # Upper bound
+        >>> summary["All->All"].lower    # shape (A,)
+        >>> summary["All->All"].central
+        >>> summary["All->All"].upper
 
         Notes
         -----
@@ -1210,31 +1183,28 @@ class ModelSummariserPrem:
                     age_bins=self.age_group_specs,
                 )
 
-        # Compute marginals by summing over contact age (last axis)
-        mcint_dict = {}
+        result: Dict[str, ContactSummary] = {}
+
         if isinstance(samples, dict):
-            # Stratified: compute marginals for each stratum
             for label, cint_samples in samples.items():
-                mcint_samples = cint_samples.sum(
-                    axis=-1
-                )  # Shape: (n_samples, B) or (n_samples, A)
-                quantiles = compute_quantiles(mcint_samples, probs, axis=0)
-                mcint_dict[label] = np.stack(
-                    [quantiles[0], quantiles[1], quantiles[2]], axis=0
+                marginal = cint_samples.sum(axis=-1)
+                q = compute_quantiles(marginal, probs, axis=0)
+                result[label] = ContactSummary(
+                    lower=q[0], central=q[1], upper=q[2],
+                    alpha=alpha, measure="median",
+                    age_group_specs=self.age_group_specs,
                 )
         else:
-            # Unstratified: compute marginals directly
-            mcint_samples = samples.sum(
-                axis=-1
-            )  # Shape: (n_samples, B) or (n_samples, A)
-            quantiles = compute_quantiles(mcint_samples, probs, axis=0)
-            mcint_dict["All->All"] = np.stack(
-                [quantiles[0], quantiles[1], quantiles[2]], axis=0
+            marginal = samples.sum(axis=-1)
+            q = compute_quantiles(marginal, probs, axis=0)
+            result["All->All"] = ContactSummary(
+                lower=q[0], central=q[1], upper=q[2],
+                alpha=alpha, measure="median",
+                age_group_specs=self.age_group_specs,
             )
 
-        # Cache and return
-        self._cache[cache_key] = mcint_dict
-        return mcint_dict
+        self._cache[cache_key] = result
+        return result
 
     def get_point_estimates(
         self,

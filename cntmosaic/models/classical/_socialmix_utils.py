@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 
 from ...dataloader import ContactData, ParticipantData, PopulationData
 from ...utils import AgeGroupSpecs
+from ._socialmix_age_processing import AgeBinProcessor
 
 if TYPE_CHECKING:
     from ._SocialMix import SocialMix
@@ -270,10 +271,17 @@ class SocialMixDataLoader:
             return  # Already assigned
 
         if "pop_age_grp" in self.sm.pop_data.data.columns:
-            # Population was provided with pre-grouped coarse ages.
-            # Validate that those groups align with age_group_specs.
-            self._validate_population_age_group_alignment()
-            self.sm.pop_data.data["age_grp"] = self.sm.pop_data.data["pop_age_grp"]
+            expected_intervals = list(
+                pd.IntervalIndex.from_breaks(self.sm.age_group_specs.bins, closed="left")
+            )
+            pop_intervals = set(self.sm.pop_data.data["pop_age_grp"].dropna().unique())
+
+            if pop_intervals.issubset(set(expected_intervals)):
+                # Groups already align — copy directly
+                self.sm.pop_data.data["age_grp"] = self.sm.pop_data.data["pop_age_grp"]
+            else:
+                # Fine intervals need merging up to the new (post-adaptive-merge) bins
+                self._rebin_population_age_groups(expected_intervals)
             return
 
         # Population is in 1-year resolution — it will be binned and summed.
@@ -286,44 +294,25 @@ class SocialMixDataLoader:
             stacklevel=4,
         )
 
-        bin_edges = self.sm.age_group_specs.left + [self.sm.age_group_specs.right[-1] + 1]
-        intervals = [
-            pd.Interval(left=l, right=r, closed="left")
-            for l, r in zip(bin_edges[:-1], bin_edges[1:])
-        ]
-
-        ages = self.sm.pop_data.data["age"]
-        age_grps = pd.cut(ages, bins=bin_edges, right=False, labels=intervals)
-        self.sm.pop_data.data["age_grp"] = age_grps
-
-    def _validate_population_age_group_alignment(self) -> None:
-        """
-        Check that pre-grouped population age intervals align with age_group_specs.
-
-        Raises ValueError if the set of population age groups does not match the
-        intervals derived from age_group_specs, since misaligned groups produce
-        silently incorrect population sums used in reciprocity adjustment and rates.
-        """
-        expected_intervals = set(
-            pd.Interval(left=l, right=r + 1, closed="left")
-            for l, r in zip(self.sm.age_group_specs.left, self.sm.age_group_specs.right)
+        self.sm.pop_data.data["age_grp"] = self.sm.age_group_specs.cut(
+            self.sm.pop_data.data["age"]
         )
 
-        pop_intervals = set(
-            self.sm.pop_data.data["pop_age_grp"].dropna().unique()
-        )
+    def _rebin_population_age_groups(self, merged_intervals: list) -> None:
+        """Remap pop_age_grp to merged_intervals, summing P values across merged groups.
 
-        if not pop_intervals.issubset(expected_intervals):
-            unexpected = sorted(str(i) for i in pop_intervals - expected_intervals)
-            raise ValueError(
-                f"Population age groups do not align with age_group_specs.\n"
-                f"  Unexpected population groups: {unexpected}\n"
-                f"  Expected groups from age_group_specs: "
-                f"{sorted(str(i) for i in expected_intervals)}\n"
-                f"Ensure that the population data uses the same age bins as the "
-                f"participant and contact data, or provide population data in "
-                f"1-year resolution using age_col."
-            )
+        Used when adaptive age-group merging has coarsened age_group_specs after
+        the initial load, leaving pop_age_grp at a finer resolution than expected.
+        AgeBinProcessor.reassign_age_groups raises ValueError if any pop interval
+        cannot be contained within a merged interval (incompatible binning).
+        """
+        df_pop = AgeBinProcessor.reassign_age_groups(
+            self.sm.pop_data.data,
+            age_grp_col="pop_age_grp",
+            merged_intervals=merged_intervals,
+            new_group_col="age_grp",
+        )
+        self.sm.pop_data.data = df_pop
 
     def _fill_simple_array(
         self,

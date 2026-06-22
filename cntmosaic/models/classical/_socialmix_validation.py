@@ -467,7 +467,7 @@ class SocialMixValidator:
 
                     # Update age bins
                     new_left = [interval.left for interval in merged_intervals]
-                    new_right = [interval.right for interval in merged_intervals]
+                    new_right = [interval.right - 1 for interval in merged_intervals]
                     self.age_group_specs = self.age_group_specs.replace(
                         age_min=new_left, age_max=new_right
                     )
@@ -689,7 +689,7 @@ class SocialMixValidator:
 
         # Replace age bins with a new AgeGroupSpecs built from merged bounds
         new_left = [interval.left for interval in merged_intervals]
-        new_right = [interval.right for interval in merged_intervals]
+        new_right = [interval.right - 1 for interval in merged_intervals]
         self.age_group_specs = self.age_group_specs.replace(
             age_min=new_left, age_max=new_right
         )
@@ -823,7 +823,7 @@ class SocialMixValidator:
         # Replace age bins with a new AgeGroupSpecs built from merged bounds
         if merge_iterations > 0:
             new_left = [interval.left for interval in merged_intervals]
-            new_right = [interval.right for interval in merged_intervals]
+            new_right = [interval.right - 1 for interval in merged_intervals]
             self.age_group_specs = self.age_group_specs.replace(
                 age_min=new_left, age_max=new_right
             )

@@ -45,8 +45,8 @@ class PremDataLoader:
         - ``C``     — number of participant age groups
         - ``D``     — number of contact age groups
         """
-        df_cnt_full = self._build_full_contact_frame()
-        self._merge_participant_data(df_cnt_full)
+        df_cnt = self._build_contact_frame()
+        self._merge_participant_data(df_cnt)
         self._aggregate()
         self._encode_strata()
         self._extract_arrays()
@@ -55,56 +55,19 @@ class PremDataLoader:
     # Internal steps
     # ------------------------------------------------------------------
 
-    def _build_full_contact_frame(self) -> pd.DataFrame:
-        """Build a complete (id × cnt_age_grp [× cnt_strat]) Cartesian frame.
-
-        Every (participant, contact-age-group, contact-stratum) combination is
-        represented even if no contact was recorded; missing counts are filled
-        with zero so the NumPyro likelihood sees the full observation grid.
-        """
+    def _build_contact_frame(self) -> pd.DataFrame:
+        """Return the observed contact data with categorical dtypes set."""
         prem = self.prem
         df_cnt = prem.cnt_data.data.copy()
 
         if not isinstance(df_cnt["cnt_age_grp"].dtype, pd.CategoricalDtype):
             df_cnt["cnt_age_grp"] = pd.Categorical(df_cnt["cnt_age_grp"], ordered=True)
-
-        # Build Cartesian dimension dict: id × age group [× contact strat vars]
-        coords: dict = {
-            "id": df_cnt["id"].unique(),
-            "cnt_age_grp": df_cnt["cnt_age_grp"].cat.categories,
-        }
         for var in prem.strat_vars_cnt:
             col = f"cnt_{var}"
-            if col in df_cnt.columns:
-                if not isinstance(df_cnt[col].dtype, pd.CategoricalDtype):
-                    df_cnt[col] = pd.Categorical(df_cnt[col])
-                coords[col] = df_cnt[col].cat.categories
+            if col in df_cnt.columns and not isinstance(df_cnt[col].dtype, pd.CategoricalDtype):
+                df_cnt[col] = pd.Categorical(df_cnt[col])
 
-        index = pd.MultiIndex.from_product(
-            [list(v) for v in coords.values()], names=list(coords.keys())
-        )
-        df_full = pd.DataFrame(index.to_frame(index=False), columns=list(coords.keys()))
-
-        merge_keys = ["id", "cnt_age_grp"] + [f"cnt_{v}" for v in prem.strat_vars_cnt]
-        df_full = pd.merge(df_full, df_cnt, on=merge_keys, how="left")
-        df_full["y"] = df_full["y"].fillna(0).astype(int)
-
-        # Restore categorical dtypes lost during merge
-        df_full["cnt_age_grp"] = pd.Categorical(
-            df_full["cnt_age_grp"],
-            categories=df_cnt["cnt_age_grp"].cat.categories,
-            ordered=True,
-        )
-        for var in prem.strat_vars_cnt:
-            col = f"cnt_{var}"
-            if col in df_cnt.columns:
-                df_full[col] = pd.Categorical(
-                    df_full[col],
-                    categories=df_cnt[col].cat.categories,
-                    ordered=getattr(df_cnt[col].cat, "ordered", False),
-                )
-
-        return df_full
+        return df_cnt
 
     def _merge_participant_data(self, df_cnt_full: pd.DataFrame) -> None:
         """Left-join the contact frame with participant data on participant ID."""
@@ -137,7 +100,7 @@ class PremDataLoader:
                 groupby_cols.append(col)
 
         prem.data = (
-            prem.data.groupby(groupby_cols, observed=False)["y"].sum().reset_index()
+            prem.data.groupby(groupby_cols, observed=True)["y"].sum().reset_index()
         )
 
     def _encode_strata(self) -> None:

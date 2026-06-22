@@ -1,6 +1,7 @@
 import pytest
 
 import numpy as np
+import pandas as pd
 from .._AgeGroupSpecs import AgeGroupSpecs as AgeBins
 
 
@@ -64,6 +65,37 @@ def test_age_min_max_uniform():
 def test_age_min_max_get_cuts():
     specs = AgeBins(age_min=[0, 5, 18], age_max=[4, 17, 80])
     assert specs.get_cuts() == [0, 5, 18, 81]
+
+
+# ------------------------------------------------------------------
+# bins property and cut() method
+# ------------------------------------------------------------------
+
+def test_bins_property():
+    specs = AgeBins(0, 14, 5)
+    assert specs.bins == [0, 5, 10, 15]
+
+
+def test_bins_property_age_min_max():
+    specs = AgeBins(age_min=[0, 5, 18], age_max=[4, 17, 80])
+    assert specs.bins == [0, 5, 18, 81]
+
+
+def test_cut_basic():
+    specs = AgeBins(0, 14, 5)
+    ages = pd.Series([0, 4, 5, 9, 10, 14])
+    result = specs.cut(ages)
+    expected = pd.cut(ages, bins=[0, 5, 10, 15], right=False)
+    pd.testing.assert_series_equal(result, expected)
+
+
+def test_cut_age_min_max():
+    specs = AgeBins(age_min=[0, 18, 65], age_max=[17, 64, 80])
+    ages = pd.Series([0, 17, 18, 64, 65, 80])
+    result = specs.cut(ages)
+    assert result[0] == pd.Interval(0, 18, closed="left")
+    assert result[2] == pd.Interval(18, 65, closed="left")
+    assert result[4] == pd.Interval(65, 81, closed="left")
 
 
 def test_age_min_max_errors():

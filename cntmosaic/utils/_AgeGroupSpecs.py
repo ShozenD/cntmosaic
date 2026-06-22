@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 
 class AgeGroupSpecs:
     """Age group specifications for contact matrix binning.
 
-    Two construction modes:
+    Supports two construction modes:
 
-    **Fixed-step / cut-point mode** (original interface):
+    **Fixed-step / cut-point mode:**
 
         AgeGroupSpecs(min, max, step=5)
         AgeGroupSpecs(min, max, cuts=[18, 45, 65])
 
-    **Explicit-bounds mode** (new):
+    **Explicit-bounds mode:**
 
         AgeGroupSpecs(age_min=[0, 5, 18], age_max=[4, 17, 80])
 
@@ -44,6 +45,9 @@ class AgeGroupSpecs:
         Inclusive lower bound of each bin.
     right : list of int
         Inclusive upper bound of each bin.
+    bins : list of int
+        Bin edges for use with ``pd.cut(..., bins=..., right=False)``.
+        Equals ``left`` with the exclusive upper bound of the last bin appended.
     min, max : int
         Overall minimum and maximum age.
     range : int
@@ -51,7 +55,7 @@ class AgeGroupSpecs:
     bin_sizes : np.ndarray
         Number of single-year ages in each bin.
     cell_sizes : np.ndarray
-        Outer product of ``bin_sizes`` (used for weighting).
+        Outer product of ``bin_sizes`` (used for contact-rate weighting).
     """
 
     def __init__(
@@ -120,6 +124,7 @@ class AgeGroupSpecs:
     # ------------------------------------------------------------------
 
     def get_bounds_left(self) -> list:
+        """Return (and cache) the inclusive lower bound of each bin."""
         if not hasattr(self, "left"):
             if self.cuts is not None:
                 self.left = [self.min] + list(self.cuts)
@@ -128,6 +133,7 @@ class AgeGroupSpecs:
         return self.left
 
     def get_bounds_right(self) -> list:
+        """Return (and cache) the inclusive upper bound of each bin."""
         if not hasattr(self, "right"):
             if self.cuts is not None:
                 self.right = list(np.asarray(self.cuts) - 1) + [self.max]
@@ -139,22 +145,57 @@ class AgeGroupSpecs:
         return self.right
 
     def get_bin_sizes(self) -> np.ndarray:
+        """Return (and cache) the number of single-year ages in each bin."""
         if not hasattr(self, "bin_sizes"):
             self.bin_sizes = np.diff(np.append(self.left, self.max + 1))
         return self.bin_sizes
 
     def get_cell_sizes(self) -> np.ndarray:
-        """Outer product of bin_sizes; cached after first call."""
+        """Return (and cache) the outer product of ``bin_sizes``."""
         if not hasattr(self, "cell_sizes"):
             self.cell_sizes = np.outer(self.bin_sizes, self.bin_sizes)
         return self.cell_sizes
 
     def get_cuts(self) -> list:
-        """Return bin left boundaries plus the exclusive upper bound of the last bin."""
+        """Return ``left`` with the exclusive upper bound of the last bin appended.
+
+        The result is identical to the ``bins`` property and can be passed
+        directly to ``pd.cut(..., bins=..., right=False)``.
+        """
         return self.left + [self.right[-1] + 1]
 
+    @property
+    def bins(self) -> list:
+        """Bin edges for ``pd.cut(..., bins=..., right=False)``.
+
+        Equals ``left`` with ``right[-1] + 1`` appended so that every age up
+        to and including ``max`` falls within a half-open interval ``[a, b)``.
+        """
+        return self.get_cuts()
+
+    def cut(self, series: pd.Series) -> pd.Series:
+        """Bin *series* into the age groups defined by this spec.
+
+        Parameters
+        ----------
+        series : pd.Series
+            Integer ages to bin.
+
+        Returns
+        -------
+        pd.Series
+            Categorical series of half-open intervals ``[a, b)``, one per
+            element of *series*.
+
+        Examples
+        --------
+        >>> specs = AgeGroupSpecs(0, 14, 5)
+        >>> df["part_age_grp"] = specs.cut(df["part_age"])
+        """
+        return pd.cut(series, bins=self.bins, right=False)
+
     def replace(self, *, age_min: list, age_max: list) -> "AgeGroupSpecs":
-        """Return a new AgeGroupSpecs with updated bounds, leaving this instance unchanged.
+        """Return a new instance with updated bounds, leaving this one unchanged.
 
         Parameters
         ----------

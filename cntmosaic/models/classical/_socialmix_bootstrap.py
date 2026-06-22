@@ -210,20 +210,12 @@ class SocialMixBootstrap:
 
     def _assign_age_groups(self) -> None:
         """Assign age groups to participants and contacts if not already provided."""
-        bin_edges = self.age_group_specs.left + [self.age_group_specs.right[-1] + 1]
-
-        # Interval labels: right bound is exclusive (right[i] + 1)
-        intervals = [
-            pd.Interval(left=l, right=r + 1, closed="left")
-            for l, r in zip(self.age_group_specs.left, self.age_group_specs.right)
-        ]
-
         # Assign age groups to participants if not present
         if "part_age_grp" not in self.part_data.data.columns:
             if "part_age" in self.part_data.data.columns:
-                ages = self.part_data.data["part_age"]
-                age_grps = pd.cut(ages, bins=bin_edges, right=False, labels=intervals)
-                self.part_data.data["part_age_grp"] = age_grps
+                self.part_data.data["part_age_grp"] = self.age_group_specs.cut(
+                    self.part_data.data["part_age"]
+                )
             else:
                 raise ValueError(
                     "ParticipantData must have either 'part_age' or 'part_age_grp' column."
@@ -232,9 +224,9 @@ class SocialMixBootstrap:
         # Assign age groups to contacts if not present
         if "cnt_age_grp" not in self.cnt_data.data.columns:
             if "cnt_age" in self.cnt_data.data.columns:
-                ages = self.cnt_data.data["cnt_age"]
-                age_grps = pd.cut(ages, bins=bin_edges, right=False, labels=intervals)
-                self.cnt_data.data["cnt_age_grp"] = age_grps
+                self.cnt_data.data["cnt_age_grp"] = self.age_group_specs.cut(
+                    self.cnt_data.data["cnt_age"]
+                )
             else:
                 raise ValueError(
                     "ContactData must have either 'cnt_age' or 'cnt_age_grp' column."
@@ -243,9 +235,9 @@ class SocialMixBootstrap:
         # Assign age groups to population if provided
         if self.pop_data is not None and "age_grp" not in self.pop_data.data.columns:
             if "age" in self.pop_data.data.columns:
-                ages = self.pop_data.data["age"]
-                age_grps = pd.cut(ages, bins=bin_edges, right=False, labels=intervals)
-                self.pop_data.data["age_grp"] = age_grps
+                self.pop_data.data["age_grp"] = self.age_group_specs.cut(
+                    self.pop_data.data["age"]
+                )
             else:
                 raise ValueError(
                     "PopulationData must have either 'age' or 'age_grp' column."

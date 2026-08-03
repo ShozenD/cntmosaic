@@ -129,10 +129,12 @@ class SocialMixDataLoader:
         Compute contact count matrix with stratification.
 
         When ``part_data.weight_col`` is set, each contact record is multiplied
-        by the participant's survey weight before summation.  Weights are
-        normalized within each (age_group, stratum) cell so that
+        by the participant's survey weight before summation.  If
+        ``self.sm.normalise_weights`` is True, weights are first normalized
+        within each (age_group, stratum) cell so that
         ``sum(w_i in cell) == N_cell``, preserving the contact intensity
-        estimator ``M = Y / N``.
+        estimator ``M = Y / N``. When False (the default), the raw weights
+        supplied by the user are used as-is.
 
         Sets
         ----
@@ -146,9 +148,10 @@ class SocialMixDataLoader:
         age_grps_part = df_part["part_age_grp"].cat.categories
         age_grps_cnt = df_cnt["cnt_age_grp"].cat.categories
 
-        # Normalize weights within (age_group, stratum) cells when present
+        # Normalize weights within (age_group, stratum) cells when present,
+        # unless the caller opted out via SocialMix(normalise_weights=False).
         has_weights = self.sm.part_data.weight_col is not None
-        if has_weights:
+        if has_weights and self.sm.normalise_weights:
             grp_cols = ["part_age_grp"] + [
                 f"part_{v}" for v in self.sm.strat_vars_part
             ]

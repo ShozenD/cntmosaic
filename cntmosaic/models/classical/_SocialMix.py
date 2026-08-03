@@ -72,6 +72,13 @@ class SocialMix(DeterministicContactModel):
         Automatically merge age groups with zero participants to prevent
         division-by-zero errors. When ``False`` and empty groups are detected,
         a ``ValueError`` is raised instead.
+    normalise_weights : bool, default False
+        Only relevant when ``part_data.weight_col`` is set. When ``True``,
+        survey weights are rescaled within each (age_group, stratum) cell so
+        that ``sum(w_i in cell) == N_cell`` before being applied to ``Y``,
+        preserving the contact intensity estimator ``M = Y / N``. When
+        ``False`` (the default), the raw weights supplied by the user are
+        used as-is, without rescaling to the cell sample size.
 
     Attributes
     ----------
@@ -139,11 +146,12 @@ class SocialMix(DeterministicContactModel):
     i.e. total contacts are symmetric across the population.
 
     If ``part_data`` carries a ``weight_col``, each contact record is
-    multiplied by the participant's normalized survey weight before aggregation,
-    so that ``Y[c,d] = sum_i( w_i * y_i_d )`` where weights satisfy
-    ``sum_i(w_i in cell c) == N[c]``.  The normalization is applied
-    automatically by :meth:`~cntmosaic.dataloader.ParticipantData.normalize_weights`
-    the first time :meth:`fit` is called.
+    multiplied by the participant's survey weight before aggregation, so that
+    ``Y[c,d] = sum_i( w_i * y_i_d )``. When ``normalise_weights=True``, weights
+    are first rescaled by
+    :meth:`~cntmosaic.dataloader.ParticipantData.normalize_weights` so that
+    ``sum_i(w_i in cell c) == N[c]``; when ``False`` (the default), the raw
+    weights are used unmodified.
     """
 
     def __init__(
@@ -154,6 +162,7 @@ class SocialMix(DeterministicContactModel):
         pop_data: Optional[PopulationData] = None,
         apply_reciprocity: bool = True,
         adaptive_merge: bool = False,
+        normalise_weights: bool = False,
     ):
         # Store parameters
         self.part_data = part_data
@@ -162,6 +171,7 @@ class SocialMix(DeterministicContactModel):
         self.pop_data = pop_data
         self.apply_reciprocity = apply_reciprocity
         self.adaptive_merge = adaptive_merge
+        self.normalise_weights = normalise_weights
 
         # Stratification attributes (initialized in _preprocess)
         self.strat_vars_part: List[str] = []
@@ -208,6 +218,7 @@ class SocialMix(DeterministicContactModel):
         df_pop: Optional[pd.DataFrame] = None,
         apply_reciprocity: bool = True,
         adaptive_merge: bool = False,
+        normalise_weights: bool = False,
     ) -> "SocialMix":
         """Construct SocialMix directly from DataFrames, bypassing manual container creation.
 
@@ -235,6 +246,8 @@ class SocialMix(DeterministicContactModel):
         apply_reciprocity : bool, default True
             See :class:`SocialMix`.
         adaptive_merge : bool, default False
+            See :class:`SocialMix`.
+        normalise_weights : bool, default False
             See :class:`SocialMix`.
         """
         _CORE_PART = {"id", "part_age", "part_age_grp", "part_age_min", "part_age_max"}
@@ -296,6 +309,7 @@ class SocialMix(DeterministicContactModel):
             pop_data=pop_data,
             apply_reciprocity=apply_reciprocity,
             adaptive_merge=adaptive_merge,
+            normalise_weights=normalise_weights,
         )
 
     # ------------------------------------------------------------------

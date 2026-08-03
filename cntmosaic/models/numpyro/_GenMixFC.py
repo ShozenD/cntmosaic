@@ -1,4 +1,5 @@
 """NumPyro model mixin for GenMixFC."""
+
 from typing import Optional
 
 import jax.numpy as jnp
@@ -61,9 +62,7 @@ class GenMixFCNumPyroMixin:
 
         log_delta = self.sample_log_delta()
         log_cint_tensor = (
-            log_rate[jnp.newaxis, :, :]
-            + self.log_P[:, jnp.newaxis, :]
-            + log_delta
+            log_rate[jnp.newaxis, :, :] + self.log_P[:, jnp.newaxis, :] + log_delta
         )
 
         log_cint = index_mask_logsumexp(log_cint_tensor, aid_exp, bid_pad, flat_ix_exp)
@@ -85,8 +84,20 @@ class GenMixFCNumPyroMixin:
                     obs=y,
                 )
 
+        if self.likelihood == "gamma":
+            inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
+            with plate("data", len_y):
+                numpyro.sample(
+                    "obs",
+                    dist.Gamma(
+                        concentration=1.0 / inv_disp, rate=1.0 / (mu * inv_disp)
+                    ),
+                    obs=y,
+                )
+
         if self.likelihood == "quasipoisson":
             from .distributions import QuasiPoisson
+
             with plate("data", len_y):
                 numpyro.sample(
                     "obs",
@@ -96,6 +107,7 @@ class GenMixFCNumPyroMixin:
 
         if self.likelihood == "quasinegbin":
             from .distributions import QuasiNegBin
+
             inv_conc = numpyro.sample("inv_conc", dist.Exponential(1.0))
             with plate("data", len_y):
                 numpyro.sample(

@@ -1,4 +1,5 @@
 """NumPyro model mixin for vdKassteele."""
+
 from typing import Optional
 
 import jax.numpy as jnp
@@ -41,5 +42,16 @@ class vdKassteeleNumPyroMixin:
                 numpyro.sample(
                     "obs",
                     dist.NegativeBinomial2(mean=mu, concentration=1.0 / inv_disp),
+                    obs=y,
+                )
+
+        if self.likelihood == "gamma":
+            inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
+            with plate("data", len(self.y)):
+                numpyro.sample(
+                    "obs",
+                    dist.Gamma(
+                        concentration=1.0 / inv_disp, rate=1.0 / (mu * inv_disp)
+                    ),
                     obs=y,
                 )

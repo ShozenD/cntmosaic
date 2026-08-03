@@ -1,4 +1,5 @@
 """NumPyro model mixin for AgeMixFF."""
+
 from typing import Optional
 
 import jax.numpy as jnp
@@ -60,8 +61,20 @@ class AgeMixFFNumPyroMixin:
                     obs=y,
                 )
 
+        elif self.likelihood == "gamma":
+            inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
+            with numpyro.plate("data", len_y):
+                numpyro.sample(
+                    "obs",
+                    dist.Gamma(
+                        concentration=1.0 / inv_disp, rate=1.0 / (mu * inv_disp)
+                    ),
+                    obs=y,
+                )
+
         elif self.likelihood == "quasipoisson":
             from .distributions import QuasiPoisson
+
             with numpyro.plate("data", len_y):
                 numpyro.sample(
                     "obs",
@@ -71,6 +84,7 @@ class AgeMixFFNumPyroMixin:
 
         elif self.likelihood == "quasinegbin":
             from .distributions import QuasiNegBin
+
             inv_conc = numpyro.sample("inv_conc", dist.Exponential(1.0))
             with numpyro.plate("data", len_y):
                 numpyro.sample(

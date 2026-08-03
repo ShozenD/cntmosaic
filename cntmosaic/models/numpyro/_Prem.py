@@ -1,4 +1,5 @@
 """NumPyro model mixin for Prem."""
+
 from typing import Optional
 
 import jax.numpy as jnp
@@ -16,7 +17,9 @@ class PremNumPyroMixin:
         from .distributions import IGMRF2D
 
         if self.K == 1:
-            beta0 = numpyro.sample("beta0", dist.Normal(0.0, 2.5))
+            beta0 = numpyro.sample(
+                "beta0", dist.Normal(-9.2, 2.5)
+            )  # log(0.0001) approx -9.2
             tau = numpyro.sample("tau", dist.Gamma(2.0, 1.0))
             beta_cd = numpyro.sample(
                 "beta_cd",
@@ -41,7 +44,7 @@ class PremNumPyroMixin:
 
         else:
             with plate("strata", self.K):
-                beta0 = numpyro.sample("beta0", dist.Normal(0.0, 2.5))
+                beta0 = numpyro.sample("beta0", dist.Normal(-9.2, 2.5))
                 tau = numpyro.sample("tau", dist.Gamma(2.0, 1.0))
 
             beta_cd = numpyro.sample(

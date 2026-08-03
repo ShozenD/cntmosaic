@@ -1,4 +1,5 @@
 """NumPyro model mixin for AgeMixFC."""
+
 from typing import Optional
 
 import jax.numpy as jnp
@@ -44,12 +45,7 @@ class AgeMixFCNumPyroMixin:
 
         aggregated_log_cint = index_mask_logsumexp(log_cint, aid_exp, bid_pad)
 
-        mu = jnp.exp(
-            aggregated_log_cint
-            + repeat_effect
-            + log_N
-            + log_V
-        )
+        mu = jnp.exp(aggregated_log_cint + repeat_effect + log_N + log_V)
 
         if self.likelihood == "poisson":
             with plate("data", len_y):
@@ -64,8 +60,20 @@ class AgeMixFCNumPyroMixin:
                     obs=y,
                 )
 
+        if self.likelihood == "gamma":
+            inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
+            with plate("data", len_y):
+                numpyro.sample(
+                    "obs",
+                    dist.Gamma(
+                        concentration=1.0 / inv_disp, rate=1.0 / (mu * inv_disp)
+                    ),
+                    obs=y,
+                )
+
         if self.likelihood == "quasipoisson":
             from .distributions import QuasiPoisson
+
             with plate("data", len_y):
                 numpyro.sample(
                     "obs",
@@ -75,6 +83,7 @@ class AgeMixFCNumPyroMixin:
 
         if self.likelihood == "quasinegbin":
             from .distributions import QuasiNegBin
+
             inv_conc = numpyro.sample("inv_conc", dist.Exponential(1.0))
             with plate("data", len_y):
                 numpyro.sample(

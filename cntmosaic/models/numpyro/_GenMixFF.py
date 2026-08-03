@@ -1,4 +1,5 @@
 """NumPyro model mixin for GenMixFF."""
+
 from typing import Optional
 
 import jax.numpy as jnp
@@ -81,8 +82,20 @@ class GenMixFFNumPyroMixin:
                     obs=y,
                 )
 
+        if self.likelihood == "gamma":
+            inv_disp = numpyro.sample("inv_disp", dist.Exponential(1.0))
+            with plate("data", len_y):
+                numpyro.sample(
+                    "obs",
+                    dist.Gamma(
+                        concentration=1.0 / inv_disp, rate=1.0 / (mu * inv_disp)
+                    ),
+                    obs=y,
+                )
+
         if self.likelihood == "quasipoisson":
             from .distributions import QuasiPoisson
+
             with plate("data", len_y):
                 numpyro.sample(
                     "obs",
@@ -92,6 +105,7 @@ class GenMixFFNumPyroMixin:
 
         if self.likelihood == "quasinegbin":
             from .distributions import QuasiNegBin
+
             inv_conc = numpyro.sample("inv_conc", dist.Exponential(1.0))
             with plate("data", len_y):
                 numpyro.sample(

@@ -15,10 +15,10 @@ class IGMRF2D(Prior2D):
     """
     2D Intrinsic Gaussian Markov Random Field (IGMRF) prior for contact matrix estimation.
 
-    This prior class implements spatial smoothing for contact matrices using intrinsic
-    Gaussian Markov random fields with separable precision structure. It wraps the IGMRF2D
-    and SymIGMRF2D distributions from the distributions module, providing different prior
-    structures (global, partial, full) suitable for social contact matrix inference.
+    This prior class implements spatial smoothing for contact matrices using isotropic
+    intrinsic Gaussian Markov random fields. It wraps the IGMRF2D and SymIGMRF2D
+    distributions from the distributions module, providing different prior structures
+    (global, partial, full) suitable for social contact matrix inference.
 
     The IGMRF prior penalizes roughness in the latent contact pattern through finite
     differences, enabling flexible spatial smoothing while maintaining computational
@@ -29,10 +29,11 @@ class IGMRF2D(Prior2D):
     -----------------------
     The prior imposes a Gaussian structure on the latent field f with precision matrix:
 
-        Q = τ₁ ⊗ L₁ ⊗ I₂ + τ₂ ⊗ I₁ ⊗ L₂
+        Q = τ ⊗ (L₁ ⊗ I₂ + I₁ ⊗ L₂)
 
     where L₁ and L₂ are Laplacian matrices of specified order, τ₁ and τ₂ control
-    smoothness in each dimension, and ⊗ denotes the Kronecker product. Higher orders
+    smoothness in each dimension (equal within a call, since the underlying
+    distributions are isotropic), and ⊗ denotes the Kronecker product. Higher orders
     penalize more derivatives, producing smoother fields.
 
     Prior Types
@@ -61,10 +62,11 @@ class IGMRF2D(Prior2D):
     num_nodes : tuple of int
         Number of nodes in each dimension (n₁, n₂). For age-structured contact matrices,
         typically (A, A) where A is the number of age groups.
-    order : tuple of int
-        Order of the finite difference operator in each dimension (k₁, k₂). Common choices:
-        - (1, 1): First-order differences (random walk, less smooth)
-        - (2, 2): Second-order differences (smoother, penalizes curvature)
+    order : int
+        Order of the finite difference operator, shared by both dimensions. Common
+        choices:
+        - 1: First-order differences (random walk, less smooth)
+        - 2: Second-order differences (smoother, penalizes curvature)
         Higher orders produce progressively smoother fields.
     loc : float or array-like, default=0.0
         Prior location (mean) parameter. Can be scalar or array of shape (event_dim, A, A).
@@ -74,8 +76,8 @@ class IGMRF2D(Prior2D):
     ----------
     num_nodes : tuple of int
         Dimensionality of the 2D grid
-    order : tuple of int
-        Finite difference order for each dimension
+    order : int
+        Finite difference order, shared by both dimensions
     A : int
         Number of age groups (set by set_age_bounds)
     sym_idx : array
@@ -109,7 +111,7 @@ class IGMRF2D(Prior2D):
     >>> # Global prior for symmetric contact matrix (no transformation)
     >>> prior = IGMRF2D(
     ...     prior_type='global',
-    ...     order=(2, 2)
+    ...     order=2
     ... )
     >>> prior.set_age_bounds(0, 30) # 31 ages
     >>>
@@ -165,7 +167,7 @@ class IGMRF2D(Prior2D):
         self,
         prior_type: str,
         grid_type: Optional[str] = "age-age",
-        order: tuple = (2, 2),
+        order: int = 2,
         loc: ArrayLike = 0.0,
     ):
         super().__init__(grid_type, prior_type)
@@ -196,7 +198,7 @@ class IGMRF2D(Prior2D):
 
         Examples
         --------
-        >>> prior = IGMRF2D(num_nodes=(16, 16), order=(2, 2))
+        >>> prior = IGMRF2D(num_nodes=(16, 16), order=2)
         >>> prior.set_age_bounds(0, 80)
         >>> print(prior.A)  # Number of age groups
         16
@@ -247,7 +249,7 @@ class IGMRF2D(Prior2D):
         >>> import numpyro
         >>> from jax import random
         >>>
-        >>> prior = IGMRF2D(num_nodes=(10, 10), order=(2, 2), prior_type='global')
+        >>> prior = IGMRF2D(num_nodes=(10, 10), order=2, prior_type='global')
         >>> prior.set_age_bounds(0, 50)
         >>>
         >>> def model():
@@ -260,7 +262,7 @@ class IGMRF2D(Prior2D):
         >>> print(sample.shape)  # (10, 10)
         >>> print(jnp.allclose(sample, sample.T))  # True (symmetric)
         """
-        f = numpyro.sample("f", SymIGMRF2D(self.num_nodes[0], self.order[0]))
+        f = numpyro.sample("f", SymIGMRF2D(self.num_nodes[0], self.order))
         return f[self.symm_tril_ix].reshape((self.A, self.A))
 
     def sample_partial(self) -> jax.Array:
@@ -294,7 +296,7 @@ class IGMRF2D(Prior2D):
         >>> # Partial prior with CLR transformation
         >>> prior = IGMRF2D(
         ...     num_nodes=(16, 16),
-        ...     order=(2, 2),
+        ...     order=2,
         ...     transform='clr',
         ...     prior_type='partial'
         ... )
@@ -317,7 +319,7 @@ class IGMRF2D(Prior2D):
         """
         tau = numpyro.sample("tau", dist.Gamma(2, 0.1), sample_shape=(self.event_dim,))
         f = numpyro.sample(
-            "f", IGMRF2D_dist(self.num_nodes, self.order, cond_prec1=tau)
+            "f", IGMRF2D_dist(self.num_nodes, self.order, cond_prec=tau)
         ).reshape((self.event_dim, self.A, self.A))
 
         return self.loc + f
@@ -354,7 +356,7 @@ class IGMRF2D(Prior2D):
         >>> # Full prior with ILR transformation
         >>> prior = IGMRF2D(
         ...     num_nodes=(10, 10),
-        ...     order=(2, 2),
+        ...     order=2,
         ...     transform='alr',
         ...     prior_type='full'
         ... )
@@ -391,7 +393,7 @@ class IGMRF2D(Prior2D):
             "f_diag",
             SymIGMRF2D(
                 self.num_nodes[0],
-                self.order[0],
+                self.order,
                 cond_prec=tau_diag,
             ),
         )[:, self.symm_tril_ix].reshape((self.event_dim_diag, self.A, self.A))
@@ -400,7 +402,7 @@ class IGMRF2D(Prior2D):
             IGMRF2D_dist(
                 self.num_nodes,
                 self.order,
-                cond_prec1=tau_non_diag,
+                cond_prec=tau_non_diag,
             ),
         ).reshape((self.event_dim_non_diag_eff, self.A, self.A))
 
@@ -434,7 +436,7 @@ class IGMRF2D(Prior2D):
         >>> import numpyro
         >>> from jax import random
         >>>
-        >>> prior = IGMRF2D(num_nodes=(16, 16), order=(2, 2), prior_type='global')
+        >>> prior = IGMRF2D(num_nodes=(16, 16), order=2, prior_type='global')
         >>> prior.set_age_bounds(0, 80)
         >>>
         >>> def model():

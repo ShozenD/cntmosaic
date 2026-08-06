@@ -25,9 +25,8 @@ class PremNumPyroMixin:
                 "beta_cd",
                 IGMRF2D(
                     num_nodes=(self.C, self.D),
-                    order=(1, 1),
-                    cond_prec1=tau,
-                    cond_prec2=tau,
+                    order=self.order,
+                    cond_prec=tau,
                 ),
             ).reshape((self.C, self.D))
 
@@ -51,9 +50,8 @@ class PremNumPyroMixin:
                 "beta_cd",
                 IGMRF2D(
                     num_nodes=(self.C, self.D),
-                    order=(1, 1),
-                    cond_prec1=tau,
-                    cond_prec2=tau,
+                    order=self.order,
+                    cond_prec=tau,
                 )
                 .expand([self.K])
                 .to_event(1),

@@ -36,10 +36,10 @@ class PSpline2D(Spline2D):
     2. **Prior level**: Coefficients β have an IGMRF prior penalizing roughness:
 
            β ~ N(0, Q⁻¹)
-           Q = τ₁ ⊗ D₁ᵀD₁ ⊗ I₂ + τ₂ ⊗ I₁ ⊗ D₂ᵀD₂
+           Q = τ ⊗ (D₁ᵀD₁ ⊗ I₂ + I₁ ⊗ D₂ᵀD₂)
 
-       where D₁ and D₂ are difference operators of specified order, and τ₁, τ₂ are
-       precision parameters sampled from Gamma priors: τ ~ Gamma(shape, rate)
+       where D₁ and D₂ are difference operators of specified order, and τ is a single
+       precision parameter sampled from a Gamma prior: τ ~ Gamma(shape, rate)
 
     The difference operators penalize adjacent coefficients:
     - order=1: First differences Δβᵢ = βᵢ - βᵢ₋₁ (penalize roughness)
@@ -79,10 +79,6 @@ class PSpline2D(Spline2D):
     tau_rate : float, default=0.01
         Rate parameter for Gamma prior on precision τ. Smaller values allow
         more flexibility. Together with tau_shape, controls prior mean = shape/rate.
-    tau_ratio : float, default=1.0
-        Ratio between τ₁ and τ₂ for diff-age parameterization (τ₂ = τ₁ * tau_ratio).
-        Allows different smoothness in age vs age-difference directions.
-        Only used when grid_type='diff-age'.
     grid_type : {'age-age', 'diff-age'}, default='age-age'
         Grid structure for contact matrix:
         - 'age-age': Standard age-by-age contact matrix
@@ -94,8 +90,6 @@ class PSpline2D(Spline2D):
         Difference penalty order
     tau_shape, tau_rate : float
         Hyperparameters for Gamma prior on precision
-    tau_ratio : float
-        Anisotropy ratio for diff-age parameterization
     M, degree, A : int
         Inherited from Spline2D
     PHI, PHI_diag, PHI_non_diag : ndarray
@@ -169,8 +163,6 @@ class PSpline2D(Spline2D):
       and produce visually smooth surfaces.
     - Precision parameters τ are automatically learned, eliminating need for
       manual smoothing parameter tuning.
-    - For diff-age grids, tau_ratio allows anisotropic smoothing: set > 1 for
-      more smoothing in age-difference direction, < 1 for age direction.
     - Computational cost: O(M²) for coefficient sampling due to sparse precision
 
     Comparison with Spline2D
@@ -207,7 +199,6 @@ class PSpline2D(Spline2D):
         order: int = 1,
         tau_shape: float = 2.0,
         tau_rate: float = 0.01,
-        tau_ratio: float = 1.0,
         grid_type: str = "age-age",
         bound_ext: float = 0.05,
     ):
@@ -215,7 +206,6 @@ class PSpline2D(Spline2D):
         self.order = order
         self.tau_shape = tau_shape
         self.tau_rate = tau_rate
-        self.tau_ratio = tau_ratio
 
     def set_age_bounds(self, min_age: int, max_age: int) -> None:
         return super().set_age_bounds(min_age, max_age)
@@ -255,12 +245,9 @@ class PSpline2D(Spline2D):
         -----
         Sampling process:
         1. Sample precision: τ ~ Gamma(tau_shape, tau_rate)
-        2. Sample coefficients: β ~ IGMRF2D(num_nodes=(M, M), order, cond_prec1=τ)
+        2. Sample coefficients: β ~ IGMRF2D(num_nodes=(M, M), order, cond_prec=τ)
         3. Compute latent field: f = Φ β
         4. Symmetrize using lower triangular indices
-
-        For diff-age grids, uses anisotropic precision with τ₂ = τ₁ * tau_ratio
-        to allow different smoothness in age vs age-difference directions.
 
         No compositional transformation is applied for global priors.
 
@@ -276,21 +263,12 @@ class PSpline2D(Spline2D):
         >>> print(jnp.allclose(f, f.T))  # True
         """
         num_nodes = (self.M, self.M)
-        order = (self.order, self.order)
 
         tau = numpyro.sample("spline_tau", dist.Gamma(self.tau_shape, self.tau_rate))
 
-        if self.grid_type == "age-age":
-            beta = numpyro.sample(
-                "spline_coefs", IGMRF2D(num_nodes, order, cond_prec1=tau)
-            )  # (M*M,)
-        else:  # diff-age
-            beta = numpyro.sample(
-                "spline_coefs",
-                IGMRF2D(
-                    num_nodes, order, cond_prec1=tau, cond_prec2=tau * self.tau_ratio
-                ),
-            )  # (M*M,)
+        beta = numpyro.sample(
+            "spline_coefs", IGMRF2D(num_nodes, self.order, cond_prec=tau)
+        )  # (M*M,)
 
         f = (self.PHI @ beta)[self.symm_tril_idx].reshape((self.A, self.A))
         return f
@@ -320,8 +298,6 @@ class PSpline2D(Spline2D):
         Each dimension gets its own precision τᵢ, enabling adaptive smoothness
         that can vary across contact settings or age groups.
 
-        For diff-age grids, anisotropic precision is used with τ₂ = τ₁ * tau_ratio.
-
         Examples
         --------
         >>> import numpyro
@@ -346,7 +322,6 @@ class PSpline2D(Spline2D):
         sample_full : Separate diagonal/off-diagonal priors
         """
         num_nodes = (self.M, self.M)
-        order = (self.order, self.order)
 
         tau = numpyro.sample(
             "spline_tau",
@@ -354,21 +329,10 @@ class PSpline2D(Spline2D):
             sample_shape=(self.event_dim,),
         )
 
-        # Sample beta coefficients
-        if self.grid_type == "age-age":
-            # Use isometric IGMRF for age-age parameterization
-            beta = numpyro.sample(
-                "spline_coefs",
-                IGMRF2D(num_nodes, order, cond_prec1=tau),
-            )  # (event_dim_eff, M*M)
-        else:  # diff-age
-            # Use anisotropic IGMRF for diff-age parameterization
-            beta = numpyro.sample(
-                "spline_coefs",
-                IGMRF2D(
-                    num_nodes, order, cond_prec1=tau, cond_prec2=tau * self.tau_ratio
-                ),
-            )  # (event_dim_eff, M*M)
+        beta = numpyro.sample(
+            "spline_coefs",
+            IGMRF2D(num_nodes, self.order, cond_prec=tau),
+        )  # (event_dim_eff, M*M)
 
         beta = beta.swapaxes(0, 1)  # (M*M, event_dim_eff)
         f = self.PHI @ beta  # (A*A, event_dim_eff)
@@ -436,7 +400,6 @@ class PSpline2D(Spline2D):
         sample_partial : Shared precision structure
         """
         num_nodes = (self.M, self.M)
-        order = (self.order, self.order)
 
         tau_diag = numpyro.sample(
             "spline_tau_diag",
@@ -449,36 +412,14 @@ class PSpline2D(Spline2D):
             sample_shape=(self.event_dim_non_diag_eff,),
         )
 
-        if self.grid_type == "age-age":
-            # Use isometric IGMRF for age-age parameterization
-            beta_diag = numpyro.sample(
-                "spline_coefs_diag",
-                IGMRF2D(num_nodes, order, cond_prec1=tau_diag),
-            )  # (event_dim_diag, M*M)
-            beta_non_diag = numpyro.sample(
-                "spline_coefs_non_diag",
-                IGMRF2D(num_nodes, order, cond_prec1=tau_non_diag),
-            )  # (event_dim_non_diag, M*M)
-        else:  # diff-age
-            # Use anisotropic IGMRF for diff-age parameterization
-            beta_diag = numpyro.sample(
-                "spline_coefs_diag",
-                IGMRF2D(
-                    num_nodes,
-                    order,
-                    cond_prec1=tau_diag,
-                    cond_prec2=tau_diag * self.tau_ratio,
-                ),
-            )  # (event_dim_diag, M*M)
-            beta_non_diag = numpyro.sample(
-                "spline_coefs_non_diag",
-                IGMRF2D(
-                    num_nodes,
-                    order,
-                    cond_prec1=tau_non_diag,
-                    cond_prec2=tau_non_diag * self.tau_ratio,
-                ),
-            )  # (event_dim_non_diag, M*M)
+        beta_diag = numpyro.sample(
+            "spline_coefs_diag",
+            IGMRF2D(num_nodes, self.order, cond_prec=tau_diag),
+        )  # (event_dim_diag, M*M)
+        beta_non_diag = numpyro.sample(
+            "spline_coefs_non_diag",
+            IGMRF2D(num_nodes, self.order, cond_prec=tau_non_diag),
+        )  # (event_dim_non_diag, M*M)
 
         beta_diag = beta_diag.swapaxes(0, 1)  # (M*M, event_dim_diag)
         f_diag = self.PHI_diag @ beta_diag

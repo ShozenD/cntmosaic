@@ -4,6 +4,7 @@ from ._visualiser import ModelVisualiser
 from .evaluator import ModelEvaluatorBRC, ModelEvaluatorPrem, ModelEvaluatorSocialMix
 from .summariser._ModelSummariser import ModelSummariser
 from .summariser._ModelSummariserPrem import ModelSummariserPrem
+from .summariser._ModelSummariserPrem2 import ModelSummariserPrem2
 from .summariser._ModelSummariserSocialMix import ModelSummariserSocialMix
 from .summariser._summary import ContactSummary
 
@@ -11,6 +12,7 @@ __all__ = [
     "ModelSummariser",
     "ModelSummariserSocialMix",
     "ModelSummariserPrem",
+    "ModelSummariserPrem2",
     "ContactSummary",
     "ModelEvaluatorBRC",
     "ModelEvaluatorSocialMix",

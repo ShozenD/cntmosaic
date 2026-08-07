@@ -61,10 +61,10 @@ CASES = [
   T(IGMRF, 5, 2),
   T(IGMRF, 6, 1, 2.0),
   T(IGMRF, 4, 3, 1.0, jnp.ones((3,))),
-  T(IGMRF2D, (4, 4), (1, 1)),
-  T(IGMRF2D, (3, 5), (2, 1), 0.0, 2.0, 3.0),
-  T(IGMRF2D, (2, 6), (1, 2), jnp.zeros((12, 12)), 1.0, 1.0),
-  T(IGMRF2D, (4, 3), (1, 1), 0.0, jnp.array([1.0, 2.0, 3.0]), jnp.array([2.0, 3.0, 3.0])),
+  T(IGMRF2D, (4, 4), 1),
+  T(IGMRF2D, (3, 5), 2, 0.0, 2.0),
+  T(IGMRF2D, (2, 6), 1, jnp.zeros((12, 12)), 1.0),
+  T(IGMRF2D, (4, 3), 1, 0.0, jnp.array([1.0, 2.0, 3.0])),
   T(SymIGMRF2D, 4, 1),
   T(SymIGMRF2D, 5, 2, 0.0, jnp.array([1.0, 2.0]))
 ]

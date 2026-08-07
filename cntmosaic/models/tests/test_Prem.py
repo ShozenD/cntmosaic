@@ -35,6 +35,15 @@ class TestInit:
         assert model.strat_dims_cnt == {}
         assert model.strat_vars_shared == []
         assert model.K == 1
+        assert model.order == 1
+
+    def test_custom_order(self, single_large_sample):
+        """Test that a custom IGMRF2D order is stored on the model."""
+        part_data, cnt_data, pop_data = single_large_sample
+        age_bins = AgeBins(0, 80, 5)
+        model = Prem(part_data, cnt_data, age_bins, order=2)
+
+        assert model.order == 2
 
     def test_single_small(self, single_small_sample):
         """Test initialization without stratification on small sample."""
@@ -283,6 +292,23 @@ class TestModel:
         age_bins = AgeBins(0, 80, 5)
 
         model = Prem(part_data, cnt_data, age_bins)
+
+        # Should not raise an exception
+        # NumPyro models need to be called within a seed context
+        try:
+            with seed(rng_seed=0):
+                model.model(y=model.y)
+        except Exception as e:
+            pytest.fail(f"Model call raised exception: {e}")
+
+    def test_model_callable_second_order(self, single_small_sample):
+        """Test that model is callable with a second-order IGMRF2D prior."""
+        from numpyro.handlers import seed
+
+        part_data, cnt_data, _ = single_small_sample
+        age_bins = AgeBins(0, 80, 5)
+
+        model = Prem(part_data, cnt_data, age_bins, order=2)
 
         # Should not raise an exception
         # NumPyro models need to be called within a seed context

@@ -22,16 +22,20 @@ BootstrapResults
     Container for bootstrap estimation results.
 Prem
     Bayesian contact matrix estimator (Prem et al. 2017).
+Prem2
+    Aggregated-counts reformulation of Prem.
 """
 
 from ._base import DeterministicContactModel
 from ._Prem import Prem
+from ._Prem2 import Prem2
 from ._SocialMix import SocialMix
 from ._socialmix_bootstrap import BootstrapResults, SocialMixBootstrap
 
 __all__ = [
     "DeterministicContactModel",
     "Prem",
+    "Prem2",
     "SocialMix",
     "SocialMixBootstrap",
     "BootstrapResults",

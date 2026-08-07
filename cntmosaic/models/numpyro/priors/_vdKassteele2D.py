@@ -331,7 +331,7 @@ class vdKassteele2D(Prior2D):
         tau = numpyro.sample("tau", dist.Gamma(self.tau_shape, self.tau_rate))
         f = numpyro.sample(
             "f",
-            IGMRF2D((self.A, self.A), order=(self.order, self.order), cond_prec1=tau),
+            IGMRF2D((self.A, self.A), order=self.order, cond_prec=tau),
             sample_shape=(self.event_dim,),
         )  # IGMRF2D returns C-order (row-major) flattened arrays, so reshape with default C-order
         f = f.reshape((self.event_dim, self.A, self.A))
@@ -405,7 +405,7 @@ class vdKassteele2D(Prior2D):
         # Sample off-diagonal elements (asymmetric allowed)
         f_non_diag = numpyro.sample(
             "f_non_diag",
-            IGMRF2D((self.A, self.A), order=(self.order, self.order), cond_prec1=tau),
+            IGMRF2D((self.A, self.A), order=self.order, cond_prec=tau),
             sample_shape=(self.event_dim_non_diag_eff,),
         ).reshape((self.event_dim_non_diag_eff, self.A, self.A))
 

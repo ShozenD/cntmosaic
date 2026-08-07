@@ -18,6 +18,10 @@ def __getattr__(name: str):
         from .classical._Prem import Prem
 
         return Prem
+    if name == "Prem2":
+        from .classical._Prem2 import Prem2
+
+        return Prem2
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -43,6 +47,7 @@ __all__ = [
     "GenMixCC",
     # Other Bayesian models
     "Prem",
+    "Prem2",
     "vdKassteele",
     # Classical models (re-exported for backward compatibility)
     "SocialMix",

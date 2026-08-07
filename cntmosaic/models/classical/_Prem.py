@@ -35,6 +35,12 @@ class Prem(PremNumPyroMixin, ContactModel):
         Used to assign age groups if raw ages are provided in the containers.
     random_effects : bool, default=False
         Whether to include participant-level random effects in the model.
+    order : int, default=1
+        Finite-difference order of the IGMRF2D smoothing prior placed on the
+        beta_cd contact intensity surface, applied to both grid dimensions
+        (age of participant and age of contact). Use 1 for a first-order
+        (random-walk) smoothing prior (default), or 2 for a second-order
+        smoothing prior.
 
     Attributes
     ----------
@@ -194,6 +200,7 @@ class Prem(PremNumPyroMixin, ContactModel):
         cnt_data: ContactData,
         age_group_specs: AgeGroupSpecs,
         random_effects: bool = False,
+        order: int = 1,
         backend: Optional[Any] = None,
     ):
         super().__init__(backend=backend)
@@ -203,6 +210,7 @@ class Prem(PremNumPyroMixin, ContactModel):
         self.cnt_data = cnt_data
         self.age_group_specs = age_group_specs
         self.random_effects = random_effects
+        self.order = order
 
         # Stratification attributes (initialized in _preprocess)
         self.strat_vars_part: List[str] = []
